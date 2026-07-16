@@ -1563,7 +1563,7 @@ function renderCalendarPage(currentUser) {
               ${visibleCalendarShifts.filter((shift) => shift.day === day).map((shift) => `
                 <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
                   <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || roleOptions[0])}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
-                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row" style="margin-top:6px;"><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Duplicate</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
+                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row" style="margin-top:6px;"><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Duplicate</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
                 </div>
               `).join('')}
             </div>
@@ -3140,6 +3140,72 @@ function bindEvents() {
       const id = Number(button.getAttribute('data-remove-shift'));
       state.shifts = state.shifts.filter((shift) => shift.id !== id);
       state.swapRequests = state.swapRequests.filter((request) => request.shiftId !== id);
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-edit-shift]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = Number(button.getAttribute('data-edit-shift'));
+      const shift = state.shifts.find((item) => item.id === id);
+      if (!shift) return;
+
+      const agentOptionsText = state.agents.map((agent) => `${agent.id}: ${agent.name}`).join(', ');
+      const nextAgentRaw = prompt(`Agent ID (${agentOptionsText})`, String(shift.agentId));
+      if (nextAgentRaw === null) return;
+      const nextAgentId = Number(nextAgentRaw);
+      if (!Number.isFinite(nextAgentId) || !getAgent(nextAgentId)) {
+        alert('Enter a valid agent ID.');
+        return;
+      }
+
+      const nextDate = prompt('Shift date (YYYY-MM-DD)', shift.date || '');
+      if (nextDate === null) return;
+      const normalizedDate = String(nextDate).trim();
+      const nextDay = getDayFromDate(normalizedDate);
+      if (!nextDay) {
+        alert('Enter a valid shift date.');
+        return;
+      }
+
+      const nextStart = prompt('Start time (HH:MM)', shift.start || '08:00');
+      if (nextStart === null) return;
+      const normalizedStart = String(nextStart).trim();
+
+      const nextEnd = prompt('End time (HH:MM)', shift.end || '16:00');
+      if (nextEnd === null) return;
+      const normalizedEnd = String(nextEnd).trim();
+
+      if (toMinutes(normalizedEnd) <= toMinutes(normalizedStart)) {
+        alert('End time must be later than start time.');
+        return;
+      }
+
+      const nextRole = prompt('Role', shift.role || roleOptions[0]);
+      if (nextRole === null) return;
+      const normalizedRole = normalizeRoleLabel(String(nextRole).trim() || roleOptions[0]);
+
+      const nextLocation = prompt('Location (leave blank for none)', shift.location || '');
+      if (nextLocation === null) return;
+      const requestedLocation = String(nextLocation).trim();
+      const normalizedLocation = requestedLocation && shiftLocationOptions.includes(requestedLocation) ? requestedLocation : '';
+
+      if (!confirmShiftAssignmentWithTimeOffWarning(nextAgentId, normalizedDate, normalizedStart, normalizedEnd)) return;
+
+      state.shifts = state.shifts.map((item) => item.id === id
+        ? {
+            ...item,
+            agentId: nextAgentId,
+            day: nextDay,
+            date: normalizedDate,
+            start: normalizedStart,
+            end: normalizedEnd,
+            role: normalizedRole,
+            location: normalizedLocation,
+            durationHours: getDurationHours(normalizedStart, normalizedEnd)
+          }
+        : item);
       saveState();
       render();
     });
