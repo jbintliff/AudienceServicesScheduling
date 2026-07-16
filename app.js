@@ -1603,6 +1603,7 @@ function renderCalendarPage(currentUser) {
   const weekDates = getCalendarWeekDates(calendarFilters.date);
   const locations = getAllLocations();
   const roleItems = getRoleLegendItems();
+  const agentNameItems = state.agents.map((agent) => String(agent.name || '').trim()).filter(Boolean).sort((left, right) => left.localeCompare(right));
   const isAgentView = currentUser.role === 'agent';
   const viewAgent = getViewAgent();
   const baseCalendarShifts = getFilteredCalendarShifts();
@@ -1637,7 +1638,10 @@ function renderCalendarPage(currentUser) {
       <div class="panel" style="margin-bottom:16px;">
         <div class="row" style="flex-wrap:wrap;">
           <input id="calendar-search" placeholder="Search shifts" value="${escapeHtml(calendarFilters.search)}" />
-          <input id="calendar-agent-name-filter" placeholder="Filter by agent name" value="${escapeHtml(calendarFilters.agentName)}" />
+          <select id="calendar-agent-name-filter">
+            <option value="" ${!calendarFilters.agentName ? 'selected' : ''}>All agent names</option>
+            ${agentNameItems.map((name) => `<option value="${escapeHtml(name)}" ${String(calendarFilters.agentName || '') === String(name) ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
+          </select>
           <input id="calendar-date-filter" type="date" value="${escapeHtml(calendarFilters.date)}" />
           <select id="calendar-day-filter">
             <option value="All" ${calendarFilters.day === 'All' ? 'selected' : ''}>All days</option>
@@ -2779,12 +2783,11 @@ function render() {
         <div class="stack">
           ${!isAgentView ? '' : `
             <div class="panel">
-              <h2>Unavailability request</h2>
+              <h2>Time Off</h2>
               <form id="agent-availability-form" class="stack">
                 <select name="unavailabilityType" required>
                   <option value="Availability">Availability</option>
                   <option value="PTO">PTO</option>
-                  <option value="Sick time">Sick time</option>
                 </select>
                 <input name="unavailableDate" type="date" required />
                 <div class="row">
@@ -3107,14 +3110,14 @@ function bindEvents() {
   document.getElementById('calendar-filters-apply')?.addEventListener('click', () => {
     const searchInput = document.getElementById('calendar-search');
     const daySelect = document.getElementById('calendar-day-filter');
-    const agentNameInput = document.getElementById('calendar-agent-name-filter');
+    const agentNameSelect = document.getElementById('calendar-agent-name-filter');
     const dateInput = document.getElementById('calendar-date-filter');
     const agentSelect = document.getElementById('calendar-agent-filter');
     const roleSelect = document.getElementById('calendar-role-filter');
     const locationSelect = document.getElementById('calendar-location-filter');
     state.ui.calendar.search = searchInput?.value || '';
     state.ui.calendar.day = daySelect?.value || 'All';
-    state.ui.calendar.agentName = agentNameInput?.value || '';
+    state.ui.calendar.agentName = agentNameSelect?.value || '';
     state.ui.calendar.date = dateInput?.value || '';
     state.ui.calendar.agentId = agentSelect?.value || 'All';
     state.ui.calendar.role = roleSelect?.value || 'All';
