@@ -1713,7 +1713,7 @@ function renderCalendarPage(currentUser) {
         ${!isAgentView ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row"><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
         <div class="day-row">
           ${days.map((day) => `
-            <div class="day-card" data-day="${day}">
+            <div class="day-card" data-day="${day}" data-date="${escapeHtml(weekDates[day]?.iso || '')}">
               <div class="row" style="justify-content:space-between; margin-bottom:6px;">
                 <div>
                   <h4 style="margin:0;">${day}</h4>
@@ -3534,7 +3534,25 @@ function bindEvents() {
       card.classList.remove('drag-over');
       const shiftId = draggedShiftId ?? Number(event.dataTransfer?.getData('text/plain'));
       if (!shiftId) return;
-      state.shifts = state.shifts.map((shift) => shift.id === shiftId ? { ...shift, day: card.getAttribute('data-day') } : shift);
+
+      const shiftToMove = state.shifts.find((shift) => Number(shift.id) === Number(shiftId));
+      if (!shiftToMove) return;
+
+      const targetDay = card.getAttribute('data-day') || shiftToMove.day;
+      const targetDate = card.getAttribute('data-date') || shiftToMove.date || '';
+      const movedToNewDate = String(shiftToMove.date || '') !== String(targetDate || '');
+
+      if (movedToNewDate && !confirmShiftAssignmentWithTimeOffWarning(shiftToMove.agentId, targetDate, shiftToMove.start, shiftToMove.end)) {
+        return;
+      }
+
+      state.shifts = state.shifts.map((shift) => shift.id === shiftId
+        ? {
+            ...shift,
+            day: targetDay,
+            date: targetDate || shift.date
+          }
+        : shift);
       saveState();
       render();
     });
