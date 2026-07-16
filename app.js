@@ -1144,12 +1144,12 @@ function getAgent(id) {
 }
 
 const defaultRoleColorMap = {
-  'in-person': '#be123c',
-  wfh: '#0369a1',
-  'booth duty': '#15803d',
-  'booth duty (form)': '#7c3aed',
-  'booth duty back-up': '#b45309',
-  default: '#1d4ed8'
+  'in-person': '#D0645E',
+  wfh: '#608186',
+  'booth duty': '#7AACAF',
+  'booth duty (form)': '#F4A997',
+  'booth duty back-up': '#AB5C57',
+  default: '#C49583'
 };
 
 function getGeneratedRoleColor(role) {
@@ -2337,12 +2337,12 @@ function renderAgentsPage(currentUser) {
 
 function getAvailabilityStatusStyles(status) {
   if (status === 'approved') {
-    return 'background:#15803d; color:#dcfce7;';
+    return 'background:#7AACAF; color:#17383B;';
   }
   if (status === 'rejected') {
-    return 'background:#b91c1c; color:#fee2e2;';
+    return 'background:#AB5C57; color:#FFF1EF;';
   }
-  return 'background:#fef08a; color:#422006;';
+  return 'background:#FDD592; color:#4B3A1F;';
 }
 
 function getAvailabilityCalendarCells(monthValue, requests) {
@@ -2457,9 +2457,9 @@ function renderAvailabilityRequestsPage(currentUser) {
           <input id="availability-calendar-month" type="month" value="${escapeHtml(selectedMonth)}" />
         </div>
         <div class="row" style="gap:8px; margin-bottom:10px;">
-          <span class="chip" style="background:#fef08a; color:#422006; border:1px solid rgba(0,0,0,0.2);">Pending</span>
-          <span class="chip" style="background:#15803d; color:#dcfce7; border:1px solid rgba(255,255,255,0.2);">Approved</span>
-          <span class="chip" style="background:#b91c1c; color:#fee2e2; border:1px solid rgba(255,255,255,0.2);">Denied</span>
+          <span class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(0,0,0,0.2);">Pending</span>
+          <span class="chip" style="background:#7AACAF; color:#17383B; border:1px solid rgba(255,255,255,0.2);">Approved</span>
+          <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
         </div>
         <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
           ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayLabel) => `<div class="muted" style="text-align:center;">${dayLabel}</div>`).join('')}
@@ -2490,7 +2490,7 @@ function renderAvailabilityRequestsPage(currentUser) {
         <h2>All requests</h2>
         <div class="request-list" style="margin-top:12px;">
           ${visibleAvailabilityRequests.map((request) => `
-            <div class="card" style="border-left:4px solid ${request.status === 'approved' ? '#15803d' : request.status === 'rejected' ? '#b91c1c' : '#fef08a'};">
+            <div class="card" style="border-left:4px solid ${request.status === 'approved' ? '#7AACAF' : request.status === 'rejected' ? '#AB5C57' : '#FDD592'};">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                 <div>
                   <strong>${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')}</strong>
@@ -2520,7 +2520,7 @@ function renderAvailabilityRequestsPage(currentUser) {
             const toAgent = getAgent(request.toAgentId)?.name || 'Unknown';
             const shiftSummary = getShiftSummary(state.shifts.find((shift) => shift.id === request.shiftId) || {});
             return `
-              <div class="card" style="border-left:4px solid ${request.status === 'completed' ? '#15803d' : request.status === 'rejected' ? '#b91c1c' : '#fef08a'};">
+              <div class="card" style="border-left:4px solid ${request.status === 'completed' ? '#7AACAF' : request.status === 'rejected' ? '#AB5C57' : '#FDD592'};">
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
                     <strong>${escapeHtml(fromAgent)} → ${escapeHtml(toAgent)}</strong>
