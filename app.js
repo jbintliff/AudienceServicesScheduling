@@ -692,6 +692,7 @@ function sendEmailNotification({ to, subject, body, type }) {
   if (shouldAttemptDelivery) {
     void sendEmailThroughWebhook(message);
   }
+  return message;
 }
 
 function getUserByAgentId(agentId) {
@@ -701,7 +702,7 @@ function getUserByAgentId(agentId) {
 
 function sendAgentInviteEmail(agentUser, agentName) {
   if (!agentUser?.id || !agentUser?.email) {
-    return '';
+    return null;
   }
   const passwordResetRequests = loadPasswordResetRequests();
   const token = createResetToken();
@@ -716,13 +717,16 @@ function sendAgentInviteEmail(agentUser, agentName) {
     used: false
   });
   savePasswordResetRequests(passwordResetRequests);
-  sendEmailNotification({
+  const inviteMessage = sendEmailNotification({
     to: normalizeEmail(agentUser.email),
     subject: 'You have been invited to Agent Scheduler',
     body: `Hi ${agentName || 'Agent'}, your agent account is ready. Use this link to create your password and sign in: ${resetLink}`,
     type: 'agent-invite'
   });
-  return resetLink;
+  return {
+    resetLink,
+    deliveryStatus: inviteMessage?.deliveryStatus || 'local-only'
+  };
 }
 
 function createResetToken() {
@@ -2966,11 +2970,15 @@ function bindEvents() {
     });
     authUsers.push(nextUser);
     saveAuthUsers();
-    sendAgentInviteEmail(nextUser, name);
+    const inviteResult = sendAgentInviteEmail(nextUser, name);
 
     saveState();
     const outboxCount = loadEmailOutbox().length;
-    alert(`Agent added and invitation email sent. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
+    if (inviteResult?.deliveryStatus === 'local-only') {
+      alert(`Agent added. Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nReset link: ${inviteResult.resetLink}`);
+    } else {
+      alert(`Agent added and invitation email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
+    }
     render();
   });
 
@@ -3288,9 +3296,13 @@ function bindEvents() {
         alert('This agent needs a valid email before sending an invite.');
         return;
       }
-      sendAgentInviteEmail(agentUser, agent.name);
+      const inviteResult = sendAgentInviteEmail(agentUser, agent.name);
       const outboxCount = loadEmailOutbox().length;
-      alert(`Invite email sent. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
+      if (inviteResult?.deliveryStatus === 'local-only') {
+        alert(`Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nReset link: ${inviteResult.resetLink}`);
+      } else {
+        alert(`Invite email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
+      }
       render();
     });
   });
