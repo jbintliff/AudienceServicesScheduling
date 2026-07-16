@@ -1422,7 +1422,7 @@ function renderCalendarPage(currentUser) {
           <p class="muted">${isAgentView ? 'Review your assigned shifts and request swaps.' : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
         </div>
         <div class="row">
-          ${isAgentView ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>' : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>'}
+          ${isAgentView ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>' : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>'}
           ${!isAgentView ? '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a>' : ''}
           ${!isAgentView ? '<a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>' : ''}
           ${!isAgentView ? '<a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>' : ''}
@@ -1779,6 +1779,7 @@ function renderProfilePage(currentUser) {
         </div>
         <div class="row">
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to scheduling</button></a>
+          <a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>
           <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a>
           <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
           <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
