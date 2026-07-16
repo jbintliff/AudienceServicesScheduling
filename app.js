@@ -1239,6 +1239,24 @@ function getApprovedTimeOffConflicts(agentId, date, start, end) {
   });
 }
 
+function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end) {
+  const activeUser = getCurrentUser();
+  if (activeUser?.role !== 'admin') {
+    return true;
+  }
+
+  const approvedTimeOffConflicts = getApprovedTimeOffConflicts(agentId, date, start, end);
+  if (approvedTimeOffConflicts.length === 0) {
+    return true;
+  }
+
+  const firstConflict = approvedTimeOffConflicts[0];
+  const conflictWindow = formatTimeRange(firstConflict.unavailableStart || start, firstConflict.unavailableEnd || end);
+  return confirm(
+    `${getAgent(agentId)?.name || 'This agent'} has approved time off on ${date} (${conflictWindow}).\n\nDo you still want to schedule this shift?`
+  );
+}
+
 function getDayFromDate(dateValue) {
   const parsedDate = new Date(`${dateValue}T00:00:00`);
   if (Number.isNaN(parsedDate.getTime())) {
@@ -2794,7 +2812,6 @@ function bindEvents() {
   document.getElementById('add-shift-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const activeUser = getCurrentUser();
     const agentId = formData.get('agentId') ? Number(formData.get('agentId')) : null;
     const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getAgent(agentId)?.role || roleOptions[0]);
     const start = formData.get('start')?.toString();
@@ -2804,20 +2821,7 @@ function bindEvents() {
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
     if (!day || !agentId || !role || !start || !end || !date) return;
-
-    if (activeUser?.role === 'admin') {
-      const approvedTimeOffConflicts = getApprovedTimeOffConflicts(agentId, date, start, end);
-      if (approvedTimeOffConflicts.length > 0) {
-        const firstConflict = approvedTimeOffConflicts[0];
-        const conflictWindow = formatTimeRange(firstConflict.unavailableStart || start, firstConflict.unavailableEnd || end);
-        const shouldContinue = confirm(
-          `${getAgent(agentId)?.name || 'This agent'} has approved time off on ${date} (${conflictWindow}).\n\nDo you still want to schedule this shift?`
-        );
-        if (!shouldContinue) {
-          return;
-        }
-      }
-    }
+    if (!confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end)) return;
 
     state.shifts.push({ id: createId(), day, date, agentId, role, start, end, durationHours: getDurationHours(start, end), location, status: shiftStatuses.draft });
     saveState();
@@ -3264,7 +3268,9 @@ function bindEvents() {
       const id = Number(button.getAttribute('data-duplicate-shift'));
       const shift = state.shifts.find((item) => item.id === id);
       if (!shift) return;
-      state.shifts.push(cloneShift(shift));
+      const duplicatedShift = cloneShift(shift);
+      if (!confirmShiftAssignmentWithTimeOffWarning(duplicatedShift.agentId, duplicatedShift.date, duplicatedShift.start, duplicatedShift.end)) return;
+      state.shifts.push(duplicatedShift);
       saveState();
       render();
     });
@@ -3275,7 +3281,9 @@ function bindEvents() {
       event.preventDefault();
       const day = button.getAttribute('data-paste-shift-day');
       if (!copiedShiftTemplate || !day) return;
-      state.shifts.push(cloneShift(copiedShiftTemplate, day));
+      const pastedShift = cloneShift(copiedShiftTemplate, day);
+      if (!confirmShiftAssignmentWithTimeOffWarning(pastedShift.agentId, pastedShift.date, pastedShift.start, pastedShift.end)) return;
+      state.shifts.push(pastedShift);
       saveState();
       render();
     });
