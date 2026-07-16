@@ -104,6 +104,7 @@ const defaultState = {
       search: '',
       day: 'All',
       agentId: 'All',
+      role: 'All',
       agentName: '',
       date: '',
       location: 'All'
@@ -774,6 +775,7 @@ function applyAccessForUser(user) {
         search: '',
         day: 'All',
         agentId: 'All',
+        role: 'All',
         agentName: '',
         date: '',
         location: 'All'
@@ -973,6 +975,7 @@ function createDefaultState() {
         search: '',
         day: 'All',
         agentId: 'All',
+        role: 'All',
         agentName: '',
         date: '',
         location: 'All'
@@ -1095,6 +1098,7 @@ function loadState() {
           search: parsed.ui?.calendar?.search || '',
           day: parsed.ui?.calendar?.day || 'All',
           agentId: parsed.ui?.calendar?.agentId || 'All',
+          role: parsed.ui?.calendar?.role || 'All',
           agentName: parsed.ui?.calendar?.agentName || '',
           date: parsed.ui?.calendar?.date || '',
           location: parsed.ui?.calendar?.location || 'All'
@@ -1479,10 +1483,11 @@ function getFilteredCalendarShifts() {
   return state.shifts.filter((shift) => {
     const matchesDay = filters.day === 'All' || shift.day === filters.day;
     const matchesAgent = filters.agentId === 'All' || String(shift.agentId) === String(filters.agentId);
+    const matchesRole = filters.role === 'All' || String(shift.role || '') === String(filters.role);
     const matchesAgentName = !agentName || (getAgent(shift.agentId)?.name || '').toLowerCase().includes(agentName);
     const matchesDate = !selectedDate || (shift.date || '') === selectedDate;
     const matchesLocation = filters.location === 'All' || shift.location === filters.location;
-    if (!matchesDay || !matchesAgent || !matchesAgentName || !matchesDate || !matchesLocation) return false;
+    if (!matchesDay || !matchesAgent || !matchesRole || !matchesAgentName || !matchesDate || !matchesLocation) return false;
     if (!search) return true;
     const agent = getAgent(shift.agentId);
     return [shift.role, shift.day, shift.location, shift.start, shift.end, agent?.name].join(' ').toLowerCase().includes(search);
@@ -1597,6 +1602,7 @@ function renderCalendarPage(currentUser) {
   const calendarFilters = state.ui.calendar || {};
   const weekDates = getCalendarWeekDates(calendarFilters.date);
   const locations = getAllLocations();
+  const roleItems = getRoleLegendItems();
   const isAgentView = currentUser.role === 'agent';
   const viewAgent = getViewAgent();
   const baseCalendarShifts = getFilteredCalendarShifts();
@@ -1640,6 +1646,10 @@ function renderCalendarPage(currentUser) {
           <select id="calendar-agent-filter">
             <option value="All" ${calendarFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
             ${state.agents.map((agent) => `<option value="${agent.id}" ${String(calendarFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+          </select>
+          <select id="calendar-role-filter">
+            <option value="All" ${calendarFilters.role === 'All' ? 'selected' : ''}>All roles</option>
+            ${roleItems.map((role) => `<option value="${escapeHtml(role)}" ${String(calendarFilters.role || 'All') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
           </select>
           <select id="calendar-location-filter">
             <option value="All" ${calendarFilters.location === 'All' ? 'selected' : ''}>All locations</option>
@@ -2604,6 +2614,7 @@ function render() {
     state.ui.calendar = {
       ...(state.ui.calendar || {}),
       agentId: 'All',
+      role: 'All',
       agentName: '',
       date: '',
       location: 'All',
@@ -3099,12 +3110,14 @@ function bindEvents() {
     const agentNameInput = document.getElementById('calendar-agent-name-filter');
     const dateInput = document.getElementById('calendar-date-filter');
     const agentSelect = document.getElementById('calendar-agent-filter');
+    const roleSelect = document.getElementById('calendar-role-filter');
     const locationSelect = document.getElementById('calendar-location-filter');
     state.ui.calendar.search = searchInput?.value || '';
     state.ui.calendar.day = daySelect?.value || 'All';
     state.ui.calendar.agentName = agentNameInput?.value || '';
     state.ui.calendar.date = dateInput?.value || '';
     state.ui.calendar.agentId = agentSelect?.value || 'All';
+    state.ui.calendar.role = roleSelect?.value || 'All';
     state.ui.calendar.location = locationSelect?.value || 'All';
     saveState();
     render();
@@ -3114,6 +3127,7 @@ function bindEvents() {
     state.ui.calendar.search = '';
     state.ui.calendar.day = 'All';
     state.ui.calendar.agentId = 'All';
+    state.ui.calendar.role = 'All';
     state.ui.calendar.agentName = '';
     state.ui.calendar.date = '';
     state.ui.calendar.location = 'All';
