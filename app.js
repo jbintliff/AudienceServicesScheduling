@@ -1257,6 +1257,152 @@ function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end) {
   );
 }
 
+function openShiftEditModal(shift, onSave) {
+  const existingOverlay = document.getElementById('shift-edit-modal-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  const roleChoices = Array.from(new Set([...(getRoleLegendItems() || []), shift.role || roleOptions[0]])).filter(Boolean);
+  const safeStatus = shift.status === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
+  const overlay = document.createElement('div');
+  overlay.id = 'shift-edit-modal-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:min(720px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
+      <h2 style="margin:0 0 12px;">Edit shift</h2>
+      <p class="muted" style="margin:0 0 14px;">Update all shift details in one place.</p>
+      <form id="shift-edit-form" class="stack">
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Agent</span>
+            <select name="agentId" required>
+              ${state.agents.map((agent) => `<option value="${agent.id}" ${Number(shift.agentId) === Number(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:180px; flex:1;">
+            <span>Date</span>
+            <input name="date" type="date" value="${escapeHtml(shift.date || '')}" required />
+          </label>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:150px; flex:1;">
+            <span>Start</span>
+            <input name="start" type="time" value="${escapeHtml(shift.start || '08:00')}" required />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:150px; flex:1;">
+            <span>End</span>
+            <input name="end" type="time" value="${escapeHtml(shift.end || '16:00')}" required />
+          </label>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Role</span>
+            <select name="role" required>
+              ${roleChoices.map((role) => `<option value="${escapeHtml(role)}" ${String(shift.role || '') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Location</span>
+            <select name="location">
+              <option value="">No location</option>
+              ${shiftLocationOptions.map((location) => `<option value="${escapeHtml(location)}" ${String(shift.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Status</span>
+            <select name="status" required>
+              <option value="${shiftStatuses.draft}" ${safeStatus === shiftStatuses.draft ? 'selected' : ''}>${shiftStatuses.draft}</option>
+              <option value="${shiftStatuses.published}" ${safeStatus === shiftStatuses.published ? 'selected' : ''}>${shiftStatuses.published}</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="row" style="justify-content:flex-end; margin-top:8px;">
+          <button type="button" id="shift-edit-cancel" class="secondary">Cancel</button>
+          <button type="submit">Save changes</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  const closeModal = () => {
+    document.removeEventListener('keydown', onEscape);
+    overlay.remove();
+  };
+
+  const onEscape = (event) => {
+    if (event.key === 'Escape') {
+      closeModal();
+    }
+  };
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeModal();
+    }
+  });
+
+  overlay.querySelector('#shift-edit-cancel')?.addEventListener('click', () => {
+    closeModal();
+  });
+
+  overlay.querySelector('#shift-edit-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const nextAgentId = Number(formData.get('agentId'));
+    if (!Number.isFinite(nextAgentId) || !getAgent(nextAgentId)) {
+      alert('Select a valid agent.');
+      return;
+    }
+
+    const nextDate = String(formData.get('date') || '').trim();
+    const nextDay = getDayFromDate(nextDate);
+    if (!nextDay) {
+      alert('Enter a valid shift date.');
+      return;
+    }
+
+    const nextStart = String(formData.get('start') || '').trim();
+    const nextEnd = String(formData.get('end') || '').trim();
+    if (!nextStart || !nextEnd || toMinutes(nextEnd) <= toMinutes(nextStart)) {
+      alert('End time must be later than start time.');
+      return;
+    }
+
+    const nextRole = normalizeRoleLabel(String(formData.get('role') || '').trim() || roleOptions[0]);
+    const requestedLocation = String(formData.get('location') || '').trim();
+    const nextLocation = requestedLocation && shiftLocationOptions.includes(requestedLocation) ? requestedLocation : '';
+    const nextStatus = String(formData.get('status') || '').trim() === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
+
+    if (!confirmShiftAssignmentWithTimeOffWarning(nextAgentId, nextDate, nextStart, nextEnd)) {
+      return;
+    }
+
+    onSave({
+      ...shift,
+      agentId: nextAgentId,
+      day: nextDay,
+      date: nextDate,
+      start: nextStart,
+      end: nextEnd,
+      role: nextRole,
+      location: nextLocation,
+      status: nextStatus,
+      durationHours: getDurationHours(nextStart, nextEnd)
+    });
+    closeModal();
+  });
+
+  document.addEventListener('keydown', onEscape);
+  document.body.appendChild(overlay);
+}
+
 function getDayFromDate(dateValue) {
   const parsedDate = new Date(`${dateValue}T00:00:00`);
   if (Number.isNaN(parsedDate.getTime())) {
@@ -3150,64 +3296,11 @@ function bindEvents() {
       const id = Number(button.getAttribute('data-edit-shift'));
       const shift = state.shifts.find((item) => item.id === id);
       if (!shift) return;
-
-      const agentOptionsText = state.agents.map((agent) => `${agent.id}: ${agent.name}`).join(', ');
-      const nextAgentRaw = prompt(`Agent ID (${agentOptionsText})`, String(shift.agentId));
-      if (nextAgentRaw === null) return;
-      const nextAgentId = Number(nextAgentRaw);
-      if (!Number.isFinite(nextAgentId) || !getAgent(nextAgentId)) {
-        alert('Enter a valid agent ID.');
-        return;
-      }
-
-      const nextDate = prompt('Shift date (YYYY-MM-DD)', shift.date || '');
-      if (nextDate === null) return;
-      const normalizedDate = String(nextDate).trim();
-      const nextDay = getDayFromDate(normalizedDate);
-      if (!nextDay) {
-        alert('Enter a valid shift date.');
-        return;
-      }
-
-      const nextStart = prompt('Start time (HH:MM)', shift.start || '08:00');
-      if (nextStart === null) return;
-      const normalizedStart = String(nextStart).trim();
-
-      const nextEnd = prompt('End time (HH:MM)', shift.end || '16:00');
-      if (nextEnd === null) return;
-      const normalizedEnd = String(nextEnd).trim();
-
-      if (toMinutes(normalizedEnd) <= toMinutes(normalizedStart)) {
-        alert('End time must be later than start time.');
-        return;
-      }
-
-      const nextRole = prompt('Role', shift.role || roleOptions[0]);
-      if (nextRole === null) return;
-      const normalizedRole = normalizeRoleLabel(String(nextRole).trim() || roleOptions[0]);
-
-      const nextLocation = prompt('Location (leave blank for none)', shift.location || '');
-      if (nextLocation === null) return;
-      const requestedLocation = String(nextLocation).trim();
-      const normalizedLocation = requestedLocation && shiftLocationOptions.includes(requestedLocation) ? requestedLocation : '';
-
-      if (!confirmShiftAssignmentWithTimeOffWarning(nextAgentId, normalizedDate, normalizedStart, normalizedEnd)) return;
-
-      state.shifts = state.shifts.map((item) => item.id === id
-        ? {
-            ...item,
-            agentId: nextAgentId,
-            day: nextDay,
-            date: normalizedDate,
-            start: normalizedStart,
-            end: normalizedEnd,
-            role: normalizedRole,
-            location: normalizedLocation,
-            durationHours: getDurationHours(normalizedStart, normalizedEnd)
-          }
-        : item);
-      saveState();
-      render();
+      openShiftEditModal(shift, (updatedShift) => {
+        state.shifts = state.shifts.map((item) => item.id === id ? updatedShift : item);
+        saveState();
+        render();
+      });
     });
   });
 
