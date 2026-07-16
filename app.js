@@ -729,6 +729,23 @@ function sendAgentInviteEmail(agentUser, agentName) {
   };
 }
 
+function sendShiftPublishedEmail(shift) {
+  const agentId = Number(shift?.agentId);
+  if (!agentId) return false;
+  const agentUser = getUserByAgentId(agentId);
+  const recipientEmail = normalizeEmail(agentUser?.email);
+  if (!recipientEmail) return false;
+
+  const agentName = getAgent(agentId)?.name || agentUser?.username || 'Agent';
+  sendEmailNotification({
+    to: recipientEmail,
+    subject: 'New shift published',
+    body: `Hi ${agentName}, your shift has been published: ${getShiftSummary(shift, true)}.`,
+    type: 'shift-published'
+  });
+  return true;
+}
+
 function createResetToken() {
   return `reset-${createId()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -3351,9 +3368,18 @@ function bindEvents() {
 
   document.querySelector('[data-publish-selected-shifts]')?.addEventListener('click', () => {
     if (selectedCalendarShiftIds.size === 0) return;
+    const shiftsToNotify = state.shifts
+      .filter((shift) => selectedCalendarShiftIds.has(Number(shift.id)) && shift.status !== shiftStatuses.published)
+      .map((shift) => ({ ...shift, status: shiftStatuses.published }));
+
     state.shifts = state.shifts.map((shift) => (selectedCalendarShiftIds.has(Number(shift.id))
       ? { ...shift, status: shiftStatuses.published }
       : shift));
+
+    shiftsToNotify.forEach((shift) => {
+      sendShiftPublishedEmail(shift);
+    });
+
     saveState();
     render();
   });
@@ -3374,7 +3400,11 @@ function bindEvents() {
       const shift = state.shifts.find((item) => item.id === id);
       if (!shift) return;
       openShiftEditModal(shift, (updatedShift) => {
+        const shouldNotify = shift.status !== shiftStatuses.published && updatedShift.status === shiftStatuses.published;
         state.shifts = state.shifts.map((item) => item.id === id ? updatedShift : item);
+        if (shouldNotify) {
+          sendShiftPublishedEmail(updatedShift);
+        }
         saveState();
         render();
       });
@@ -3384,7 +3414,13 @@ function bindEvents() {
   document.querySelectorAll('[data-publish-shift]').forEach((button) => {
     button.addEventListener('click', () => {
       const id = Number(button.getAttribute('data-publish-shift'));
+      const shiftToPublish = state.shifts.find((shift) => shift.id === id);
+      if (!shiftToPublish) return;
+
       state.shifts = state.shifts.map((shift) => shift.id === id ? { ...shift, status: shiftStatuses.published } : shift);
+      if (shiftToPublish.status !== shiftStatuses.published) {
+        sendShiftPublishedEmail({ ...shiftToPublish, status: shiftStatuses.published });
+      }
       saveState();
       render();
     });
