@@ -17,6 +17,7 @@ const shiftStatuses = {
   draft: 'draft',
   published: 'published'
 };
+const defaultBackendApiBase = 'https://scheduling-app-backend-l66q.onrender.com/api';
 const sharedStorageKeys = [
   storageKey,
   authUsersKey,
@@ -38,7 +39,7 @@ function getBackendApiBase() {
   const fromLocalStorage = normalizeBackendUrl(localStorage.getItem(backendUrlKey));
   if (fromLocalStorage) return fromLocalStorage;
   const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-  return isLocalHost ? 'http://localhost:8787/api' : '';
+  return isLocalHost ? 'http://localhost:8787/api' : defaultBackendApiBase;
 }
 
 const backendApiBase = getBackendApiBase();
@@ -148,6 +149,26 @@ function safeSetLocalStorage(key, value) {
   }
 }
 
+function syncSharedSnapshotToBackend() {
+  if (!backendApiBase) return false;
+  try {
+    const store = {};
+    sharedStorageKeys.forEach((key) => {
+      const value = localStorage.getItem(key);
+      if (value !== null) {
+        store[key] = value;
+      }
+    });
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', `${backendApiBase}/snapshot`, false);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.send(JSON.stringify({ store }));
+    return xhr.status >= 200 && xhr.status < 300;
+  } catch {
+    return false;
+  }
+}
+
 async function requestBackend(path, options = {}) {
   if (!backendApiBase) return null;
   try {
@@ -166,11 +187,16 @@ async function requestBackend(path, options = {}) {
 }
 
 async function pushSharedKeyToBackend(key, rawValue) {
-  const response = await requestBackend(`/store/${encodeURIComponent(key)}`, {
-    method: 'PUT',
-    body: JSON.stringify({ value: rawValue })
-  });
-  return Boolean(response);
+  if (!backendApiBase) return false;
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', `${backendApiBase}/store/${encodeURIComponent(key)}`, false);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.send(JSON.stringify({ value: rawValue }));
+    return xhr.status >= 200 && xhr.status < 300;
+  } catch {
+    return false;
+  }
 }
 
 async function fetchBackendSnapshot() {
@@ -443,6 +469,7 @@ function loadAuthUsers() {
 
 function saveAuthUsers() {
   safeSetLocalStorage(authUsersKey, JSON.stringify(authUsers));
+  syncSharedSnapshotToBackend();
 }
 
 function loadPasswordResetRequests() {
@@ -1088,6 +1115,7 @@ function saveState() {
   safeSetLocalStorage(storageKey, JSON.stringify(persistableState));
   safeSetLocalStorage(availabilityInboxKey, JSON.stringify(state.availabilityRequests));
   safeSetLocalStorage(availabilityRequestsKey, JSON.stringify(state.availabilityRequests));
+  syncSharedSnapshotToBackend();
 }
 
 function getFilteredAvailabilityRequests(requests) {
