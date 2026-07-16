@@ -67,7 +67,7 @@ If Render build fails:
 3. In logs, confirm these lines appear:
 	- `npm install` running at the repo root
 	- `npm start`
-	- `Scheduler backend running on http://localhost:<port>`
+	- `Scheduler backend running on http://localhost:<port>` from [server.js](server.js)
 4. If logs still fail, recreate the Blueprint service from the same repo so Render re-reads `render.yaml`.
 
 Render fallback (Docker, most reliable):
