@@ -12,6 +12,7 @@ const passwordResetRequestsKey = 'agent-scheduler-password-reset-requests-v1';
 const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
 const emailDeliverySettingsKey = 'agent-scheduler-email-delivery-settings-v1';
 const backendUrlKey = 'agent-scheduler-backend-url-v1';
+const fixedEmailSenderName = 'Audience Services Scheduling';
 const emailDeliveryProviders = ['generic', 'sendgrid', 'mailgun'];
 const shiftStatuses = {
   draft: 'draft',
@@ -133,7 +134,7 @@ const defaultEmailDeliverySettings = {
   webhookUrl: '',
   authToken: '',
   fromEmail: 'no-reply@scheduler.local',
-  fromName: 'Agent Scheduler'
+  fromName: fixedEmailSenderName
 };
 let emailDeliverySettings = loadEmailDeliverySettings();
 let availabilitySubmitFallbackBound = false;
@@ -532,7 +533,7 @@ function loadEmailDeliverySettings() {
       webhookUrl: normalizeWebhookUrl(parsed?.webhookUrl),
       authToken: String(parsed?.authToken || '').trim(),
       fromEmail: normalizeEmail(parsed?.fromEmail || defaultEmailDeliverySettings.fromEmail),
-      fromName: String(parsed?.fromName || defaultEmailDeliverySettings.fromName).trim() || defaultEmailDeliverySettings.fromName
+      fromName: fixedEmailSenderName
     };
   } catch {
     return { ...defaultEmailDeliverySettings };
@@ -547,7 +548,7 @@ function saveEmailDeliverySettings(nextSettings) {
     webhookUrl: normalizeWebhookUrl(nextSettings?.webhookUrl),
     authToken: String(nextSettings?.authToken || '').trim(),
     fromEmail: normalizeEmail(nextSettings?.fromEmail || defaultEmailDeliverySettings.fromEmail),
-    fromName: String(nextSettings?.fromName || defaultEmailDeliverySettings.fromName).trim() || defaultEmailDeliverySettings.fromName
+    fromName: fixedEmailSenderName
   };
   safeSetLocalStorage(emailDeliverySettingsKey, JSON.stringify(emailDeliverySettings));
 }
@@ -1832,7 +1833,8 @@ function renderProfilePage(currentUser) {
                 <input name="webhookUrl" type="url" placeholder="Webhook URL (https://...)" value="${escapeHtml(emailDeliverySettings.webhookUrl || '')}" />
                 <input name="authToken" type="password" placeholder="Auth token (supports Bearer/BASIC prefix)" value="${escapeHtml(emailDeliverySettings.authToken || '')}" autocomplete="off" />
                 <input name="fromEmail" type="email" placeholder="From email" value="${escapeHtml(emailDeliverySettings.fromEmail || '')}" />
-                <input name="fromName" placeholder="From name" value="${escapeHtml(emailDeliverySettings.fromName || '')}" />
+                <input name="fromName" value="${escapeHtml(fixedEmailSenderName)}" readonly />
+                <div class="muted">Sender name is fixed to ${escapeHtml(fixedEmailSenderName)} for all outgoing emails.</div>
                 <div class="row">
                   <button type="submit">Save email settings</button>
                   <button type="button" id="send-test-email" class="secondary">Send test email</button>
@@ -1930,7 +1932,6 @@ function renderProfilePage(currentUser) {
       const webhookUrl = normalizeWebhookUrl(formData.get('webhookUrl'));
       const authToken = formData.get('authToken')?.toString() || '';
       const fromEmail = normalizeEmail(formData.get('fromEmail'));
-      const fromName = formData.get('fromName')?.toString().trim() || defaultEmailDeliverySettings.fromName;
 
       if (enabled && !webhookUrl) {
         alert('Webhook URL is required when delivery is enabled.');
@@ -1951,7 +1952,7 @@ function renderProfilePage(currentUser) {
         webhookUrl,
         authToken,
         fromEmail,
-        fromName
+        fromName: fixedEmailSenderName
       });
       alert('Email delivery settings saved.');
       render();
