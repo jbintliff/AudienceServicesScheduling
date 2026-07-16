@@ -123,6 +123,7 @@ let authUsers = loadAuthUsers();
 let currentSession = loadSession();
 let draggedShiftId = null;
 let copiedShiftTemplate = null;
+let selectedCalendarShiftIds = new Set();
 let memoryAvailabilityInbox = [];
 let memoryEmailOutbox = [];
 const defaultEmailDeliverySettings = {
@@ -1603,6 +1604,9 @@ function renderCalendarPage(currentUser) {
     ? baseCalendarShifts.filter((shift) => shift.agentId === viewAgent?.id)
     : baseCalendarShifts;
   const agentViewShifts = getAgentViewShifts();
+  const visibleShiftIdSet = new Set(visibleCalendarShifts.map((shift) => Number(shift.id)));
+  selectedCalendarShiftIds = new Set(Array.from(selectedCalendarShiftIds).filter((id) => visibleShiftIdSet.has(Number(id))));
+  const selectedShiftCount = selectedCalendarShiftIds.size;
 
   root.innerHTML = `
     <div class="app calendar-view">
@@ -1696,6 +1700,7 @@ function renderCalendarPage(currentUser) {
             <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
           `).join('')}
         </div>
+        ${!isAgentView ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row"><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
         <div class="day-row">
           ${days.map((day) => `
             <div class="day-card" data-day="${day}">
@@ -1707,9 +1712,9 @@ function renderCalendarPage(currentUser) {
                 ${!isAgentView ? `<button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button>` : ''}
               </div>
               ${visibleCalendarShifts.filter((shift) => shift.day === day).map((shift) => `
-                <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
+                <div class="shift ${!isAgentView && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
                   <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || roleOptions[0])}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
-                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row" style="margin-top:6px;"><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Duplicate</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
+                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row" style="margin-top:6px;"><button type="button" class="secondary" data-toggle-shift-select="${shift.id}">${selectedCalendarShiftIds.has(Number(shift.id)) ? 'Selected' : 'Select'}</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Duplicate</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
                 </div>
               `).join('')}
             </div>
@@ -3284,11 +3289,54 @@ function bindEvents() {
   document.querySelectorAll('[data-remove-shift]').forEach((button) => {
     button.addEventListener('click', () => {
       const id = Number(button.getAttribute('data-remove-shift'));
+      selectedCalendarShiftIds.delete(id);
       state.shifts = state.shifts.filter((shift) => shift.id !== id);
       state.swapRequests = state.swapRequests.filter((request) => request.shiftId !== id);
       saveState();
       render();
     });
+  });
+
+  document.querySelectorAll('[data-toggle-shift-select]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = Number(button.getAttribute('data-toggle-shift-select'));
+      if (!id) return;
+      if (selectedCalendarShiftIds.has(id)) {
+        selectedCalendarShiftIds.delete(id);
+      } else {
+        selectedCalendarShiftIds.add(id);
+      }
+      render();
+    });
+  });
+
+  document.querySelector('[data-select-visible-shifts]')?.addEventListener('click', () => {
+    selectedCalendarShiftIds = new Set(getFilteredCalendarShifts().map((shift) => Number(shift.id)));
+    render();
+  });
+
+  document.querySelector('[data-clear-selected-shifts]')?.addEventListener('click', () => {
+    selectedCalendarShiftIds.clear();
+    render();
+  });
+
+  document.querySelector('[data-publish-selected-shifts]')?.addEventListener('click', () => {
+    if (selectedCalendarShiftIds.size === 0) return;
+    state.shifts = state.shifts.map((shift) => (selectedCalendarShiftIds.has(Number(shift.id))
+      ? { ...shift, status: shiftStatuses.published }
+      : shift));
+    saveState();
+    render();
+  });
+
+  document.querySelector('[data-remove-selected-shifts]')?.addEventListener('click', () => {
+    if (selectedCalendarShiftIds.size === 0) return;
+    const selectedIds = new Set(Array.from(selectedCalendarShiftIds));
+    state.shifts = state.shifts.filter((shift) => !selectedIds.has(Number(shift.id)));
+    state.swapRequests = state.swapRequests.filter((request) => !selectedIds.has(Number(request.shiftId)));
+    selectedCalendarShiftIds.clear();
+    saveState();
+    render();
   });
 
   document.querySelectorAll('[data-edit-shift]').forEach((button) => {
