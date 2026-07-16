@@ -1605,7 +1605,7 @@ function renderCalendarPage(currentUser) {
   const agentViewShifts = getAgentViewShifts();
 
   root.innerHTML = `
-    <div class="app">
+    <div class="app calendar-view">
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>${isAgentView ? 'My calendar' : 'Calendar view'}</h1>
