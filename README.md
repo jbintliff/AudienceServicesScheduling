@@ -70,6 +70,14 @@ If Render build fails:
 	- `Scheduler backend running on http://localhost:<port>`
 4. If logs still fail, recreate the Blueprint service from the same repo so Render re-reads `render.yaml`.
 
+Render fallback (Docker, most reliable):
+1. In Render, create `New` -> `Web Service` (not Blueprint).
+2. Choose your repo.
+3. Select `Environment: Docker`.
+4. Set `Dockerfile path` to `backend/Dockerfile`.
+5. Deploy.
+6. Verify `https://YOUR-RENDER-URL/api/health` returns `{ "ok": true }`.
+
 ### Vercel
 1. Create a GitHub repository with this folder.
 2. In Vercel, import the repository.
