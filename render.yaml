@@ -3,6 +3,7 @@ services:
     name: scheduling-app-backend
     runtime: node
     plan: free
+    rootDir: backend
     buildCommand: npm install
-    startCommand: node backend/server.js
+    startCommand: npm start
     autoDeploy: true
