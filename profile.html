@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Profile | Agent Scheduling Hub</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #07111f;
+        color: #f4f7fb;
+      }
+      body { margin:0; background:linear-gradient(135deg,#07111f,#14233b); min-height:100vh; }
+      * { box-sizing:border-box; }
+      .app { width:100%; max-width:none; margin:0; padding:24px; }
+      .panel { background: rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); border-radius:16px; padding:18px; backdrop-filter: blur(10px); }
+      h1,h2,h3 { margin-top:0; }
+      .grid { display:grid; gap:16px; grid-template-columns: 1.05fr 0.95fr; }
+      .stack { display:grid; gap:12px; }
+      .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+      input, select, button, textarea { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid #4b5873; background:#0f1729; color:#fff; }
+      button { cursor:pointer; background:#2f6fed; border:none; transition: transform .15s ease; }
+      button:hover { transform: translateY(-1px); }
+      button.secondary { background:#334155; }
+      button.danger { background:#b45309; }
+      button.success { background:#15803d; }
+      .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#1d4ed8; font-size:0.9rem; }
+      .chip { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#334155; font-size:0.85rem; }
+      .agent-list, .shift-list, .template-list, .request-list { display:grid; gap:10px; }
+      .card { border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:12px; background:rgba(2,6,23,0.45); }
+      .muted { color:#94a3b8; font-size:0.9rem; }
+      .stats { display:grid; gap:10px; grid-template-columns: repeat(4, minmax(0,1fr)); }
+      .stat { padding:12px; border-radius:12px; background:#0f1729; }
+      .day-row { display:grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap:8px; }
+      .day-card { min-height:160px; padding:10px; border-radius:12px; background:rgba(15,23,42,0.75); border:1px solid rgba(148,163,184,0.2); }
+      .day-card h4 { margin:0 0 8px; font-size:0.95rem; }
+      .day-card .shift { margin-bottom:6px; padding:6px; border-radius:8px; background:#1d4ed8; font-size:0.85rem; cursor:grab; }
+      .day-card.drag-over { border-color:#60a5fa; box-shadow: inset 0 0 0 1px #60a5fa; }
+      .status-badge { display:inline-flex; padding:4px 8px; border-radius:999px; font-size:0.8rem; background:#1e293b; }
+      .status-badge.pending { background:#92400e; }
+      .status-badge.approved { background:#15803d; }
+      .status-badge.rejected { background:#b91c1c; }
+      @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr 1fr; } .day-row { grid-template-columns: 1fr 1fr; } }
+      @media (max-width: 700px) { .stats { grid-template-columns: 1fr; } .day-row { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body data-page="profile">
+    <script>
+      if (window.location.pathname.toLowerCase().endsWith('/profile.html')) {
+        window.location.replace('index.html?view=profile');
+      }
+    </script>
+    <div id="root"></div>
+    <script>
+      window.__SCHEDULER_API_URL__ = window.__SCHEDULER_API_URL__ || localStorage.getItem('agent-scheduler-backend-url-v1') || '';
+    </script>
+    <script src="app.js?v=20260716-3"></script>
+  </body>
+</html>

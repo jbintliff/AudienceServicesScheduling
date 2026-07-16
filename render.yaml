@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: scheduling-app-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node backend/server.js
+    autoDeploy: true
