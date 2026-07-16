@@ -1213,6 +1213,32 @@ function toMinutes(time) {
   return hours * 60 + minutes;
 }
 
+function getApprovedTimeOffConflicts(agentId, date, start, end) {
+  const normalizedAgentId = Number(agentId);
+  if (!normalizedAgentId || !date || !start || !end) {
+    return [];
+  }
+  const shiftStart = toMinutes(start);
+  const shiftEnd = toMinutes(end);
+  if (!Number.isFinite(shiftStart) || !Number.isFinite(shiftEnd) || shiftEnd <= shiftStart) {
+    return [];
+  }
+
+  return getAllAvailabilityRequests().filter((request) => {
+    if (Number(request.agentId) !== normalizedAgentId) return false;
+    if (request.status !== 'approved') return false;
+    if ((request.unavailableDate || '') !== date) return false;
+
+    const requestStart = request.unavailableStart ? toMinutes(request.unavailableStart) : null;
+    const requestEnd = request.unavailableEnd ? toMinutes(request.unavailableEnd) : null;
+    if (!Number.isFinite(requestStart) || !Number.isFinite(requestEnd) || requestEnd <= requestStart) {
+      return true;
+    }
+
+    return shiftStart < requestEnd && requestStart < shiftEnd;
+  });
+}
+
 function getDayFromDate(dateValue) {
   const parsedDate = new Date(`${dateValue}T00:00:00`);
   if (Number.isNaN(parsedDate.getTime())) {
@@ -2768,6 +2794,7 @@ function bindEvents() {
   document.getElementById('add-shift-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
+    const activeUser = getCurrentUser();
     const agentId = formData.get('agentId') ? Number(formData.get('agentId')) : null;
     const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getAgent(agentId)?.role || roleOptions[0]);
     const start = formData.get('start')?.toString();
@@ -2777,6 +2804,21 @@ function bindEvents() {
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
     if (!day || !agentId || !role || !start || !end || !date) return;
+
+    if (activeUser?.role === 'admin') {
+      const approvedTimeOffConflicts = getApprovedTimeOffConflicts(agentId, date, start, end);
+      if (approvedTimeOffConflicts.length > 0) {
+        const firstConflict = approvedTimeOffConflicts[0];
+        const conflictWindow = formatTimeRange(firstConflict.unavailableStart || start, firstConflict.unavailableEnd || end);
+        const shouldContinue = confirm(
+          `${getAgent(agentId)?.name || 'This agent'} has approved time off on ${date} (${conflictWindow}).\n\nDo you still want to schedule this shift?`
+        );
+        if (!shouldContinue) {
+          return;
+        }
+      }
+    }
+
     state.shifts.push({ id: createId(), day, date, agentId, role, start, end, durationHours: getDurationHours(start, end), location, status: shiftStatuses.draft });
     saveState();
     render();
