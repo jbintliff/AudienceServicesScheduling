@@ -1422,8 +1422,7 @@ function renderCalendarPage(currentUser) {
           <p class="muted">${isAgentView ? 'Review your assigned shifts and request swaps.' : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
         </div>
         <div class="row">
-          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
-          ${isAgentView ? '<a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>' : ''}
+          ${isAgentView ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>' : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>'}
           ${!isAgentView ? '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a>' : ''}
           ${!isAgentView ? '<a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>' : ''}
           ${!isAgentView ? '<a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>' : ''}
@@ -1852,7 +1851,7 @@ function renderAgentRequestsPage(currentUser) {
           <p class="muted">Your approved unavailability and completed swap requests.</p>
         </div>
         <div class="row">
-          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to scheduling</button></a>
+          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>
           <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a>
           <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>
@@ -2179,30 +2178,6 @@ function renderAvailabilityRequestsPage(currentUser) {
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
-        <h2>Swap requests</h2>
-        <div class="request-list" style="margin-top:12px;">
-          ${visibleSwapRequests.map((request) => {
-            const fromAgent = getAgent(request.fromAgentId)?.name || 'Unknown';
-            const toAgent = getAgent(request.toAgentId)?.name || 'Unknown';
-            const shiftSummary = getShiftSummary(state.shifts.find((shift) => shift.id === request.shiftId) || {});
-            return `
-              <div class="card" style="border-left:4px solid ${request.status === 'completed' ? '#15803d' : request.status === 'rejected' ? '#b91c1c' : '#fef08a'};">
-                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
-                  <div>
-                    <strong>${escapeHtml(fromAgent)} → ${escapeHtml(toAgent)}</strong>
-                    <div class="muted">Shift: ${escapeHtml(shiftSummary)}</div>
-                    <div class="muted">Approval state: ${escapeHtml(getSwapApprovalText(request))}</div>
-                    <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
-                  </div>
-                  <span class="status-badge ${request.status || 'pending'}">${request.status || 'pending'}</span>
-                </div>
-              </div>
-            `;
-          }).join('') || '<div class="muted">No swap requests yet.</div>'}
-        </div>
-      </div>
-
-      <div class="panel" style="margin-bottom:16px;">
         <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px;">
           <h2 style="margin:0;">Request calendar (${escapeHtml(calendarData.label)})</h2>
           <input id="availability-calendar-month" type="month" value="${escapeHtml(selectedMonth)}" />
@@ -2260,6 +2235,30 @@ function renderAvailabilityRequestsPage(currentUser) {
                 </div>` : ''}
             </div>
           `).join('') || '<div class="muted">No unavailability requests yet.</div>'}
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <h2>Swap requests</h2>
+        <div class="request-list" style="margin-top:12px;">
+          ${visibleSwapRequests.map((request) => {
+            const fromAgent = getAgent(request.fromAgentId)?.name || 'Unknown';
+            const toAgent = getAgent(request.toAgentId)?.name || 'Unknown';
+            const shiftSummary = getShiftSummary(state.shifts.find((shift) => shift.id === request.shiftId) || {});
+            return `
+              <div class="card" style="border-left:4px solid ${request.status === 'completed' ? '#15803d' : request.status === 'rejected' ? '#b91c1c' : '#fef08a'};">
+                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+                  <div>
+                    <strong>${escapeHtml(fromAgent)} → ${escapeHtml(toAgent)}</strong>
+                    <div class="muted">Shift: ${escapeHtml(shiftSummary)}</div>
+                    <div class="muted">Approval state: ${escapeHtml(getSwapApprovalText(request))}</div>
+                    <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
+                  </div>
+                  <span class="status-badge ${request.status || 'pending'}">${request.status || 'pending'}</span>
+                </div>
+              </div>
+            `;
+          }).join('') || '<div class="muted">No swap requests yet.</div>'}
         </div>
       </div>
     </div>
@@ -2357,7 +2356,7 @@ function render() {
         </div>
         <div class="row">
           ${isAgentView
-            ? '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>'
+            ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>'
             : '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a><a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a><a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a><a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>'}
           ${!isAgentView ? '<button id="export-data-btn" class="secondary">Export JSON</button>' : ''}
           ${!isAgentView ? `<label class="secondary" style="display:inline-flex; align-items:center; padding:10px 12px; border-radius:10px; cursor:pointer;">
