@@ -3,7 +3,7 @@ services:
     name: scheduling-app-backend
     runtime: node
     plan: free
-    buildCommand: npm install --prefix backend
-    startCommand: npm start --prefix backend
+    buildCommand: npm install
+    startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true

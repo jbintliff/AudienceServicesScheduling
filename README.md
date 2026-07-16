@@ -62,10 +62,10 @@ This project is now structured as a static app that can be published directly.
 4. Verify backend health at `https://YOUR-RENDER-URL/api/health`.
 
 If Render build fails:
-1. Confirm the latest repo includes `backend/package.json` and `render.yaml` with `rootDir: backend`.
+1. Confirm the latest repo includes the root `package.json` and `render.yaml` that uses root-level `npm install` and `npm start`.
 2. In Render, open your service and click `Manual Deploy` -> `Deploy latest commit`.
 3. In logs, confirm these lines appear:
-	- `npm install` running inside `/opt/render/project/src/backend`
+	- `npm install` running at the repo root
 	- `npm start`
 	- `Scheduler backend running on http://localhost:<port>`
 4. If logs still fail, recreate the Blueprint service from the same repo so Render re-reads `render.yaml`.
