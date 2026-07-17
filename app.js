@@ -976,15 +976,29 @@ function sendAgentInviteEmail(agentUser, agentName, temporaryPassword = '') {
     return null;
   }
   const signInLink = getAppLoginUrl();
+  const passwordResetRequests = loadPasswordResetRequests();
+  const token = createResetToken();
+  const resetLink = getResetLink(token);
+  passwordResetRequests.push({
+    id: createId(),
+    token,
+    userId: agentUser.id,
+    email: normalizeEmail(agentUser.email),
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
+    used: false
+  });
+  savePasswordResetRequests(passwordResetRequests);
   const inviteTempPassword = String(temporaryPassword || agentUser.password || '').trim();
   const inviteMessage = sendEmailNotification({
     to: normalizeEmail(agentUser.email),
     subject: 'You have been invited to Agent Scheduler',
-    body: `Hi ${agentName || 'Agent'}, your agent account is ready.\n\nTemporary password: ${inviteTempPassword || '(not available)'}\nSign in: ${signInLink}\n\nAfter your first sign in, you will be prompted to create your own password.`,
+    body: `Hi ${agentName || 'Agent'}, your agent account is ready.\n\nTemporary password: ${inviteTempPassword || '(not available)'}\nSign in: ${signInLink}\n\nIf the sign-in link does not load, use this direct setup link instead: ${resetLink}\n\nAfter your first sign in, you will be prompted to create your own password.`,
     type: 'agent-invite'
   });
   return {
     signInLink,
+    resetLink,
     temporaryPassword: inviteTempPassword,
     deliveryStatus: inviteMessage?.deliveryStatus || 'local-only'
   };
@@ -1041,12 +1055,24 @@ function getAppLoginUrl() {
     const url = new URL(window.location.href);
     url.search = '';
     url.hash = '';
-    if (!url.pathname || url.pathname === '/') {
-      url.pathname = '/index.html';
+    if (!url.pathname || url.pathname.endsWith('/')) {
+      url.pathname = `${url.pathname || '/'}index.html`.replace(/\/+/g, '/');
+    }
+    if (String(url.href || '').startsWith('about:blank')) {
+      throw new Error('Invalid runtime URL for login link generation.');
     }
     return url.toString();
   } catch {
-    return window.location.href.split('?')[0];
+    try {
+      const appScript = document.querySelector('script[src*="app.js"]');
+      const scriptSrc = appScript?.getAttribute('src') || '';
+      if (scriptSrc) {
+        return new URL('index.html', scriptSrc).toString();
+      }
+    } catch {
+      // Fall through to final fallback.
+    }
+    return `${window.location.origin || ''}/index.html`;
   }
 }
 
@@ -1213,7 +1239,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       }
 
       authUsers = authUsers.map((user) => user.id === Number(matchingRequest.userId)
-        ? { ...user, password: newPassword }
+        ? { ...user, password: newPassword, mustChangePassword: false }
         : user);
       saveAuthUsers();
 
