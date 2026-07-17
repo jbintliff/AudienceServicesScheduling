@@ -87,6 +87,7 @@ const defaultState = {
   ],
   swapRequests: [],
   availabilityRequests: [],
+  blackoutDates: [],
   roleColors: {},
   ui: {
     agentSearch: '',
@@ -1075,6 +1076,7 @@ function createDefaultState() {
     shifts: defaultState.shifts.map((shift) => ({ ...shift })),
     swapRequests: defaultState.swapRequests.map((request) => ({ ...request })),
     availabilityRequests: defaultState.availabilityRequests.map((request) => ({ ...request })),
+    blackoutDates: [...defaultState.blackoutDates],
     roleColors: { ...defaultState.roleColors },
     ui: {
       agentSearch: '',
@@ -1145,6 +1147,25 @@ function parseCurrencyAmount(value) {
   if (!normalized) return 0;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function normalizeBlackoutDates(value) {
+  const source = Array.isArray(value)
+    ? value
+    : String(value || '').split(/[\s,]+/);
+  const uniqueDates = new Set();
+  source.forEach((item) => {
+    const normalized = String(item || '').trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return;
+    uniqueDates.add(normalized);
+  });
+  return Array.from(uniqueDates).sort((left, right) => left.localeCompare(right));
+}
+
+function isBlackoutDate(dateValue) {
+  const normalizedDate = String(dateValue || '').trim().slice(0, 10);
+  if (!normalizedDate) return false;
+  return normalizeBlackoutDates(state.blackoutDates).includes(normalizedDate);
 }
 
 function normalizeTemplates(templates) {
@@ -1230,6 +1251,7 @@ function loadState() {
       availabilityRequests: mergeAvailabilityRequests(
         Array.isArray(parsed.availabilityRequests) ? parsed.availabilityRequests : createDefaultState().availabilityRequests
       ),
+      blackoutDates: normalizeBlackoutDates(parsed.blackoutDates),
       roleColors: parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : createDefaultState().roleColors,
       ui: {
         agentSearch: parsed.ui?.agentSearch || '',
@@ -2113,6 +2135,15 @@ function renderProfilePage(currentUser) {
                 <div class="muted">Current backend: ${escapeHtml(backendApiBase || 'Not configured (local browser storage only)')}</div>
               </form>
             </div>
+
+            <div class="panel">
+              <h2>Blackout dates</h2>
+              <p class="muted">Agents cannot submit time-off requests for these dates. Enter one date per line.</p>
+              <form id="admin-blackout-dates-form" class="stack" style="margin-top:10px;">
+                <textarea name="blackoutDates" rows="6" placeholder="2026-12-24&#10;2026-12-25">${escapeHtml(normalizeBlackoutDates(state.blackoutDates).join('\n'))}</textarea>
+                <button type="submit">Save blackout dates</button>
+              </form>
+            </div>
           </div>
         </div>
       </div>
@@ -2249,6 +2280,15 @@ function renderProfilePage(currentUser) {
       localStorage.removeItem(backendUrlKey);
       alert('Backend URL cleared. The app will reload with local browser storage mode.');
       window.location.reload();
+    });
+
+    document.getElementById('admin-blackout-dates-form')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      state.blackoutDates = normalizeBlackoutDates(formData.get('blackoutDates'));
+      saveState();
+      alert('Blackout dates saved. Agents cannot submit time-off requests for those dates.');
+      render();
     });
 
     document.getElementById('logout-btn')?.addEventListener('click', () => {
@@ -3237,6 +3277,12 @@ function submitAvailabilityRequest(formElement) {
     : { dates: [unavailableDate], truncated: false };
   if (!recurrencePlan.dates.length) {
     alert('No recurring dates were generated. Make sure the end date is on or after the start date.');
+    return false;
+  }
+
+  const blockedBlackoutDates = recurrencePlan.dates.filter((dateValue) => isBlackoutDate(dateValue));
+  if (blockedBlackoutDates.length > 0) {
+    alert('cannot submit due to blackout dates. please check in with your manager directly');
     return false;
   }
 
