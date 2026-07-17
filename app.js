@@ -9,12 +9,13 @@ const availabilityRequestsKey = 'agent-scheduler-availability-requests-v1';
 const availabilityInboxKey = 'agent-scheduler-availability-inbox-v1';
 const availabilityRequestLedgerKey = 'agent-scheduler-availability-ledger-v1';
 const passwordResetRequestsKey = 'agent-scheduler-password-reset-requests-v1';
+const rememberedLoginKey = 'agent-scheduler-remembered-login-v1';
 const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
 const emailDeliverySettingsKey = 'agent-scheduler-email-delivery-settings-v1';
 const backendUrlKey = 'agent-scheduler-backend-url-v1';
 const syncStatusKey = 'agent-scheduler-sync-status-v1';
 const uiStateKey = 'agent-scheduler-ui-state-v1';
-const fixedEmailSenderName = 'Audience Services Scheduling';
+const fixedEmailSenderName = 'Audience Services Manager';
 const emailDeliveryProviders = ['generic', 'sendgrid', 'mailgun'];
 const shiftStatuses = {
   draft: 'draft',
@@ -691,6 +692,47 @@ function savePasswordResetRequests(requests) {
   safeSetLocalStorage(passwordResetRequestsKey, JSON.stringify(requests));
 }
 
+function loadRememberedLogin() {
+  try {
+    const saved = localStorage.getItem(rememberedLoginKey);
+    if (!saved) return { email: '', password: '' };
+    const parsed = JSON.parse(saved);
+    return {
+      email: normalizeEmail(parsed?.email || ''),
+      password: String(parsed?.password || '')
+    };
+  } catch {
+    return { email: '', password: '' };
+  }
+}
+
+function saveRememberedLogin(email, password, shouldRemember) {
+  if (!shouldRemember) {
+    localStorage.removeItem(rememberedLoginKey);
+    return;
+  }
+  const normalizedEmail = normalizeEmail(email);
+  const passwordValue = String(password || '');
+  if (!normalizedEmail || !passwordValue) {
+    localStorage.removeItem(rememberedLoginKey);
+    return;
+  }
+  localStorage.setItem(rememberedLoginKey, JSON.stringify({
+    email: normalizedEmail,
+    password: passwordValue
+  }));
+}
+
+function syncRememberedLoginPassword(user, nextPassword) {
+  const rememberedLogin = loadRememberedLogin();
+  const rememberedEmail = normalizeEmail(rememberedLogin.email);
+  const userEmail = normalizeEmail(user?.email);
+  if (!rememberedEmail || !userEmail || rememberedEmail !== userEmail) {
+    return;
+  }
+  saveRememberedLogin(userEmail, nextPassword, true);
+}
+
 function loadEmailOutbox() {
   try {
     const saved = localStorage.getItem(emailOutboxKey);
@@ -1045,6 +1087,10 @@ function getUserDisplayName(user) {
 }
 
 function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
+  const rememberedLogin = loadRememberedLogin();
+  const rememberedEmail = rememberedLogin.email || '';
+  const rememberedPassword = rememberedLogin.password || '';
+  const shouldPrefillRememberedLogin = Boolean(rememberedEmail && rememberedPassword);
   const query = new URLSearchParams(window.location.search);
   const resetToken = query.get('resetToken');
   if (resetToken) {
@@ -1144,10 +1190,15 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
         ${errorMessage ? `<div class="card" style="border-color:#ef4444; margin-bottom:12px;">${escapeHtml(errorMessage)}</div>` : ''}
         ${infoMessage ? `<div class="card" style="border-color:#16a34a; margin-bottom:12px;">${escapeHtml(infoMessage)}${resetLink ? `<div style="margin-top:8px;"><a href="${escapeHtml(resetLink)}" style="color:#93c5fd;">Open reset link</a></div>` : ''}</div>` : ''}
         <form id="login-form" class="stack">
-          <input name="email" type="email" placeholder="Email" required autocomplete="email" />
-          <input name="password" type="password" placeholder="Password" required autocomplete="current-password" />
+          <input name="email" type="email" placeholder="Email" required autocomplete="email" value="${escapeHtml(rememberedEmail)}" />
+          <input name="password" type="password" placeholder="Password" required autocomplete="current-password" value="${escapeHtml(rememberedPassword)}" />
+          <label class="row" style="justify-content:flex-start; align-items:center; gap:8px;">
+            <input name="savePassword" type="checkbox" value="1" ${shouldPrefillRememberedLogin ? 'checked' : ''} />
+            <span>Save password on this device</span>
+          </label>
           <button type="submit">Log in</button>
         </form>
+        ${shouldPrefillRememberedLogin ? '<button id="clear-saved-login" type="button" class="secondary" style="margin-top:10px;">Clear saved password on this device</button>' : ''}
         <form id="forgot-password-form" class="stack" style="margin-top:10px;">
           <input name="email" type="email" placeholder="Forgot password? Enter your email" required autocomplete="email" />
           <button type="submit" class="secondary">Send reset email</button>
@@ -1162,6 +1213,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     const formData = new FormData(event.currentTarget);
     const email = normalizeEmail(formData.get('email'));
     const password = formData.get('password')?.toString() || '';
+    const shouldRememberLogin = Boolean(formData.get('savePassword'));
     const foundUser = authUsers.find((user) => normalizeEmail(user.email) === email && user.password === password);
     if (!foundUser) {
       renderLoginPage('Invalid email or password.');
@@ -1175,11 +1227,17 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       renderLoginPage('This account is not linked to a valid agent record.');
       return;
     }
+    saveRememberedLogin(email, password, shouldRememberLogin);
     currentSession = { userId: foundUser.id };
     saveSession();
     applyAccessForUser(foundUser);
     saveUiState();
     render();
+  });
+
+  document.getElementById('clear-saved-login')?.addEventListener('click', () => {
+    saveRememberedLogin('', '', false);
+    renderLoginPage('', 'Saved login was cleared on this device.');
   });
 
   document.getElementById('forgot-password-form')?.addEventListener('submit', (event) => {
@@ -1258,6 +1316,7 @@ function renderFirstLoginPasswordSetupPage(currentUser) {
         }
       : user);
     saveAuthUsers();
+    syncRememberedLoginPassword(currentUser, newPassword);
     render();
   });
 }
@@ -3278,6 +3337,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           <span class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(0,0,0,0.2);">Pending</span>
           <span class="chip" style="background:#7AACAF; color:#17383B; border:1px solid rgba(255,255,255,0.2);">Approved</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
+          <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
         </div>
         <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
           ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayLabel) => `<div class="muted" style="text-align:center;">${dayLabel}</div>`).join('')}
@@ -3287,9 +3347,11 @@ function renderAvailabilityRequestsPage(currentUser) {
             if (cell.empty) {
               return '<div class="card" style="min-height:96px; opacity:0.25;"></div>';
             }
+            const blackoutDate = isBlackoutDate(cell.date);
             return `
-              <div class="card" style="min-height:96px; padding:8px;">
+              <div class="card" style="min-height:96px; padding:8px; ${blackoutDate ? 'border-color:#AB5C57; box-shadow:inset 0 0 0 1px rgba(171,92,87,0.55);' : ''}">
                 <div style="font-weight:600; margin-bottom:6px;">${cell.day}</div>
+                ${blackoutDate ? '<div class="chip" style="margin-bottom:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>' : ''}
                 <div style="display:flex; flex-direction:column; gap:4px;">
                   ${(cell.requests || []).slice(0, 3).map((request) => `
                     <div title="${escapeHtml((getAgent(request.agentId)?.name || 'Unknown'))} - ${escapeHtml(request.status || 'pending')}" style="padding:3px 6px; border-radius:999px; font-size:12px; ${getAvailabilityStatusStyles(request.status || 'pending')}">
