@@ -916,6 +916,24 @@ async function sendEmailThroughWebhook(message) {
   }
 }
 
+function retryUndeliveredOutboxEmails() {
+  const settings = loadEmailDeliverySettings();
+  if (!settings.enabled || !settings.webhookUrl) {
+    return { attempted: 0, skipped: true };
+  }
+  const retryableStatuses = new Set(['local-only', 'failed', 'pending']);
+  const retryableMessages = loadEmailOutbox().filter((message) => retryableStatuses.has(String(message.deliveryStatus || 'local-only')));
+  retryableMessages.forEach((message) => {
+    updateOutboxMessageById(message.id, {
+      deliveryStatus: 'pending',
+      deliveryProvider: settings.provider || 'generic',
+      deliveryError: ''
+    });
+    void sendEmailThroughWebhook(message);
+  });
+  return { attempted: retryableMessages.length, skipped: false };
+}
+
 function sendEmailNotification({ to, subject, body, type }) {
   const settings = loadEmailDeliverySettings();
   const shouldAttemptDelivery = settings.enabled && Boolean(settings.webhookUrl);
@@ -2441,6 +2459,7 @@ function renderProfilePage(currentUser) {
                 <div class="row">
                   <button type="submit">Save email settings</button>
                   <button type="button" id="send-test-email" class="secondary">Send test email</button>
+                  <button type="button" id="retry-undelivered-email" class="secondary">Retry undelivered emails</button>
                 </div>
               </form>
             </div>
@@ -2661,11 +2680,23 @@ function renderProfilePage(currentUser) {
         fromEmail,
         fromName: fixedEmailSenderName
       });
-      alert('Email delivery settings saved.');
+      const retryResult = retryUndeliveredOutboxEmails();
+      if (retryResult.skipped) {
+        alert('Email delivery settings saved. Delivery is still disabled or missing a webhook URL, so queued emails remain local-only.');
+      } else if (retryResult.attempted > 0) {
+        alert(`Email delivery settings saved. Retrying ${retryResult.attempted} undelivered email${retryResult.attempted === 1 ? '' : 's'}. Check Email outbox for results.`);
+      } else {
+        alert('Email delivery settings saved. There were no undelivered emails to retry.');
+      }
       render();
     });
 
     document.getElementById('send-test-email')?.addEventListener('click', () => {
+      const settings = loadEmailDeliverySettings();
+      if (!settings.enabled || !settings.webhookUrl) {
+        alert('Webhook delivery is not enabled. Save Email delivery settings with a valid webhook URL first.');
+        return;
+      }
       const activeUser = getCurrentUser();
       if (!activeUser?.email) {
         alert('No admin email is set for this account.');
@@ -2678,6 +2709,20 @@ function renderProfilePage(currentUser) {
         type: 'test-email'
       });
       alert('Test email queued. Check Email outbox for delivery status.');
+    });
+
+    document.getElementById('retry-undelivered-email')?.addEventListener('click', () => {
+      const retryResult = retryUndeliveredOutboxEmails();
+      if (retryResult.skipped) {
+        alert('Webhook delivery is not enabled. Save Email delivery settings with a valid webhook URL first.');
+        return;
+      }
+      if (retryResult.attempted === 0) {
+        alert('No undelivered emails were found to retry.');
+        return;
+      }
+      alert(`Retry started for ${retryResult.attempted} undelivered email${retryResult.attempted === 1 ? '' : 's'}. Check Email outbox for updated status.`);
+      render();
     });
 
     document.querySelectorAll('[data-resend-admin-invite]').forEach((button) => {
