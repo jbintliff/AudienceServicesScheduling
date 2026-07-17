@@ -68,9 +68,9 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', team: 'Audience Services Representative', role: 'In-person', payRate: 24, minHours: 0, maxHours: 40, availability: 'Available' },
-    { id: 2, name: 'Luis', team: 'Audience Services Associate', role: 'WFH', payRate: 18, minHours: 0, maxHours: 40, availability: 'Available' },
-    { id: 3, name: 'Nina', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, minHours: 0, maxHours: 40, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, minHours: 0, maxHours: 40, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, minHours: 0, maxHours: 40, availability: 'Available' },
+    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, minHours: 0, maxHours: 40, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -1311,6 +1311,15 @@ function getBlackoutDateMarker(dateValue) {
   return '<div class="chip" style="margin-top:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>';
 }
 
+function getAgentAccountEmail(agentId) {
+  const agent = getAgent(agentId);
+  const agentEmail = normalizeEmail(agent?.email || '');
+  if (agentEmail) {
+    return agentEmail;
+  }
+  return normalizeEmail(getUserByAgentId(agentId)?.email || '');
+}
+
 function normalizeTemplates(templates) {
   const defaultTemplates = createDefaultState().templates;
   if (!Array.isArray(templates) || templates.length === 0) {
@@ -1340,13 +1349,18 @@ function loadState() {
       return createDefaultState();
     }
     const parsed = JSON.parse(saved);
+    const authUsersForLookup = loadAuthUsers();
     const normalizedAgents = Array.isArray(parsed.agents)
       ? parsed.agents.map((agent) => {
           const minHours = normalizeMinHours(agent.minHours);
           const maxHoursRaw = typeof agent.maxHours === 'undefined' ? 40 : agent.maxHours;
           const maxHours = normalizeMaxHours(maxHoursRaw);
+          const linkedUserEmail = normalizeEmail(
+            authUsersForLookup.find((user) => user.role === 'agent' && Number(user.agentId) === Number(agent.id))?.email || ''
+          );
           return {
             ...agent,
+            email: normalizeEmail(agent.email || linkedUserEmail),
             team: normalizeTeamLabel(agent.team),
             role: normalizeRoleLabel(agent.role),
             minHours,
@@ -3087,13 +3101,13 @@ function renderAgentsPage(currentUser) {
                     <div class="muted">Assigned hours: ${getAssignedHours(agent.id)} hrs</div>
                     <div class="muted">Minimum-hours credit: ${getMinimumHoursCredit(agent.id)} hrs (shifts + approved PTO)</div>
                     <div class="muted">Hours target: min ${escapeHtml(agent.minHours ?? 0)} / max ${escapeHtml(agent.maxHours ?? 'Not set')}</div>
-                    <div class="muted">Email: ${escapeHtml(getUserByAgentId(agent.id)?.email || 'No login email')}</div>
+                    <div class="muted">Email: ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   </div>
                   <button class="danger" data-remove-agent="${agent.id}" type="button">Remove</button>
                 </div>
                 <div class="row" style="gap:8px;">
                   <input name="name" value="${escapeHtml(agent.name)}" required />
-                  <input name="email" type="email" value="${escapeHtml(getUserByAgentId(agent.id)?.email || '')}" placeholder="Email" required />
+                  <input name="email" type="email" value="${escapeHtml(getAgentAccountEmail(agent.id) || '')}" placeholder="Email" required />
                   <select name="team" required>
                     ${teamOptions.map((team) => `<option value="${team}" ${(agent.team || teamOptions[0]) === team ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
                   </select>
@@ -3818,6 +3832,7 @@ function bindEvents() {
     state.agents.push({
       id: agentId,
       name,
+      email,
       team: normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]),
       payRate,
       minHours,
@@ -4230,6 +4245,7 @@ function bindEvents() {
             ...agent,
             id,
             name,
+            email,
             team,
             payRate,
             minHours,
