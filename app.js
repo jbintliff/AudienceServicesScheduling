@@ -90,6 +90,7 @@ const defaultState = {
   ui: {
     agentSearch: '',
     agentSort: 'name',
+    agentRoleFilter: 'All',
     agentsCollapsed: false,
     availabilityRequestsCollapsed: false,
     swapAlertsCollapsed: false,
@@ -982,6 +983,7 @@ function createDefaultState() {
     ui: {
       agentSearch: '',
       agentSort: 'name',
+      agentRoleFilter: 'All',
       agentsCollapsed: false,
       availabilityRequestsCollapsed: false,
       swapAlertsCollapsed: false,
@@ -1112,6 +1114,7 @@ function loadState() {
       ui: {
         agentSearch: parsed.ui?.agentSearch || '',
         agentSort: parsed.ui?.agentSort || 'name',
+        agentRoleFilter: parsed.ui?.agentRoleFilter || 'All',
         agentsCollapsed: Boolean(parsed.ui?.agentsCollapsed),
         availabilityRequestsCollapsed: Boolean(parsed.ui?.availabilityRequestsCollapsed),
         swapAlertsCollapsed: Boolean(parsed.ui?.swapAlertsCollapsed),
@@ -1480,9 +1483,11 @@ function getAvailabilityStats() {
 
 function getFilteredAgents() {
   const search = state.ui.agentSearch.trim().toLowerCase();
+  const selectedRole = String(state.ui.agentRoleFilter || 'All');
   return state.agents.filter((agent) => {
-    if (!search) return true;
-    return [agent.name, agent.team, agent.availability].join(' ').toLowerCase().includes(search);
+    const matchesName = !search || String(agent.name || '').toLowerCase().includes(search);
+    const matchesRole = selectedRole === 'All' || String(agent.role || '') === selectedRole;
+    return matchesName && matchesRole;
   });
 }
 
@@ -1597,6 +1602,7 @@ function importData(file) {
       state.ui = {
         agentSearch: parsed.ui?.agentSearch || '',
         agentSort: parsed.ui?.agentSort || 'name',
+        agentRoleFilter: parsed.ui?.agentRoleFilter || 'All',
         agentsCollapsed: Boolean(parsed.ui?.agentsCollapsed),
         availabilityRequestsCollapsed: Boolean(parsed.ui?.availabilityRequestsCollapsed),
         swapAlertsCollapsed: Boolean(parsed.ui?.swapAlertsCollapsed),
@@ -2298,6 +2304,8 @@ function renderAgentsPage(currentUser) {
 
   const visibleAgents = getFilteredAgents();
   const agentSort = state.ui.agentSort === 'team' ? 'team' : 'name';
+  const selectedAgentRoleFilter = String(state.ui.agentRoleFilter || 'All');
+  const agentRoleOptions = Array.from(new Set(state.agents.map((agent) => String(agent.role || '').trim()).filter(Boolean))).sort((left, right) => left.localeCompare(right));
   const sortedAgents = [...visibleAgents].sort((left, right) => {
     if (agentSort === 'team') {
       const teamCompare = String(left.team || '').localeCompare(String(right.team || ''), undefined, { sensitivity: 'base' });
@@ -2331,6 +2339,10 @@ function renderAgentsPage(currentUser) {
         </div>
         <div class="row" style="justify-content:space-between; margin-bottom:8px;">
           <input id="agent-search" placeholder="Search agents" value="${escapeHtml(state.ui.agentSearch)}" />
+          <select id="agent-role-filter" style="max-width:220px;">
+            <option value="All" ${selectedAgentRoleFilter === 'All' ? 'selected' : ''}>Filter: All roles</option>
+            ${agentRoleOptions.map((role) => `<option value="${escapeHtml(role)}" ${selectedAgentRoleFilter === role ? 'selected' : ''}>Filter: ${escapeHtml(role)}</option>`).join('')}
+          </select>
           <select id="agent-sort" style="max-width:220px;">
             <option value="name" ${agentSort === 'name' ? 'selected' : ''}>Sort: Name (A-Z)</option>
             <option value="team" ${agentSort === 'team' ? 'selected' : ''}>Sort: Team</option>
@@ -2348,11 +2360,11 @@ function renderAgentsPage(currentUser) {
             <button type="submit">Add agent</button>
           </div>
         </form>
-        <div class="agent-list" style="margin-top:12px;">
+        <div class="agent-list" style="margin-top:12px; display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:8px;">
           ${sortedAgents.map((agent) => `
-            <div class="card">
-              <form class="stack" data-update-agent="${agent.id}">
-                <div class="row" style="justify-content:space-between; align-items:flex-start;">
+            <div class="card" style="padding:10px;">
+              <form class="stack" data-update-agent="${agent.id}" style="gap:8px;">
+                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
                     <strong>${escapeHtml(agent.name)}</strong> <span class="chip">${escapeHtml(agent.team || teamOptions[0])}</span>
                     <div class="muted">Assigned hours: ${getAssignedHours(agent.id)} hrs</div>
@@ -2360,7 +2372,7 @@ function renderAgentsPage(currentUser) {
                   </div>
                   <button class="danger" data-remove-agent="${agent.id}" type="button">Remove</button>
                 </div>
-                <div class="row">
+                <div class="row" style="gap:8px;">
                   <input name="name" value="${escapeHtml(agent.name)}" required />
                   <input name="email" type="email" value="${escapeHtml(getUserByAgentId(agent.id)?.email || '')}" placeholder="Email" required />
                   <select name="team" required>
@@ -2368,7 +2380,7 @@ function renderAgentsPage(currentUser) {
                   </select>
                   <input name="payRate" type="text" inputmode="decimal" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" />
                 </div>
-                <div class="row">
+                <div class="row" style="gap:8px; justify-content:flex-end;">
                   <button class="secondary" type="submit">Save agent</button>
                   <button class="secondary" type="button" data-resend-agent-invite="${agent.id}">Resend invite</button>
                 </div>
@@ -3063,6 +3075,12 @@ function bindEvents() {
 
   document.getElementById('agent-search')?.addEventListener('input', (event) => {
     state.ui.agentSearch = event.target.value;
+    saveState();
+    render();
+  });
+
+  document.getElementById('agent-role-filter')?.addEventListener('change', (event) => {
+    state.ui.agentRoleFilter = event.target.value || 'All';
     saveState();
     render();
   });
