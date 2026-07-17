@@ -1491,6 +1491,17 @@ function getFilteredAgents() {
   });
 }
 
+function getTeamBadgeStyle(team) {
+  const normalizedTeam = normalizeTeamLabel(team);
+  if (normalizedTeam === 'Audience Services Representative') {
+    return 'background:#7AACAF; color:#17383B; border:1px solid rgba(23,56,59,0.25);';
+  }
+  if (normalizedTeam === 'Audience Services Associate') {
+    return 'background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);';
+  }
+  return 'background:#C49583; color:#2E2422; border:1px solid rgba(46,36,34,0.2);';
+}
+
 function getCurrentAgentId() {
   const currentId = Number(state.ui.currentAgentId);
   if (currentId && state.agents.some((agent) => Number(agent.id) === currentId)) {
@@ -2366,7 +2377,7 @@ function renderAgentsPage(currentUser) {
               <form class="stack" data-update-agent="${agent.id}" style="gap:8px;">
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
-                    <strong>${escapeHtml(agent.name)}</strong> <span class="chip">${escapeHtml(agent.team || teamOptions[0])}</span>
+                    <strong>${escapeHtml(agent.name)}</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span>
                     <div class="muted">Assigned hours: ${getAssignedHours(agent.id)} hrs</div>
                     <div class="muted">Email: ${escapeHtml(getUserByAgentId(agent.id)?.email || 'No login email')}</div>
                   </div>
