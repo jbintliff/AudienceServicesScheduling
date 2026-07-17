@@ -13,6 +13,7 @@ const rememberedLoginKey = 'agent-scheduler-remembered-login-v1';
 const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
 const emailDeliverySettingsKey = 'agent-scheduler-email-delivery-settings-v1';
 const backendUrlKey = 'agent-scheduler-backend-url-v1';
+const appLoginUrlKey = 'agent-scheduler-app-login-url-v1';
 const syncStatusKey = 'agent-scheduler-sync-status-v1';
 const uiStateKey = 'agent-scheduler-ui-state-v1';
 const fixedEmailSenderName = 'Audience Services Manager';
@@ -29,12 +30,35 @@ const sharedStorageKeys = [
   availabilityInboxKey,
   availabilityRequestLedgerKey,
   passwordResetRequestsKey,
+  appLoginUrlKey,
   emailOutboxKey,
   emailDeliverySettingsKey
 ];
 
 function normalizeBackendUrl(url) {
   return String(url || '').trim().replace(/\/$/, '');
+}
+
+function normalizeAppLoginUrl(url) {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    parsed.hash = '';
+    parsed.search = '';
+    if (!parsed.pathname || parsed.pathname.endsWith('/')) {
+      parsed.pathname = `${parsed.pathname || '/'}index.html`.replace(/\/+/g, '/');
+    }
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+function loadConfiguredAppLoginUrl() {
+  const fromWindow = normalizeAppLoginUrl(window.__SCHEDULER_APP_LOGIN_URL__);
+  if (fromWindow) return fromWindow;
+  return normalizeAppLoginUrl(localStorage.getItem(appLoginUrlKey));
 }
 
 function getBackendApiBase() {
@@ -1051,6 +1075,10 @@ function sendShiftPublishedEmail(shift) {
 }
 
 function getAppLoginUrl() {
+  const configuredUrl = loadConfiguredAppLoginUrl();
+  if (configuredUrl) {
+    return configuredUrl;
+  }
   try {
     const url = new URL(window.location.href);
     url.search = '';
@@ -1058,21 +1086,31 @@ function getAppLoginUrl() {
     if (!url.pathname || url.pathname.endsWith('/')) {
       url.pathname = `${url.pathname || '/'}index.html`.replace(/\/+/g, '/');
     }
-    if (String(url.href || '').startsWith('about:blank')) {
+    const normalizedHref = String(url.href || '').trim();
+    if (!normalizedHref || normalizedHref.startsWith('about:blank') || normalizedHref.startsWith('null/')) {
       throw new Error('Invalid runtime URL for login link generation.');
     }
-    return url.toString();
+    return normalizedHref;
   } catch {
     try {
       const appScript = document.querySelector('script[src*="app.js"]');
       const scriptSrc = appScript?.getAttribute('src') || '';
       if (scriptSrc) {
-        return new URL('index.html', scriptSrc).toString();
+        const fromScript = normalizeAppLoginUrl(new URL('index.html', scriptSrc).toString());
+        if (fromScript) return fromScript;
       }
     } catch {
       // Fall through to final fallback.
     }
-    return `${window.location.origin || ''}/index.html`;
+    const hrefFallback = String(window.location.href || '').split('#')[0].split('?')[0];
+    if (hrefFallback && !hrefFallback.startsWith('about:blank')) {
+      return hrefFallback;
+    }
+    const origin = String(window.location.origin || '').trim();
+    if (origin && origin !== 'null') {
+      return `${origin}/index.html`;
+    }
+    return 'index.html';
   }
 }
 
@@ -2594,6 +2632,19 @@ function renderProfilePage(currentUser) {
             </div>
 
             <div class="panel">
+              <h2>Invite login URL</h2>
+              <p class="muted">Set the exact public URL agents should open for sign in (example: https://your-app.example.com/index.html).</p>
+              <form id="admin-app-login-url-form" class="stack" style="margin-top:10px;">
+                <input name="appLoginUrl" type="url" placeholder="https://your-app.example.com/index.html" value="${escapeHtml(loadConfiguredAppLoginUrl() || getAppLoginUrl())}" />
+                <div class="row">
+                  <button type="submit">Save invite login URL</button>
+                  <button type="button" id="clear-app-login-url" class="secondary">Use current page URL</button>
+                </div>
+                <div class="muted">Current invite login URL: ${escapeHtml(loadConfiguredAppLoginUrl() || getAppLoginUrl())}</div>
+              </form>
+            </div>
+
+            <div class="panel">
               <h2>Blackout dates</h2>
               <p class="muted">Agents cannot submit time-off requests for these dates. Enter one date per line.</p>
               <form id="admin-blackout-dates-form" class="stack" style="margin-top:10px;">
@@ -2946,6 +2997,34 @@ function renderProfilePage(currentUser) {
       localStorage.removeItem(backendUrlKey);
       alert('Backend URL cleared. The app will reload with local browser storage mode.');
       window.location.reload();
+    });
+
+    document.getElementById('admin-app-login-url-form')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      const configuredLoginUrl = normalizeAppLoginUrl(formData.get('appLoginUrl'));
+      if (!configuredLoginUrl) {
+        alert('Enter a valid absolute URL (example: https://your-app.example.com/index.html).');
+        return;
+      }
+      safeSetLocalStorage(appLoginUrlKey, configuredLoginUrl);
+      adminProfileNotice = {
+        type: 'success',
+        text: `Invite login URL saved: ${configuredLoginUrl}`
+      };
+      render();
+    });
+
+    document.getElementById('clear-app-login-url')?.addEventListener('click', () => {
+      localStorage.removeItem(appLoginUrlKey);
+      if (backendApiBase && !isApplyingRemoteSnapshot) {
+        void pushLocalSnapshotToBackend();
+      }
+      adminProfileNotice = {
+        type: 'success',
+        text: `Invite login URL reset to current page URL: ${getAppLoginUrl()}`
+      };
+      render();
     });
 
     document.getElementById('admin-blackout-dates-form')?.addEventListener('submit', (event) => {
@@ -4108,7 +4187,7 @@ function bindEvents() {
     saveState();
     const outboxCount = loadEmailOutbox().length;
     if (inviteResult?.deliveryStatus === 'local-only') {
-      alert(`Agent added. Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || '(not available)'}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}`);
+      alert(`Agent added. Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || '(not available)'}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}\nDirect setup link: ${inviteResult?.resetLink || ''}`);
     } else {
       alert(`Agent added and invitation email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
     }
@@ -4510,7 +4589,7 @@ function bindEvents() {
       const inviteResult = sendAgentInviteEmail(refreshedAgentUser, agent.name, temporaryPassword);
       const outboxCount = loadEmailOutbox().length;
       if (inviteResult?.deliveryStatus === 'local-only') {
-        alert(`Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || temporaryPassword}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}`);
+        alert(`Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || temporaryPassword}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}\nDirect setup link: ${inviteResult?.resetLink || ''}`);
       } else {
         alert(`Invite email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
       }
