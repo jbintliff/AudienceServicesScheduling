@@ -3244,6 +3244,15 @@ function bindEvents() {
   document.querySelectorAll('[data-remove-agent]').forEach((button) => {
     button.addEventListener('click', () => {
       const id = Number(button.getAttribute('data-remove-agent'));
+      const agent = getAgent(id);
+      if (!agent) return;
+      const linkedShiftCount = state.shifts.filter((shift) => Number(shift.agentId) === id).length;
+      const linkedSwapCount = state.swapRequests.filter((request) => Number(request.fromAgentId) === id || Number(request.toAgentId) === id).length;
+      const shouldDelete = confirm(
+        `Delete agent ${agent.name}? This will also remove ${linkedShiftCount} shift${linkedShiftCount === 1 ? '' : 's'} and ${linkedSwapCount} swap request${linkedSwapCount === 1 ? '' : 's'}.`
+      );
+      if (!shouldDelete) return;
+
       state.agents = state.agents.filter((agent) => Number(agent.id) !== id);
       state.shifts = state.shifts.filter((shift) => Number(shift.agentId) !== id);
       state.swapRequests = state.swapRequests.filter((request) => Number(request.fromAgentId) !== id && Number(request.toAgentId) !== id);
@@ -3336,6 +3345,13 @@ function bindEvents() {
   document.querySelectorAll('[data-remove-shift]').forEach((button) => {
     button.addEventListener('click', () => {
       const id = Number(button.getAttribute('data-remove-shift'));
+      const shift = state.shifts.find((item) => Number(item.id) === id);
+      if (!shift) return;
+      const shouldDelete = confirm(
+        `Delete this shift for ${getAgent(shift.agentId)?.name || 'the assigned agent'} on ${shift.date || shift.day || 'selected date'} (${formatTimeRange(shift.start, shift.end)})?`
+      );
+      if (!shouldDelete) return;
+
       selectedCalendarShiftIds.delete(id);
       state.shifts = state.shifts.filter((shift) => shift.id !== id);
       state.swapRequests = state.swapRequests.filter((request) => request.shiftId !== id);
@@ -3387,6 +3403,10 @@ function bindEvents() {
 
   document.querySelector('[data-remove-selected-shifts]')?.addEventListener('click', () => {
     if (selectedCalendarShiftIds.size === 0) return;
+    const selectedCount = selectedCalendarShiftIds.size;
+    const shouldDelete = confirm(`Delete ${selectedCount} selected shift${selectedCount === 1 ? '' : 's'}?`);
+    if (!shouldDelete) return;
+
     const selectedIds = new Set(Array.from(selectedCalendarShiftIds));
     state.shifts = state.shifts.filter((shift) => !selectedIds.has(Number(shift.id)));
     state.swapRequests = state.swapRequests.filter((request) => !selectedIds.has(Number(request.shiftId)));
