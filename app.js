@@ -707,20 +707,24 @@ function loadRememberedLogin() {
 }
 
 function saveRememberedLogin(email, password, shouldRemember) {
-  if (!shouldRemember) {
-    localStorage.removeItem(rememberedLoginKey);
-    return;
+  try {
+    if (!shouldRemember) {
+      localStorage.removeItem(rememberedLoginKey);
+      return;
+    }
+    const normalizedEmail = normalizeEmail(email);
+    const passwordValue = String(password || '');
+    if (!normalizedEmail || !passwordValue) {
+      localStorage.removeItem(rememberedLoginKey);
+      return;
+    }
+    localStorage.setItem(rememberedLoginKey, JSON.stringify({
+      email: normalizedEmail,
+      password: passwordValue
+    }));
+  } catch {
+    // Remembered-login storage failures should never block sign-in.
   }
-  const normalizedEmail = normalizeEmail(email);
-  const passwordValue = String(password || '');
-  if (!normalizedEmail || !passwordValue) {
-    localStorage.removeItem(rememberedLoginKey);
-    return;
-  }
-  localStorage.setItem(rememberedLoginKey, JSON.stringify({
-    email: normalizedEmail,
-    password: passwordValue
-  }));
 }
 
 function syncRememberedLoginPassword(user, nextPassword) {
@@ -1340,8 +1344,9 @@ function renderFirstLoginPasswordSetupPage(currentUser) {
       : user);
     saveAuthUsers();
     saveRememberedLogin(currentUser.email, newPassword, shouldRememberLogin);
-    // After first-login password setup, always return the agent to the dashboard view.
-    window.location.href = window.location.pathname;
+    // Ensure we land on dashboard without a hard reload that can interrupt agent flow.
+    window.history.replaceState({}, '', window.location.pathname);
+    render();
   });
 }
 
