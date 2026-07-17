@@ -12,6 +12,7 @@ const passwordResetRequestsKey = 'agent-scheduler-password-reset-requests-v1';
 const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
 const emailDeliverySettingsKey = 'agent-scheduler-email-delivery-settings-v1';
 const backendUrlKey = 'agent-scheduler-backend-url-v1';
+const syncStatusKey = 'agent-scheduler-sync-status-v1';
 const fixedEmailSenderName = 'Audience Services Scheduling';
 const emailDeliveryProviders = ['generic', 'sendgrid', 'mailgun'];
 const shiftStatuses = {
@@ -129,6 +130,7 @@ let copiedShiftTemplate = null;
 let selectedCalendarShiftIds = new Set();
 let memoryAvailabilityInbox = [];
 let memoryEmailOutbox = [];
+let lastSuccessfulSyncAt = loadLastSuccessfulSyncAt();
 const defaultEmailDeliverySettings = {
   enabled: false,
   provider: 'generic',
@@ -140,6 +142,42 @@ const defaultEmailDeliverySettings = {
 let emailDeliverySettings = loadEmailDeliverySettings();
 let availabilitySubmitFallbackBound = false;
 const root = document.getElementById('root');
+
+function loadLastSuccessfulSyncAt() {
+  try {
+    const saved = localStorage.getItem(syncStatusKey);
+    if (!saved) return '';
+    const parsed = JSON.parse(saved);
+    const at = String(parsed?.at || '');
+    return at ? at : '';
+  } catch {
+    return '';
+  }
+}
+
+function markSyncSuccess() {
+  const nowIso = new Date().toISOString();
+  lastSuccessfulSyncAt = nowIso;
+  try {
+    localStorage.setItem(syncStatusKey, JSON.stringify({ at: nowIso }));
+  } catch {
+    // Ignore storage write errors for sync metadata.
+  }
+}
+
+function getLastSyncStatusText() {
+  if (!backendApiBase) {
+    return 'Sync status: Local-only mode (no shared backend configured).';
+  }
+  if (!lastSuccessfulSyncAt) {
+    return 'Last synced: Waiting for first successful backend sync.';
+  }
+  const syncDate = new Date(lastSuccessfulSyncAt);
+  if (Number.isNaN(syncDate.getTime())) {
+    return 'Last synced: Waiting for first successful backend sync.';
+  }
+  return `Last synced: ${syncDate.toLocaleString()}`;
+}
 
 function safeSetLocalStorage(key, value) {
   try {
@@ -197,7 +235,11 @@ async function pushSharedKeyToBackend(key, rawValue) {
     xhr.open('PUT', `${backendApiBase}/store/${encodeURIComponent(key)}`, false);
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.send(JSON.stringify({ value: rawValue }));
-    return xhr.status >= 200 && xhr.status < 300;
+    const ok = xhr.status >= 200 && xhr.status < 300;
+    if (ok) {
+      markSyncSuccess();
+    }
+    return ok;
   } catch {
     return false;
   }
@@ -264,9 +306,13 @@ async function initializeBackendSync() {
   if (hasRemoteData) {
     applyRemoteSnapshot(remoteStore);
     lastRemoteSnapshotHash = getSnapshotHash(remoteStore);
+    markSyncSuccess();
     syncFromStorage();
   } else if (hasLocalData) {
-    await pushLocalSnapshotToBackend();
+    const pushed = await pushLocalSnapshotToBackend();
+    if (pushed) {
+      markSyncSuccess();
+    }
   }
 }
 
@@ -278,6 +324,7 @@ async function pollBackendSync() {
   if (!nextHash || nextHash === lastRemoteSnapshotHash) return;
   lastRemoteSnapshotHash = nextHash;
   applyRemoteSnapshot(remoteStore);
+  markSyncSuccess();
   syncFromStorage();
   render();
 }
@@ -523,7 +570,6 @@ function loadAuthUsers() {
 
 function saveAuthUsers() {
   safeSetLocalStorage(authUsersKey, JSON.stringify(authUsers));
-  syncSharedSnapshotToBackend();
 }
 
 function loadPasswordResetRequests() {
@@ -1226,7 +1272,6 @@ function saveState() {
   safeSetLocalStorage(storageKey, JSON.stringify(persistableState));
   safeSetLocalStorage(availabilityInboxKey, JSON.stringify(state.availabilityRequests));
   safeSetLocalStorage(availabilityRequestsKey, JSON.stringify(state.availabilityRequests));
-  syncSharedSnapshotToBackend();
 }
 
 function getFilteredAvailabilityRequests(requests) {
@@ -1685,9 +1730,29 @@ function getViewAgent() {
   return state.agents.find((agent) => Number(agent.id) === currentId) || null;
 }
 
-function getAgentViewShifts() {
+function isPublishedShift(shift) {
+  return String(shift?.status || shiftStatuses.draft) === shiftStatuses.published;
+}
+
+function getShiftById(shiftId) {
+  return state.shifts.find((shift) => Number(shift.id) === Number(shiftId)) || null;
+}
+
+function isSwapRequestVisibleToAgent(request, agentId) {
+  const isParticipant = Number(request?.fromAgentId) === Number(agentId) || Number(request?.toAgentId) === Number(agentId);
+  if (!isParticipant) return false;
+  const linkedShift = getShiftById(request?.shiftId);
+  return isPublishedShift(linkedShift);
+}
+
+function getAgentViewShifts(options = {}) {
   const currentId = getCurrentAgentId();
-  return state.shifts.filter((shift) => Number(shift.agentId) === currentId);
+  const publishedOnly = options.publishedOnly !== false;
+  return state.shifts.filter((shift) => {
+    if (Number(shift.agentId) !== currentId) return false;
+    if (!publishedOnly) return true;
+    return isPublishedShift(shift);
+  });
 }
 
 function getFilteredCalendarShifts() {
@@ -1824,7 +1889,7 @@ function renderCalendarPage(currentUser) {
   const viewAgent = getViewAgent();
   const baseCalendarShifts = getFilteredCalendarShifts();
   const visibleCalendarShifts = isAgentView
-    ? baseCalendarShifts.filter((shift) => shift.agentId === viewAgent?.id)
+    ? baseCalendarShifts.filter((shift) => shift.agentId === viewAgent?.id && isPublishedShift(shift))
     : baseCalendarShifts;
   const agentViewShifts = getAgentViewShifts();
   const visibleShiftIdSet = new Set(visibleCalendarShifts.map((shift) => Number(shift.id)));
@@ -2292,7 +2357,7 @@ function renderAgentRequestsPage(currentUser) {
   const currentAgentId = Number(viewAgent?.id);
   const allAvailabilityRequests = getAllAvailabilityRequests();
   const approvedAvailabilityRequests = allAvailabilityRequests.filter((request) => request.agentId === currentAgentId && request.status === 'approved');
-  const approvedSwapRequests = state.swapRequests.filter((request) => (request.fromAgentId === currentAgentId || request.toAgentId === currentAgentId) && request.status === 'completed');
+  const approvedSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'completed');
 
   root.innerHTML = `
     <div class="app">
@@ -2363,7 +2428,7 @@ function renderPendingRequestsPage(currentUser) {
   const currentAgentId = Number(viewAgent?.id);
   const allAvailabilityRequests = getAllAvailabilityRequests();
   const pendingAvailabilityRequests = allAvailabilityRequests.filter((request) => request.agentId === currentAgentId && request.status === 'pending');
-  const pendingSwapRequests = state.swapRequests.filter((request) => (request.fromAgentId === currentAgentId || request.toAgentId === currentAgentId) && request.status === 'pending');
+  const pendingSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'pending');
 
   root.innerHTML = `
     <div class="app">
@@ -2907,6 +2972,7 @@ function render() {
         <div>
           <h1>${isAgentView ? 'My scheduling view' : 'Agent Scheduling Hub'}</h1>
           <p class="muted">${isAgentView ? 'View your schedule and request swaps without the admin management tools.' : 'A fuller staffing workspace for agents, templates, drag-and-drop scheduling, pay tracking, and swap alerts.'}</p>
+          <p class="muted">${escapeHtml(getLastSyncStatusText())}</p>
         </div>
         <div class="row">
           ${isAgentView
@@ -4001,5 +4067,19 @@ void initializeBackendSync().finally(() => {
     window.setInterval(() => {
       void pollBackendSync();
     }, 5000);
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        void pollBackendSync();
+      }
+    });
+
+    window.addEventListener('focus', () => {
+      void pollBackendSync();
+    });
+
+    window.addEventListener('online', () => {
+      void pollBackendSync();
+    });
   }
 });
