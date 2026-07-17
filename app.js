@@ -652,6 +652,7 @@ function withRequiredEmail(user) {
     email: normalizedEmail || getFallbackEmail(user),
     phone: normalizedPhone,
     calendarFeedToken,
+    mustChangePassword: Boolean(user?.mustChangePassword),
     isActive: user?.isActive !== false
   };
 }
@@ -671,6 +672,7 @@ function loadAuthUsers() {
 }
 
 function saveAuthUsers() {
+  // Persist auth users through shared storage so profile edits sync across devices.
   safeSetLocalStorage(authUsersKey, JSON.stringify(authUsers));
 }
 
@@ -900,31 +902,21 @@ function getUserByAgentId(agentId) {
   return authUsers.find((user) => user.role === 'agent' && Number(user.agentId) === normalizedId) || null;
 }
 
-function sendAgentInviteEmail(agentUser, agentName) {
+function sendAgentInviteEmail(agentUser, agentName, temporaryPassword = '') {
   if (!agentUser?.id || !agentUser?.email) {
     return null;
   }
-  const passwordResetRequests = loadPasswordResetRequests();
-  const token = createResetToken();
-  const resetLink = getResetLink(token);
-  passwordResetRequests.push({
-    id: createId(),
-    token,
-    userId: agentUser.id,
-    email: normalizeEmail(agentUser.email),
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
-    used: false
-  });
-  savePasswordResetRequests(passwordResetRequests);
+  const signInLink = window.location.href.split('?')[0];
+  const inviteTempPassword = String(temporaryPassword || agentUser.password || '').trim();
   const inviteMessage = sendEmailNotification({
     to: normalizeEmail(agentUser.email),
     subject: 'You have been invited to Agent Scheduler',
-    body: `Hi ${agentName || 'Agent'}, your agent account is ready. Use this link to create your password and sign in: ${resetLink}`,
+    body: `Hi ${agentName || 'Agent'}, your agent account is ready.\n\nTemporary password: ${inviteTempPassword || '(not available)'}\nSign in: ${signInLink}\n\nAfter your first sign in, you will be prompted to create your own password.`,
     type: 'agent-invite'
   });
   return {
-    resetLink,
+    signInLink,
+    temporaryPassword: inviteTempPassword,
     deliveryStatus: inviteMessage?.deliveryStatus || 'local-only'
   };
 }
@@ -1225,6 +1217,48 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       type: 'password-reset'
     });
     renderLoginPage('', 'Reset email sent. Open the link below to reset your password.', resetLink);
+  });
+}
+
+function renderFirstLoginPasswordSetupPage(currentUser) {
+  root.innerHTML = `
+    <div class="app" style="max-width:560px; padding-top:48px;">
+      <div class="panel">
+        <h1>Set your password</h1>
+        <p class="muted">For security, you must create your own password before continuing.</p>
+        <form id="first-login-password-form" class="stack">
+          <input name="newPassword" type="password" placeholder="New password" required autocomplete="new-password" />
+          <input name="confirmPassword" type="password" placeholder="Confirm new password" required autocomplete="new-password" />
+          <button type="submit">Save password and continue</button>
+        </form>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('first-login-password-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const newPassword = formData.get('newPassword')?.toString() || '';
+    const confirmPassword = formData.get('confirmPassword')?.toString() || '';
+
+    if (newPassword.length < 8) {
+      alert('New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert('New password and confirmation do not match.');
+      return;
+    }
+
+    authUsers = authUsers.map((user) => user.id === currentUser.id
+      ? {
+          ...user,
+          password: newPassword,
+          mustChangePassword: false
+        }
+      : user);
+    saveAuthUsers();
+    render();
   });
 }
 
@@ -2730,7 +2764,7 @@ function renderProfilePage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>My profile</h1>
-          <p class="muted">Review your account details and approved request history.</p>
+          <p class="muted">Review your account details. Only your phone number can be updated here; all other changes must be made by an admin.</p>
         </div>
         <div class="row">
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to scheduling</button></a>
@@ -2764,20 +2798,9 @@ function renderProfilePage(currentUser) {
               <input id="agent-calendar-sync-url" value="${escapeHtml(calendarSyncUrl)}" readonly />
               <div class="row">
                 <button id="copy-agent-calendar-sync-url" type="button">Copy sync URL</button>
-                <button id="regenerate-agent-calendar-sync-url" type="button" class="secondary">Regenerate URL</button>
               </div>
-              <div class="muted">Regenerating the URL disables the old one.</div>
+              <div class="muted">Need changes to this URL? Contact an admin.</div>
             </div>
-          </div>
-
-          <div class="panel">
-            <h2>Reset password</h2>
-            <form id="agent-reset-password-form" class="stack" style="margin-top:10px;">
-              <input name="currentPassword" type="password" placeholder="Current password" required autocomplete="current-password" />
-              <input name="newPassword" type="password" placeholder="New password" required autocomplete="new-password" />
-              <input name="confirmPassword" type="password" placeholder="Confirm new password" required autocomplete="new-password" />
-              <button type="submit">Update password</button>
-            </form>
           </div>
 
           <div class="panel">
@@ -3350,6 +3373,10 @@ function render() {
     renderLoginPage('Your linked agent profile no longer exists. Contact an admin.');
     return;
   }
+  if (currentUser.role === 'agent' && currentUser.mustChangePassword) {
+    renderFirstLoginPasswordSetupPage(currentUser);
+    return;
+  }
   applyAccessForUser(currentUser);
 
   if (pageMode === 'profile') {
@@ -3846,18 +3873,19 @@ function bindEvents() {
       email,
       phone: '',
       password: createTemporaryPassword(),
+      mustChangePassword: true,
       calendarFeedToken: createCalendarFeedToken(),
       role: 'agent',
       agentId
     });
     authUsers.push(nextUser);
     saveAuthUsers();
-    const inviteResult = sendAgentInviteEmail(nextUser, name);
+    const inviteResult = sendAgentInviteEmail(nextUser, name, nextUser.password);
 
     saveState();
     const outboxCount = loadEmailOutbox().length;
     if (inviteResult?.deliveryStatus === 'local-only') {
-      alert(`Agent added. Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nReset link: ${inviteResult.resetLink}`);
+      alert(`Agent added. Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || '(not available)'}\nSign-in link: ${inviteResult?.signInLink || window.location.href.split('?')[0]}`);
     } else {
       alert(`Agent added and invitation email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
     }
@@ -4090,35 +4118,6 @@ function bindEvents() {
     render();
   });
 
-  document.getElementById('agent-reset-password-form')?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const currentUser = getCurrentUser();
-    if (!currentUser) return;
-
-    const formData = new FormData(event.currentTarget);
-    const currentPassword = formData.get('currentPassword')?.toString() || '';
-    const newPassword = formData.get('newPassword')?.toString() || '';
-    const confirmPassword = formData.get('confirmPassword')?.toString() || '';
-
-    if (currentPassword !== currentUser.password) {
-      alert('Current password is incorrect.');
-      return;
-    }
-    if (newPassword.length < 8) {
-      alert('New password must be at least 8 characters.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      alert('New password and confirmation do not match.');
-      return;
-    }
-
-    authUsers = authUsers.map((user) => user.id === currentUser.id ? { ...user, password: newPassword } : user);
-    saveAuthUsers();
-    alert('Password updated successfully.');
-    render();
-  });
-
   document.getElementById('agent-update-phone-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     const currentUser = getCurrentUser();
@@ -4150,20 +4149,6 @@ function bindEvents() {
       return;
     }
     alert('Calendar sync URL copied.');
-  });
-
-  document.getElementById('regenerate-agent-calendar-sync-url')?.addEventListener('click', () => {
-    const currentUser = getCurrentUser();
-    if (!currentUser) return;
-    const shouldRegenerate = confirm('Regenerate your personal calendar sync URL? The previous URL will stop working.');
-    if (!shouldRegenerate) return;
-    const nextCalendarFeedToken = createCalendarFeedToken();
-    authUsers = authUsers.map((user) => user.id === currentUser.id
-      ? { ...user, calendarFeedToken: nextCalendarFeedToken }
-      : user);
-    saveAuthUsers();
-    alert('Calendar sync URL regenerated. Use the new URL in your calendar app.');
-    render();
   });
 
   document.querySelectorAll('[data-role-color]').forEach((input) => {
@@ -4268,6 +4253,7 @@ function bindEvents() {
           email,
           phone: '',
           password: createTemporaryPassword(),
+          mustChangePassword: true,
           calendarFeedToken: createCalendarFeedToken(),
           role: 'agent',
           agentId: id
@@ -4288,10 +4274,20 @@ function bindEvents() {
         alert('This agent needs a valid email before sending an invite.');
         return;
       }
-      const inviteResult = sendAgentInviteEmail(agentUser, agent.name);
+      const temporaryPassword = createTemporaryPassword();
+      authUsers = authUsers.map((user) => user.id === agentUser.id
+        ? {
+            ...user,
+            password: temporaryPassword,
+            mustChangePassword: true
+          }
+        : user);
+      saveAuthUsers();
+      const refreshedAgentUser = getUserByAgentId(agentId) || { ...agentUser, password: temporaryPassword, mustChangePassword: true };
+      const inviteResult = sendAgentInviteEmail(refreshedAgentUser, agent.name, temporaryPassword);
       const outboxCount = loadEmailOutbox().length;
       if (inviteResult?.deliveryStatus === 'local-only') {
-        alert(`Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nReset link: ${inviteResult.resetLink}`);
+        alert(`Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || temporaryPassword}\nSign-in link: ${inviteResult?.signInLink || window.location.href.split('?')[0]}`);
       } else {
         alert(`Invite email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
       }
