@@ -132,6 +132,8 @@ let selectedCalendarShiftIds = new Set();
 let memoryAvailabilityInbox = [];
 let memoryEmailOutbox = [];
 let lastSuccessfulSyncAt = loadLastSuccessfulSyncAt();
+let adminManagerNotice = null;
+let adminProfileNotice = null;
 const defaultEmailDeliverySettings = {
   enabled: false,
   provider: 'generic',
@@ -491,6 +493,21 @@ function createUniqueAgentUsername(email) {
   return candidate;
 }
 
+function createUniqueAccountUsername(email, fallback = 'user') {
+  const localPart = String(email || '')
+    .trim()
+    .toLowerCase()
+    .split('@')[0]
+    .replace(/[^a-z0-9._-]+/g, '') || fallback;
+  let candidate = localPart;
+  let suffix = 1;
+  while (authUsers.some((user) => String(user.username || '').toLowerCase() === candidate)) {
+    candidate = `${localPart}${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
 function createTemporaryPassword() {
   return `Temp-${Math.random().toString(36).slice(2, 8)}A1!`;
 }
@@ -551,7 +568,8 @@ function withRequiredEmail(user) {
     ...user,
     email: normalizedEmail || getFallbackEmail(user),
     phone: normalizedPhone,
-    calendarFeedToken
+    calendarFeedToken,
+    isActive: user?.isActive !== false
   };
 }
 
@@ -828,6 +846,35 @@ function sendAgentInviteEmail(agentUser, agentName) {
   };
 }
 
+function sendAdminInviteEmail(adminUser) {
+  if (!adminUser?.id || !adminUser?.email) {
+    return null;
+  }
+  const passwordResetRequests = loadPasswordResetRequests();
+  const token = createResetToken();
+  const resetLink = getResetLink(token);
+  passwordResetRequests.push({
+    id: createId(),
+    token,
+    userId: adminUser.id,
+    email: normalizeEmail(adminUser.email),
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
+    used: false
+  });
+  savePasswordResetRequests(passwordResetRequests);
+  const inviteMessage = sendEmailNotification({
+    to: normalizeEmail(adminUser.email),
+    subject: 'You have been invited as a manager',
+    body: `Hi ${adminUser.name || adminUser.username || 'Manager'}, your manager account is ready. Use this link to create your password and sign in: ${resetLink}`,
+    type: 'admin-invite'
+  });
+  return {
+    resetLink,
+    deliveryStatus: inviteMessage?.deliveryStatus || 'local-only'
+  };
+}
+
 function sendShiftPublishedEmail(shift) {
   const agentId = Number(shift?.agentId);
   if (!agentId) return false;
@@ -881,6 +928,10 @@ if (!localStorage.getItem(authUsersKey)) {
 function getCurrentUser() {
   if (!currentSession?.userId) return null;
   return authUsers.find((user) => user.id === currentSession.userId) || null;
+}
+
+function getActiveAdminCount() {
+  return authUsers.filter((user) => user.role === 'admin' && user.isActive !== false).length;
 }
 
 function applyAccessForUser(user) {
@@ -1017,6 +1068,10 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     const foundUser = authUsers.find((user) => normalizeEmail(user.email) === email && user.password === password);
     if (!foundUser) {
       renderLoginPage('Invalid email or password.');
+      return;
+    }
+    if (foundUser.isActive === false) {
+      renderLoginPage('This manager account has been deactivated. Contact another admin for access.');
       return;
     }
     if (foundUser.role === 'agent' && !state.agents.some((agent) => agent.id === Number(foundUser.agentId))) {
@@ -2047,6 +2102,10 @@ function renderCalendarPage(currentUser) {
 function renderProfilePage(currentUser) {
   const isAgentView = currentUser.role === 'agent';
   if (!isAgentView) {
+    const adminUsers = authUsers
+      .filter((user) => user.role === 'admin')
+      .sort((left, right) => String(left.name || left.username || '').localeCompare(String(right.name || right.username || ''), undefined, { sensitivity: 'base' }));
+
     root.innerHTML = `
       <div class="app">
         <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
@@ -2065,6 +2124,11 @@ function renderProfilePage(currentUser) {
             <button id="logout-btn" class="secondary" type="button">Log out</button>
           </div>
         </div>
+
+        ${adminProfileNotice ? `
+          <div class="card" style="margin-bottom:12px; border-color:${adminProfileNotice.type === 'success' ? '#7AACAF' : '#AB5C57'};">
+            <div>${escapeHtml(adminProfileNotice.text || '')}</div>
+          </div>` : ''}
 
         <div class="grid" style="margin-top:16px; grid-template-columns:1fr;">
           <div class="stack">
@@ -2086,6 +2150,49 @@ function renderProfilePage(currentUser) {
                 <input name="phone" type="tel" placeholder="Phone" value="${escapeHtml(currentUser?.phone || '')}" required autocomplete="tel" />
                 <button type="submit">Save profile</button>
               </form>
+            </div>
+
+            <div class="panel">
+              <h2>Managers</h2>
+              <p class="muted">Add additional manager accounts so multiple admins can access the site.</p>
+              ${adminManagerNotice ? `
+                <div class="card" style="margin-bottom:12px; border-color:${adminManagerNotice.type === 'success' ? '#7AACAF' : '#AB5C57'};">
+                  <div>${escapeHtml(adminManagerNotice.text || '')}</div>
+                  ${adminManagerNotice.resetLink ? `<div style="margin-top:8px;"><a href="${escapeHtml(adminManagerNotice.resetLink)}" style="color:#17383B;">Open reset link</a></div>` : ''}
+                </div>` : ''}
+              <form id="add-admin-form" class="stack" style="margin-top:10px;">
+                <input name="name" placeholder="Manager name" required />
+                <input name="jobTitle" placeholder="Job title" value="Scheduling Manager" required />
+                <input name="email" type="email" placeholder="Email" required autocomplete="email" />
+                <input name="phone" type="tel" placeholder="Phone" required autocomplete="tel" />
+                <button type="submit">Add manager</button>
+              </form>
+              <div class="request-list" style="margin-top:12px;">
+                ${adminUsers.map((adminUser) => `
+                  <div class="card">
+                    <form class="stack" data-update-admin-form="${adminUser.id}">
+                      <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+                        <strong>${escapeHtml(adminUser.name || adminUser.username || 'Manager')}</strong>
+                        <div class="muted">Status: ${escapeHtml(adminUser.isActive === false ? 'Inactive' : 'Active')}</div>
+                      </div>
+                      <div class="row" style="gap:8px; flex-wrap:wrap;">
+                        <input name="name" value="${escapeHtml(adminUser.name || '')}" placeholder="Manager name" required />
+                        <input name="jobTitle" value="${escapeHtml(adminUser.jobTitle || 'Scheduling Manager')}" placeholder="Job title" required />
+                      </div>
+                      <div class="row" style="gap:8px; flex-wrap:wrap;">
+                        <input name="email" type="email" value="${escapeHtml(adminUser.email || '')}" placeholder="Email" required autocomplete="email" />
+                        <input name="phone" type="tel" value="${escapeHtml(adminUser.phone || '')}" placeholder="Phone" required autocomplete="tel" />
+                      </div>
+                      <div class="row" style="gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+                        <button type="submit" class="secondary">Save manager</button>
+                        <button type="button" class="secondary" data-resend-admin-invite="${adminUser.id}">Resend invite</button>
+                        <button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>
+                        <button type="button" class="danger" data-remove-admin="${adminUser.id}">Remove</button>
+                      </div>
+                    </form>
+                  </div>
+                `).join('')}
+              </div>
             </div>
 
             <div class="panel">
@@ -2181,8 +2288,103 @@ function renderProfilePage(currentUser) {
           }
         : user);
       saveAuthUsers();
-      alert('Admin profile updated successfully.');
+      adminProfileNotice = {
+        type: 'success',
+        text: 'Admin profile updated successfully.'
+      };
       render();
+    });
+
+    document.getElementById('add-admin-form')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      const name = formData.get('name')?.toString().trim() || '';
+      const jobTitle = formData.get('jobTitle')?.toString().trim() || '';
+      const email = normalizeEmail(formData.get('email'));
+      const phone = normalizePhone(formData.get('phone'));
+
+      if (!name || !jobTitle || !email || !phone) {
+        alert('All manager fields are required.');
+        return;
+      }
+
+      const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email);
+      if (emailInUse) {
+        alert('That email address is already in use by another account.');
+        return;
+      }
+
+      const nextAdminUser = withRequiredEmail({
+        id: createId(),
+        username: createUniqueAccountUsername(email, 'manager'),
+        name,
+        jobTitle,
+        email,
+        phone,
+        password: createTemporaryPassword(),
+        role: 'admin'
+      });
+      authUsers.push(nextAdminUser);
+      saveAuthUsers();
+      const inviteResult = sendAdminInviteEmail(nextAdminUser);
+      const outboxCount = loadEmailOutbox().length;
+      if (inviteResult?.deliveryStatus === 'local-only') {
+        adminManagerNotice = {
+          type: 'success',
+          text: 'Manager added. Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.',
+          resetLink: inviteResult.resetLink
+        };
+      } else {
+        adminManagerNotice = {
+          type: 'success',
+          text: `Manager added. Invite email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`,
+          resetLink: ''
+        };
+      }
+      render();
+    });
+
+    document.querySelectorAll('[data-update-admin-form]').forEach((form) => {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const adminId = Number(form.getAttribute('data-update-admin-form'));
+        const adminUser = authUsers.find((user) => user.role === 'admin' && Number(user.id) === adminId);
+        if (!adminUser) return;
+
+        const formData = new FormData(form);
+        const name = formData.get('name')?.toString().trim() || '';
+        const jobTitle = formData.get('jobTitle')?.toString().trim() || '';
+        const email = normalizeEmail(formData.get('email'));
+        const phone = normalizePhone(formData.get('phone'));
+
+        if (!name || !jobTitle || !email || !phone) {
+          alert('All manager fields are required.');
+          return;
+        }
+
+        const emailInUse = authUsers.some((user) => user.id !== adminId && normalizeEmail(user.email) === email);
+        if (emailInUse) {
+          alert('That email address is already in use by another account.');
+          return;
+        }
+
+        authUsers = authUsers.map((user) => user.id === adminId
+          ? {
+              ...user,
+              name,
+              jobTitle,
+              email,
+              phone
+            }
+          : user);
+        saveAuthUsers();
+        adminManagerNotice = {
+          type: 'success',
+          text: 'Manager details updated successfully.',
+          resetLink: ''
+        };
+        render();
+      });
     });
 
     document.getElementById('admin-reset-password-form')?.addEventListener('submit', (event) => {
@@ -2263,6 +2465,94 @@ function renderProfilePage(currentUser) {
       alert('Test email queued. Check Email outbox for delivery status.');
     });
 
+    document.querySelectorAll('[data-resend-admin-invite]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const adminId = Number(button.getAttribute('data-resend-admin-invite'));
+        const adminUser = authUsers.find((user) => user.role === 'admin' && Number(user.id) === adminId);
+        if (!adminUser?.email) {
+          alert('This manager needs a valid email before sending an invite.');
+          return;
+        }
+        const inviteResult = sendAdminInviteEmail(adminUser);
+        const outboxCount = loadEmailOutbox().length;
+        if (inviteResult?.deliveryStatus === 'local-only') {
+          adminManagerNotice = {
+            type: 'success',
+            text: 'Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.',
+            resetLink: inviteResult.resetLink
+          };
+        } else {
+          adminManagerNotice = {
+            type: 'success',
+            text: `Manager invite email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`,
+            resetLink: ''
+          };
+        }
+        render();
+      });
+    });
+
+    document.querySelectorAll('[data-toggle-admin-active]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const adminId = Number(button.getAttribute('data-toggle-admin-active'));
+        const activeUser = getCurrentUser();
+        const adminUser = authUsers.find((user) => user.role === 'admin' && Number(user.id) === adminId);
+        if (!adminUser) return;
+        const isDeactivating = adminUser.isActive !== false;
+        if (isDeactivating && getActiveAdminCount() <= 1) {
+          alert('You cannot deactivate the last active admin account.');
+          return;
+        }
+        const actionLabel = isDeactivating ? 'deactivate' : 'reactivate';
+        const shouldProceed = confirm(`Are you sure you want to ${actionLabel} ${adminUser.name || adminUser.username || 'this manager'}?`);
+        if (!shouldProceed) return;
+        authUsers = authUsers.map((user) => user.id === adminId
+          ? { ...user, isActive: !isDeactivating }
+          : user);
+        saveAuthUsers();
+        if (activeUser?.id === adminId && isDeactivating) {
+          clearSession();
+          alert('Your manager account was deactivated.');
+          render();
+          return;
+        }
+        adminManagerNotice = {
+          type: 'success',
+          text: `Manager account ${isDeactivating ? 'deactivated' : 'reactivated'}.`,
+          resetLink: ''
+        };
+        render();
+      });
+    });
+
+    document.querySelectorAll('[data-remove-admin]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const adminId = Number(button.getAttribute('data-remove-admin'));
+        const activeUser = getCurrentUser();
+        const adminUser = authUsers.find((user) => user.role === 'admin' && Number(user.id) === adminId);
+        if (!adminUser) return;
+        if (activeUser?.id === adminId) {
+          alert('You cannot remove the manager account you are currently signed in with.');
+          return;
+        }
+        const activeAdminCount = getActiveAdminCount();
+        if (adminUser.isActive !== false && activeAdminCount <= 1) {
+          alert('You cannot remove the last active admin account.');
+          return;
+        }
+        const shouldRemove = confirm(`Remove manager ${adminUser.name || adminUser.username || 'this account'}?`);
+        if (!shouldRemove) return;
+        authUsers = authUsers.filter((user) => Number(user.id) !== adminId);
+        saveAuthUsers();
+        adminManagerNotice = {
+          type: 'success',
+          text: 'Manager account removed.',
+          resetLink: ''
+        };
+        render();
+      });
+    });
+
     document.getElementById('admin-backend-sync-form')?.addEventListener('submit', (event) => {
       event.preventDefault();
       const formData = new FormData(event.currentTarget);
@@ -2287,7 +2577,10 @@ function renderProfilePage(currentUser) {
       const formData = new FormData(event.currentTarget);
       state.blackoutDates = normalizeBlackoutDates(formData.get('blackoutDates'));
       saveState();
-      alert('Blackout dates saved. Agents cannot submit time-off requests for those dates.');
+      adminProfileNotice = {
+        type: 'success',
+        text: 'Blackout dates saved. Agents cannot submit time-off requests for those dates.'
+      };
       render();
     });
 
