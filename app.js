@@ -1305,6 +1305,10 @@ function renderFirstLoginPasswordSetupPage(currentUser) {
         <form id="first-login-password-form" class="stack">
           <input name="newPassword" type="password" placeholder="New password" required autocomplete="new-password" />
           <input name="confirmPassword" type="password" placeholder="Confirm new password" required autocomplete="new-password" />
+          <label class="row" style="justify-content:flex-start; align-items:center; gap:8px;">
+            <input name="savePassword" type="checkbox" value="1" />
+            <span>Save password on this device</span>
+          </label>
           <button type="submit">Save password and continue</button>
         </form>
       </div>
@@ -1316,6 +1320,7 @@ function renderFirstLoginPasswordSetupPage(currentUser) {
     const formData = new FormData(event.currentTarget);
     const newPassword = formData.get('newPassword')?.toString() || '';
     const confirmPassword = formData.get('confirmPassword')?.toString() || '';
+    const shouldRememberLogin = Boolean(formData.get('savePassword'));
 
     if (newPassword.length < 8) {
       alert('New password must be at least 8 characters.');
@@ -1334,8 +1339,9 @@ function renderFirstLoginPasswordSetupPage(currentUser) {
         }
       : user);
     saveAuthUsers();
-    syncRememberedLoginPassword(currentUser, newPassword);
-    render();
+    saveRememberedLogin(currentUser.email, newPassword, shouldRememberLogin);
+    // After first-login password setup, always return the agent to the dashboard view.
+    window.location.href = window.location.pathname;
   });
 }
 
