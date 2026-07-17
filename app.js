@@ -1361,13 +1361,19 @@ function renderFirstLoginPasswordSetupPage(currentUser) {
       alert('Unable to save your new password right now. Please check browser storage settings and try again.');
       return;
     }
+    const persistedUser = loadAuthUsers().find((user) => Number(user.id) === Number(currentUser.id));
+    if (!persistedUser || persistedUser.password !== newPassword || persistedUser.mustChangePassword) {
+      alert('Your new password did not persist correctly. Please try again.');
+      return;
+    }
     if (backendApiBase) {
-      syncSharedSnapshotToBackend();
+      // Keep UI responsive; backend sync should be best-effort and non-blocking.
+      void pushLocalSnapshotToBackend();
     }
     saveRememberedLogin(currentUser.email, newPassword, shouldRememberLogin);
     // Ensure we land on dashboard without a hard reload that can interrupt agent flow.
     window.history.replaceState({}, '', window.location.pathname);
-    applyAccessForUser({ ...currentUser, mustChangePassword: false });
+    applyAccessForUser({ ...persistedUser, mustChangePassword: false });
     saveUiState();
     render();
   });
