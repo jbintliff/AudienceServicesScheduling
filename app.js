@@ -111,6 +111,7 @@ const defaultState = {
       role: 'All',
       agentName: '',
       date: '',
+      weekReference: '',
       location: 'All'
     }
   }
@@ -949,6 +950,7 @@ function applyAccessForUser(user) {
         role: 'All',
         agentName: '',
         date: '',
+        weekReference: state.ui.calendar?.weekReference || '',
         location: 'All'
       };
     }
@@ -1155,6 +1157,7 @@ function createDefaultState() {
         role: 'All',
         agentName: '',
         date: '',
+        weekReference: '',
         location: 'All'
       }
     }
@@ -1330,6 +1333,7 @@ function loadState() {
           role: parsed.ui?.calendar?.role || 'All',
           agentName: parsed.ui?.calendar?.agentName || '',
           date: parsed.ui?.calendar?.date || '',
+          weekReference: parsed.ui?.calendar?.weekReference || '',
           location: parsed.ui?.calendar?.location || 'All'
         }
       }
@@ -1905,6 +1909,38 @@ function getCalendarWeekDates(referenceDateValue) {
   }, {});
 }
 
+function getCalendarWeekLabel(weekDates) {
+  const orderedDates = days
+    .map((day) => weekDates?.[day]?.iso)
+    .filter(Boolean);
+  if (orderedDates.length === 0) return 'Current week';
+  const firstDate = new Date(`${orderedDates[0]}T00:00:00`);
+  const lastDate = new Date(`${orderedDates[orderedDates.length - 1]}T00:00:00`);
+  if (Number.isNaN(firstDate.getTime()) || Number.isNaN(lastDate.getTime())) {
+    return 'Current week';
+  }
+  return `${firstDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${lastDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}
+
+function shiftIsInWeek(shift, weekDates) {
+  const shiftDate = String(shift?.date || '').slice(0, 10);
+  if (!shiftDate) return false;
+  return days.some((day) => weekDates?.[day]?.iso === shiftDate);
+}
+
+function getShiftedWeekReference(referenceDateValue, dayOffset) {
+  const baseDate = referenceDateValue ? new Date(`${referenceDateValue}T00:00:00`) : new Date();
+  if (Number.isNaN(baseDate.getTime())) {
+    return '';
+  }
+  baseDate.setDate(baseDate.getDate() + dayOffset);
+  return baseDate.toISOString().slice(0, 10);
+}
+
+function getActiveCalendarWeekReference() {
+  return state.ui.calendar?.weekReference || state.ui.calendar?.date || new Date().toISOString().slice(0, 10);
+}
+
 function exportData() {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -1941,8 +1977,10 @@ function importData(file) {
           search: parsed.ui?.calendar?.search || '',
           day: parsed.ui?.calendar?.day || 'All',
           agentId: parsed.ui?.calendar?.agentId || 'All',
+          role: parsed.ui?.calendar?.role || 'All',
           agentName: parsed.ui?.calendar?.agentName || '',
           date: parsed.ui?.calendar?.date || '',
+          weekReference: parsed.ui?.calendar?.weekReference || '',
           location: parsed.ui?.calendar?.location || 'All'
         }
       };
@@ -1958,16 +1996,19 @@ function importData(file) {
 function renderCalendarPage(currentUser) {
   const spendByDay = getSpendByDay();
   const calendarFilters = state.ui.calendar || {};
-  const weekDates = getCalendarWeekDates(calendarFilters.date);
+  const weekReference = calendarFilters.weekReference || calendarFilters.date || new Date().toISOString().slice(0, 10);
+  const weekDates = getCalendarWeekDates(weekReference);
+  const weekLabel = getCalendarWeekLabel(weekDates);
   const locations = getAllLocations();
   const roleItems = getRoleLegendItems();
   const agentNameItems = state.agents.map((agent) => String(agent.name || '').trim()).filter(Boolean).sort((left, right) => left.localeCompare(right));
   const isAgentView = currentUser.role === 'agent';
   const viewAgent = getViewAgent();
   const baseCalendarShifts = getFilteredCalendarShifts();
+  const scopedCalendarShifts = baseCalendarShifts.filter((shift) => shiftIsInWeek(shift, weekDates));
   const visibleCalendarShifts = isAgentView
-    ? baseCalendarShifts.filter((shift) => shift.agentId === viewAgent?.id && isPublishedShift(shift))
-    : baseCalendarShifts;
+    ? scopedCalendarShifts.filter((shift) => shift.agentId === viewAgent?.id && isPublishedShift(shift))
+    : scopedCalendarShifts;
   const agentViewShifts = getAgentViewShifts();
   const visibleShiftIdSet = new Set(visibleCalendarShifts.map((shift) => Number(shift.id)));
   selectedCalendarShiftIds = new Set(Array.from(selectedCalendarShiftIds).filter((id) => visibleShiftIdSet.has(Number(id))));
@@ -2019,6 +2060,21 @@ function renderCalendarPage(currentUser) {
           </select>
           <button id="calendar-filters-apply" type="button">Apply filters</button>
           <button id="calendar-filters-reset" class="secondary" type="button">Reset filters</button>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px;">
+        <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div>
+            <strong>Week of ${escapeHtml(weekLabel)}</strong>
+            <div class="muted">Use these controls to move between weeks without changing your date filter.</div>
+          </div>
+          <div class="row" style="gap:8px; flex-wrap:wrap;">
+            <button id="calendar-previous-week" class="secondary" type="button">Previous week</button>
+            <button id="calendar-current-week" class="secondary" type="button">Current week</button>
+            <button id="calendar-next-week" class="secondary" type="button">Next week</button>
+            <input id="calendar-week-reference" type="date" value="${escapeHtml(weekReference)}" />
+          </div>
         </div>
       </div>
 
@@ -3274,6 +3330,7 @@ function render() {
       role: 'All',
       agentName: '',
       date: '',
+      weekReference: state.ui.calendar?.weekReference || '',
       location: 'All',
       search: state.ui.calendar?.search || '',
       day: state.ui.calendar?.day || 'All'
@@ -3283,9 +3340,12 @@ function render() {
   const currentAgentId = Number(viewAgent?.id);
   const visibleShifts = isAgentView ? getAgentViewShifts() : [];
   const blackoutDates = normalizeBlackoutDates(state.blackoutDates);
+  const plannerWeekReference = getActiveCalendarWeekReference();
+  const plannerWeekDates = getCalendarWeekDates(plannerWeekReference);
+  const plannerWeekLabel = getCalendarWeekLabel(plannerWeekDates);
   const adminWeeklyShifts = isAgentView
     ? []
-    : getFilteredCalendarShifts().filter((shift) => shift.status === shiftStatuses.published);
+    : getFilteredCalendarShifts().filter((shift) => shift.status === shiftStatuses.published && shiftIsInWeek(shift, plannerWeekDates));
   const swapAlertCount = state.swapRequests.length;
   const agentViewShifts = getAgentViewShifts();
   const todayDay = days[(new Date().getDay() + 6) % 7] || 'Mon';
@@ -3500,6 +3560,18 @@ function render() {
               <button id="weekly-filters-apply" type="button">Apply filters</button>
               <button id="weekly-filters-reset" class="secondary" type="button">Reset filters</button>
             </div>
+            <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+              <div>
+                <strong>Week of ${escapeHtml(plannerWeekLabel)}</strong>
+                <div class="muted">Move between weeks without leaving the dashboard.</div>
+              </div>
+              <div class="row" style="gap:8px; flex-wrap:wrap;">
+                <button id="weekly-previous-week" class="secondary" type="button">Previous week</button>
+                <button id="weekly-current-week" class="secondary" type="button">Current week</button>
+                <button id="weekly-next-week" class="secondary" type="button">Next week</button>
+                <input id="weekly-week-reference" type="date" value="${escapeHtml(plannerWeekReference)}" />
+              </div>
+            </div>
             <div class="row" style="margin-bottom:8px;">
               ${getRoleLegendItems().map((role) => `
                 <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
@@ -3509,6 +3581,7 @@ function render() {
               ${days.map((day) => `
                 <div class="day-card" data-day="${day}">
                   <h4>${day}</h4>
+                  <div class="muted">${escapeHtml(plannerWeekDates[day]?.label || '')}</div>
                   ${adminWeeklyShifts.filter((shift) => shift.day === day).map((shift) => `
                     <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
                       <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || roleOptions[0])}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
@@ -3886,7 +3959,56 @@ function bindEvents() {
     state.ui.calendar.role = 'All';
     state.ui.calendar.agentName = '';
     state.ui.calendar.date = '';
+    state.ui.calendar.weekReference = '';
     state.ui.calendar.location = 'All';
+    saveState();
+    render();
+  });
+
+  document.getElementById('calendar-week-reference')?.addEventListener('change', (event) => {
+    state.ui.calendar.weekReference = event.target.value || '';
+    saveState();
+    render();
+  });
+
+  document.getElementById('calendar-previous-week')?.addEventListener('click', () => {
+    state.ui.calendar.weekReference = getShiftedWeekReference(getActiveCalendarWeekReference(), -7);
+    saveState();
+    render();
+  });
+
+  document.getElementById('calendar-current-week')?.addEventListener('click', () => {
+    state.ui.calendar.weekReference = new Date().toISOString().slice(0, 10);
+    saveState();
+    render();
+  });
+
+  document.getElementById('calendar-next-week')?.addEventListener('click', () => {
+    state.ui.calendar.weekReference = getShiftedWeekReference(getActiveCalendarWeekReference(), 7);
+    saveState();
+    render();
+  });
+
+  document.getElementById('weekly-week-reference')?.addEventListener('change', (event) => {
+    state.ui.calendar.weekReference = event.target.value || '';
+    saveState();
+    render();
+  });
+
+  document.getElementById('weekly-previous-week')?.addEventListener('click', () => {
+    state.ui.calendar.weekReference = getShiftedWeekReference(getActiveCalendarWeekReference(), -7);
+    saveState();
+    render();
+  });
+
+  document.getElementById('weekly-current-week')?.addEventListener('click', () => {
+    state.ui.calendar.weekReference = new Date().toISOString().slice(0, 10);
+    saveState();
+    render();
+  });
+
+  document.getElementById('weekly-next-week')?.addEventListener('click', () => {
+    state.ui.calendar.weekReference = getShiftedWeekReference(getActiveCalendarWeekReference(), 7);
     saveState();
     render();
   });
