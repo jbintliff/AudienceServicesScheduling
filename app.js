@@ -1347,55 +1347,85 @@ function renderFirstLoginPasswordSetupPage(currentUser) {
             <input name="savePassword" type="checkbox" value="1" />
             <span>Save password on this device</span>
           </label>
-          <button type="submit">Save password and continue</button>
+          <div id="first-login-password-status" class="muted"></div>
+          <button id="first-login-password-submit" type="submit">Save password and continue</button>
         </form>
       </div>
     </div>
   `;
+  const formElement = document.getElementById('first-login-password-form');
+  const statusElement = document.getElementById('first-login-password-status');
+  const submitButton = document.getElementById('first-login-password-submit');
+  const setStatus = (message, isError = false) => {
+    if (!statusElement) return;
+    statusElement.textContent = String(message || '');
+    statusElement.style.color = isError ? '#fca5a5' : '';
+  };
 
-  document.getElementById('first-login-password-form')?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const newPassword = formData.get('newPassword')?.toString() || '';
-    const confirmPassword = formData.get('confirmPassword')?.toString() || '';
-    const shouldRememberLogin = Boolean(formData.get('savePassword'));
+  const handleFirstLoginSubmit = () => {
+    if (!(formElement instanceof HTMLFormElement)) return;
+    try {
+      const formData = new FormData(formElement);
+      const newPassword = formData.get('newPassword')?.toString() || '';
+      const confirmPassword = formData.get('confirmPassword')?.toString() || '';
+      const shouldRememberLogin = Boolean(formData.get('savePassword'));
 
-    if (newPassword.length < 8) {
-      alert('New password must be at least 8 characters.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      alert('New password and confirmation do not match.');
-      return;
-    }
+      if (newPassword.length < 8) {
+        setStatus('New password must be at least 8 characters.', true);
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setStatus('New password and confirmation do not match.', true);
+        return;
+      }
 
-    authUsers = authUsers.map((user) => user.id === currentUser.id
-      ? {
-          ...user,
-          password: newPassword,
-          mustChangePassword: false
+      setStatus('Saving your new password...');
+      if (submitButton instanceof HTMLButtonElement) {
+        submitButton.disabled = true;
+      }
+
+      authUsers = authUsers.map((user) => user.id === currentUser.id
+        ? {
+            ...user,
+            password: newPassword,
+            mustChangePassword: false
+          }
+        : user);
+      const didSaveAuthUsers = saveAuthUsers();
+      if (!didSaveAuthUsers) {
+        setStatus('Unable to save your new password right now. Please check browser storage settings and try again.', true);
+        if (submitButton instanceof HTMLButtonElement) {
+          submitButton.disabled = false;
         }
-      : user);
-    const didSaveAuthUsers = saveAuthUsers();
-    if (!didSaveAuthUsers) {
-      alert('Unable to save your new password right now. Please check browser storage settings and try again.');
-      return;
+        return;
+      }
+
+      if (backendApiBase) {
+        // Keep UI responsive; backend sync should be best-effort and non-blocking.
+        void pushLocalSnapshotToBackend();
+      }
+      saveRememberedLogin(currentUser.email, newPassword, shouldRememberLogin);
+      currentSession = { userId: currentUser.id };
+      saveSession();
+      window.history.replaceState({}, '', window.location.pathname);
+      applyAccessForUser({ ...currentUser, mustChangePassword: false });
+      saveUiState();
+      render();
+    } catch (error) {
+      setStatus(`Unable to complete password setup: ${String(error?.message || 'Unknown error')}`, true);
+      if (submitButton instanceof HTMLButtonElement) {
+        submitButton.disabled = false;
+      }
     }
-    const persistedUser = loadAuthUsers().find((user) => Number(user.id) === Number(currentUser.id));
-    if (!persistedUser || persistedUser.password !== newPassword || persistedUser.mustChangePassword) {
-      alert('Your new password did not persist correctly. Please try again.');
-      return;
-    }
-    if (backendApiBase) {
-      // Keep UI responsive; backend sync should be best-effort and non-blocking.
-      void pushLocalSnapshotToBackend();
-    }
-    saveRememberedLogin(currentUser.email, newPassword, shouldRememberLogin);
-    // Ensure we land on dashboard without a hard reload that can interrupt agent flow.
-    window.history.replaceState({}, '', window.location.pathname);
-    applyAccessForUser({ ...persistedUser, mustChangePassword: false });
-    saveUiState();
-    render();
+  };
+
+  formElement?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    handleFirstLoginSubmit();
+  });
+  submitButton?.addEventListener('click', (event) => {
+    event.preventDefault();
+    handleFirstLoginSubmit();
   });
 }
 
