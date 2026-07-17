@@ -13,6 +13,7 @@ const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
 const emailDeliverySettingsKey = 'agent-scheduler-email-delivery-settings-v1';
 const backendUrlKey = 'agent-scheduler-backend-url-v1';
 const syncStatusKey = 'agent-scheduler-sync-status-v1';
+const uiStateKey = 'agent-scheduler-ui-state-v1';
 const fixedEmailSenderName = 'Audience Services Scheduling';
 const emailDeliveryProviders = ['generic', 'sendgrid', 'mailgun'];
 const shiftStatuses = {
@@ -146,6 +147,86 @@ const defaultEmailDeliverySettings = {
 let emailDeliverySettings = loadEmailDeliverySettings();
 let availabilitySubmitFallbackBound = false;
 const root = document.getElementById('root');
+
+function getDefaultUiState() {
+  return {
+    agentSearch: '',
+    agentSort: 'name',
+    agentRoleFilter: 'All',
+    agentsCollapsed: false,
+    availabilityRequestsCollapsed: false,
+    swapAlertsCollapsed: false,
+    agentScheduleView: 'week',
+    agentScheduleDay: 'Mon',
+    agentScheduleMonth: '',
+    availabilityCalendarMonth: '',
+    availabilityFrom: '',
+    availabilityTo: '',
+    accessMode: 'admin',
+    currentAgentId: defaultState.agents[0]?.id ?? null,
+    calendar: {
+      search: '',
+      day: 'All',
+      agentId: 'All',
+      role: 'All',
+      agentName: '',
+      date: '',
+      weekReference: '',
+      location: 'All'
+    }
+  };
+}
+
+function normalizeUiState(source) {
+  const defaults = getDefaultUiState();
+  return {
+    agentSearch: source?.agentSearch || defaults.agentSearch,
+    agentSort: source?.agentSort || defaults.agentSort,
+    agentRoleFilter: source?.agentRoleFilter || defaults.agentRoleFilter,
+    agentsCollapsed: Boolean(source?.agentsCollapsed),
+    availabilityRequestsCollapsed: Boolean(source?.availabilityRequestsCollapsed),
+    swapAlertsCollapsed: Boolean(source?.swapAlertsCollapsed),
+    agentScheduleView: source?.agentScheduleView || defaults.agentScheduleView,
+    agentScheduleDay: source?.agentScheduleDay || defaults.agentScheduleDay,
+    agentScheduleMonth: source?.agentScheduleMonth || defaults.agentScheduleMonth,
+    availabilityCalendarMonth: source?.availabilityCalendarMonth || defaults.availabilityCalendarMonth,
+    availabilityFrom: source?.availabilityFrom || defaults.availabilityFrom,
+    availabilityTo: source?.availabilityTo || defaults.availabilityTo,
+    accessMode: source?.accessMode || defaults.accessMode,
+    currentAgentId: source?.currentAgentId ?? defaults.currentAgentId,
+    calendar: {
+      search: source?.calendar?.search || defaults.calendar.search,
+      day: source?.calendar?.day || defaults.calendar.day,
+      agentId: source?.calendar?.agentId || defaults.calendar.agentId,
+      role: source?.calendar?.role || defaults.calendar.role,
+      agentName: source?.calendar?.agentName || defaults.calendar.agentName,
+      date: source?.calendar?.date || defaults.calendar.date,
+      weekReference: source?.calendar?.weekReference || defaults.calendar.weekReference,
+      location: source?.calendar?.location || defaults.calendar.location
+    }
+  };
+}
+
+function loadUiState(legacyUi) {
+  let localUi = null;
+  try {
+    const saved = localStorage.getItem(uiStateKey);
+    if (saved) {
+      localUi = JSON.parse(saved);
+    }
+  } catch {
+    localUi = null;
+  }
+  return normalizeUiState(localUi || legacyUi || {});
+}
+
+function saveUiState() {
+  try {
+    localStorage.setItem(uiStateKey, JSON.stringify(normalizeUiState(state.ui)));
+  } catch {
+    // UI persistence is local-only and non-critical.
+  }
+}
 
 function loadLastSuccessfulSyncAt() {
   try {
@@ -1083,7 +1164,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     currentSession = { userId: foundUser.id };
     saveSession();
     applyAccessForUser(foundUser);
-    saveState();
+    saveUiState();
     render();
   });
 
@@ -1135,32 +1216,7 @@ function createDefaultState() {
     availabilityRequests: defaultState.availabilityRequests.map((request) => ({ ...request })),
     blackoutDates: [...defaultState.blackoutDates],
     roleColors: { ...defaultState.roleColors },
-    ui: {
-      agentSearch: '',
-      agentSort: 'name',
-      agentRoleFilter: 'All',
-      agentsCollapsed: false,
-      availabilityRequestsCollapsed: false,
-      swapAlertsCollapsed: false,
-      agentScheduleView: 'week',
-      agentScheduleDay: 'Mon',
-      agentScheduleMonth: '',
-      availabilityCalendarMonth: '',
-      availabilityFrom: '',
-      availabilityTo: '',
-      accessMode: 'admin',
-      currentAgentId: defaultState.agents[0]?.id ?? null,
-      calendar: {
-        search: '',
-        day: 'All',
-        agentId: 'All',
-        role: 'All',
-        agentName: '',
-        date: '',
-        weekReference: '',
-        location: 'All'
-      }
-    }
+    ui: getDefaultUiState()
   };
 }
 
@@ -1224,6 +1280,13 @@ function isBlackoutDate(dateValue) {
   const normalizedDate = String(dateValue || '').trim().slice(0, 10);
   if (!normalizedDate) return false;
   return normalizeBlackoutDates(state.blackoutDates).includes(normalizedDate);
+}
+
+function getBlackoutDateMarker(dateValue) {
+  if (!isBlackoutDate(dateValue)) {
+    return '';
+  }
+  return '<div class="chip" style="margin-top:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>';
 }
 
 function normalizeTemplates(templates) {
@@ -1311,32 +1374,7 @@ function loadState() {
       ),
       blackoutDates: normalizeBlackoutDates(parsed.blackoutDates),
       roleColors: parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : createDefaultState().roleColors,
-      ui: {
-        agentSearch: parsed.ui?.agentSearch || '',
-        agentSort: parsed.ui?.agentSort || 'name',
-        agentRoleFilter: parsed.ui?.agentRoleFilter || 'All',
-        agentsCollapsed: Boolean(parsed.ui?.agentsCollapsed),
-        availabilityRequestsCollapsed: Boolean(parsed.ui?.availabilityRequestsCollapsed),
-        swapAlertsCollapsed: Boolean(parsed.ui?.swapAlertsCollapsed),
-        agentScheduleView: parsed.ui?.agentScheduleView || 'week',
-        agentScheduleDay: parsed.ui?.agentScheduleDay || 'Mon',
-        agentScheduleMonth: parsed.ui?.agentScheduleMonth || '',
-        availabilityCalendarMonth: parsed.ui?.availabilityCalendarMonth || '',
-        availabilityFrom: parsed.ui?.availabilityFrom || '',
-        availabilityTo: parsed.ui?.availabilityTo || '',
-        accessMode: parsed.ui?.accessMode || 'admin',
-        currentAgentId: parsed.ui?.currentAgentId ?? createDefaultState().agents[0]?.id ?? null,
-        calendar: {
-          search: parsed.ui?.calendar?.search || '',
-          day: parsed.ui?.calendar?.day || 'All',
-          agentId: parsed.ui?.calendar?.agentId || 'All',
-          role: parsed.ui?.calendar?.role || 'All',
-          agentName: parsed.ui?.calendar?.agentName || '',
-          date: parsed.ui?.calendar?.date || '',
-          weekReference: parsed.ui?.calendar?.weekReference || '',
-          location: parsed.ui?.calendar?.location || 'All'
-        }
-      }
+      ui: loadUiState(parsed.ui)
     };
   } catch {
     return createDefaultState();
@@ -1346,13 +1384,15 @@ function loadState() {
 function saveState() {
   state.availabilityRequests = getAllAvailabilityRequests();
   memoryAvailabilityInbox = state.availabilityRequests;
+  const { ui, ...sharedState } = state;
   const persistableState = {
-    ...state,
+    ...sharedState,
     availabilityRequests: state.availabilityRequests
   };
   safeSetLocalStorage(storageKey, JSON.stringify(persistableState));
   safeSetLocalStorage(availabilityInboxKey, JSON.stringify(state.availabilityRequests));
   safeSetLocalStorage(availabilityRequestsKey, JSON.stringify(state.availabilityRequests));
+  saveUiState();
 }
 
 function getFilteredAvailabilityRequests(requests) {
@@ -1958,33 +1998,9 @@ function importData(file) {
       const parsed = JSON.parse(reader.result);
       Object.assign(state, parsed);
       state.roleColors = parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : {};
-      state.ui = {
-        agentSearch: parsed.ui?.agentSearch || '',
-        agentSort: parsed.ui?.agentSort || 'name',
-        agentRoleFilter: parsed.ui?.agentRoleFilter || 'All',
-        agentsCollapsed: Boolean(parsed.ui?.agentsCollapsed),
-        availabilityRequestsCollapsed: Boolean(parsed.ui?.availabilityRequestsCollapsed),
-        swapAlertsCollapsed: Boolean(parsed.ui?.swapAlertsCollapsed),
-        agentScheduleView: parsed.ui?.agentScheduleView || 'week',
-        agentScheduleDay: parsed.ui?.agentScheduleDay || 'Mon',
-        agentScheduleMonth: parsed.ui?.agentScheduleMonth || '',
-        availabilityCalendarMonth: parsed.ui?.availabilityCalendarMonth || '',
-        availabilityFrom: parsed.ui?.availabilityFrom || '',
-        availabilityTo: parsed.ui?.availabilityTo || '',
-        accessMode: parsed.ui?.accessMode || 'admin',
-        currentAgentId: parsed.ui?.currentAgentId ?? createDefaultState().agents[0]?.id ?? null,
-        calendar: {
-          search: parsed.ui?.calendar?.search || '',
-          day: parsed.ui?.calendar?.day || 'All',
-          agentId: parsed.ui?.calendar?.agentId || 'All',
-          role: parsed.ui?.calendar?.role || 'All',
-          agentName: parsed.ui?.calendar?.agentName || '',
-          date: parsed.ui?.calendar?.date || '',
-          weekReference: parsed.ui?.calendar?.weekReference || '',
-          location: parsed.ui?.calendar?.location || 'All'
-        }
-      };
+      state.ui = loadUiState(parsed.ui);
       saveState();
+      saveUiState();
       render();
     } catch {
       alert('The selected file is not a valid scheduler export.');
@@ -2136,6 +2152,7 @@ function renderCalendarPage(currentUser) {
                 <div>
                   <h4 style="margin:0;">${day}</h4>
                   <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
+                  ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                 </div>
                 ${!isAgentView ? `<button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button>` : ''}
               </div>
@@ -3459,6 +3476,7 @@ function render() {
                 <div class="day-row" style="margin-top:12px; grid-template-columns:repeat(1, minmax(0, 1fr));">
                   <div class="day-card" data-day="${selectedAgentScheduleDay}">
                     <h4>${selectedAgentScheduleDay}</h4>
+                    ${getBlackoutDateMarker(weekDates[selectedAgentScheduleDay]?.iso || '')}
                     ${visibleShifts.filter((shift) => shift.day === selectedAgentScheduleDay).map((shift) => `
                       <div class="shift" draggable="true" data-shift-id="${shift.id}">
                         <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || roleOptions[0])}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
@@ -3472,6 +3490,7 @@ function render() {
                   ${days.map((day) => `
                     <div class="day-card" data-day="${day}">
                       <h4>${day}</h4>
+                      ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                       ${visibleShifts.filter((shift) => shift.day === day).map((shift) => `
                         <div class="shift" draggable="true" data-shift-id="${shift.id}">
                           <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || roleOptions[0])}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
@@ -3582,6 +3601,7 @@ function render() {
                 <div class="day-card" data-day="${day}">
                   <h4>${day}</h4>
                   <div class="muted">${escapeHtml(plannerWeekDates[day]?.label || '')}</div>
+                  ${getBlackoutDateMarker(plannerWeekDates[day]?.iso || '')}
                   ${adminWeeklyShifts.filter((shift) => shift.day === day).map((shift) => `
                     <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
                       <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || roleOptions[0])}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
@@ -3844,31 +3864,31 @@ function bindEvents() {
 
   document.getElementById('agent-search')?.addEventListener('input', (event) => {
     state.ui.agentSearch = event.target.value;
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('agent-role-filter')?.addEventListener('change', (event) => {
     state.ui.agentRoleFilter = event.target.value || 'All';
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('agent-sort')?.addEventListener('change', (event) => {
     state.ui.agentSort = event.target.value === 'team' ? 'team' : 'name';
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('toggle-availability-requests')?.addEventListener('click', () => {
     state.ui.availabilityRequestsCollapsed = !state.ui.availabilityRequestsCollapsed;
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('toggle-swap-alerts')?.addEventListener('click', () => {
     state.ui.swapAlertsCollapsed = !state.ui.swapAlertsCollapsed;
-    saveState();
+    saveUiState();
     render();
   });
 
@@ -3882,38 +3902,38 @@ function bindEvents() {
     const daySelect = document.getElementById('day-filter');
     state.ui.calendar.search = searchInput?.value || '';
     state.ui.calendar.day = daySelect?.value || 'All';
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('weekly-filters-reset')?.addEventListener('click', () => {
     state.ui.calendar.search = '';
     state.ui.calendar.day = 'All';
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('agent-schedule-view')?.addEventListener('change', (event) => {
     state.ui.agentScheduleView = event.target.value;
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('agent-schedule-day')?.addEventListener('change', (event) => {
     state.ui.agentScheduleDay = event.target.value;
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('agent-schedule-month')?.addEventListener('change', (event) => {
     state.ui.agentScheduleMonth = event.target.value;
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('availability-calendar-month')?.addEventListener('change', (event) => {
     state.ui.availabilityCalendarMonth = event.target.value;
-    saveState();
+    saveUiState();
     render();
   });
 
@@ -3922,14 +3942,14 @@ function bindEvents() {
     const toInput = document.getElementById('availability-to-filter');
     state.ui.availabilityFrom = fromInput?.value || '';
     state.ui.availabilityTo = toInput?.value || '';
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('availability-filters-reset')?.addEventListener('click', () => {
     state.ui.availabilityFrom = '';
     state.ui.availabilityTo = '';
-    saveState();
+    saveUiState();
     render();
   });
 
@@ -3948,7 +3968,7 @@ function bindEvents() {
     state.ui.calendar.agentId = agentSelect?.value || 'All';
     state.ui.calendar.role = roleSelect?.value || 'All';
     state.ui.calendar.location = locationSelect?.value || 'All';
-    saveState();
+    saveUiState();
     render();
   });
 
@@ -3961,55 +3981,55 @@ function bindEvents() {
     state.ui.calendar.date = '';
     state.ui.calendar.weekReference = '';
     state.ui.calendar.location = 'All';
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('calendar-week-reference')?.addEventListener('change', (event) => {
     state.ui.calendar.weekReference = event.target.value || '';
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('calendar-previous-week')?.addEventListener('click', () => {
     state.ui.calendar.weekReference = getShiftedWeekReference(getActiveCalendarWeekReference(), -7);
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('calendar-current-week')?.addEventListener('click', () => {
     state.ui.calendar.weekReference = new Date().toISOString().slice(0, 10);
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('calendar-next-week')?.addEventListener('click', () => {
     state.ui.calendar.weekReference = getShiftedWeekReference(getActiveCalendarWeekReference(), 7);
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('weekly-week-reference')?.addEventListener('change', (event) => {
     state.ui.calendar.weekReference = event.target.value || '';
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('weekly-previous-week')?.addEventListener('click', () => {
     state.ui.calendar.weekReference = getShiftedWeekReference(getActiveCalendarWeekReference(), -7);
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('weekly-current-week')?.addEventListener('click', () => {
     state.ui.calendar.weekReference = new Date().toISOString().slice(0, 10);
-    saveState();
+    saveUiState();
     render();
   });
 
   document.getElementById('weekly-next-week')?.addEventListener('click', () => {
     state.ui.calendar.weekReference = getShiftedWeekReference(getActiveCalendarWeekReference(), 7);
-    saveState();
+    saveUiState();
     render();
   });
 
