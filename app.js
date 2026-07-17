@@ -136,6 +136,7 @@ let memoryEmailOutbox = [];
 let lastSuccessfulSyncAt = loadLastSuccessfulSyncAt();
 let adminManagerNotice = null;
 let adminProfileNotice = null;
+const attemptedResetTokenLookups = new Set();
 const defaultEmailDeliverySettings = {
   enabled: false,
   provider: 'generic',
@@ -1065,6 +1066,26 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     );
 
     if (!isValidRequest) {
+      if (backendApiBase && !attemptedResetTokenLookups.has(resetToken)) {
+        attemptedResetTokenLookups.add(resetToken);
+        root.innerHTML = `
+          <div class="app" style="max-width:560px; padding-top:48px;">
+            <div class="panel">
+              <h1>Reset password</h1>
+              <div class="muted">Checking your invite link...</div>
+            </div>
+          </div>
+        `;
+        void fetchBackendSnapshot().then((remoteStore) => {
+          if (remoteStore) {
+            applyRemoteSnapshot(remoteStore);
+            syncFromStorage();
+          }
+          render();
+        });
+        return;
+      }
+
       root.innerHTML = `
         <div class="app" style="max-width:560px; padding-top:48px;">
           <div class="panel">
@@ -1115,6 +1136,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
         ? { ...request, used: true, usedAt: new Date().toISOString() }
         : request);
       savePasswordResetRequests(updatedRequests);
+      attemptedResetTokenLookups.delete(resetToken);
 
       window.history.replaceState({}, '', window.location.pathname);
       renderLoginPage('', 'Password reset successful. You can now log in with your new password.');
@@ -1806,6 +1828,19 @@ function getSpendByDay() {
 function getAssignedHours(agentId) {
   const normalizedAgentId = Number(agentId);
   return state.shifts.filter((shift) => Number(shift.agentId) === normalizedAgentId).reduce((sum, shift) => sum + shift.durationHours, 0);
+}
+
+function getApprovedPtoHours(agentId) {
+  const normalizedAgentId = Number(agentId);
+  return getAllAvailabilityRequests()
+    .filter((request) => Number(request.agentId) === normalizedAgentId)
+    .filter((request) => request.status === 'approved')
+    .filter((request) => String(request.unavailabilityType || '').trim() === 'PTO')
+    .reduce((sum, request) => sum + getDurationHours(request.unavailableStart, request.unavailableEnd), 0);
+}
+
+function getMinimumHoursCredit(agentId) {
+  return getAssignedHours(agentId) + getApprovedPtoHours(agentId);
 }
 
 function getAvailabilityStats() {
@@ -2701,6 +2736,7 @@ function renderProfilePage(currentUser) {
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
               <div><strong>Minimum hours:</strong> ${escapeHtml(viewAgent?.minHours ?? 0)}</div>
+              <div><strong>Minimum-hours credit:</strong> ${escapeHtml(getMinimumHoursCredit(viewAgent?.id || 0))} hrs</div>
               <div><strong>Maximum hours:</strong> ${escapeHtml(viewAgent?.maxHours ?? 'Not set')}</div>
               <div><strong>Email:</strong> ${escapeHtml(activeAgentUser?.email || 'Not set')}</div>
               <div><strong>Phone:</strong> ${escapeHtml(activeAgentUser?.phone || 'Not set')}</div>
@@ -3049,6 +3085,7 @@ function renderAgentsPage(currentUser) {
                   <div>
                     <strong>${escapeHtml(agent.name)}</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span>
                     <div class="muted">Assigned hours: ${getAssignedHours(agent.id)} hrs</div>
+                    <div class="muted">Minimum-hours credit: ${getMinimumHoursCredit(agent.id)} hrs (shifts + approved PTO)</div>
                     <div class="muted">Hours target: min ${escapeHtml(agent.minHours ?? 0)} / max ${escapeHtml(agent.maxHours ?? 'Not set')}</div>
                     <div class="muted">Email: ${escapeHtml(getUserByAgentId(agent.id)?.email || 'No login email')}</div>
                   </div>
