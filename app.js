@@ -2989,6 +2989,7 @@ function render() {
   const viewAgent = getViewAgent();
   const currentAgentId = Number(viewAgent?.id);
   const visibleShifts = isAgentView ? getAgentViewShifts() : [];
+  const blackoutDates = normalizeBlackoutDates(state.blackoutDates);
   const adminWeeklyShifts = isAgentView
     ? []
     : getFilteredCalendarShifts().filter((shift) => shift.status === shiftStatuses.published);
@@ -3145,6 +3146,13 @@ function render() {
           ${!isAgentView ? '' : `
             <div class="panel">
               <h2>Time Off</h2>
+              ${blackoutDates.length > 0 ? `
+                <div style="margin-bottom:10px;">
+                  <div class="muted" style="margin-bottom:6px;">Blackout dates</div>
+                  <div class="row" style="gap:6px; flex-wrap:wrap;">
+                    ${blackoutDates.map((dateValue) => `<span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}
+                  </div>
+                </div>` : ''}
               <form id="agent-availability-form" class="stack">
                 <select name="unavailabilityType" required>
                   <option value="Availability">Availability</option>
