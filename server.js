@@ -57,6 +57,100 @@ function filterAllowedStore(store) {
   return next;
 }
 
+function parseJsonString(rawValue, fallbackValue) {
+  if (typeof rawValue !== 'string') return fallbackValue;
+  try {
+    const parsed = JSON.parse(rawValue);
+    return parsed ?? fallbackValue;
+  } catch {
+    return fallbackValue;
+  }
+}
+
+function formatUtcDateTimeForIcs(dateValue) {
+  return dateValue.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+}
+
+function formatLocalDateTimeForIcs(dateValue, timeValue) {
+  const normalizedDate = String(dateValue || '').slice(0, 10);
+  const normalizedTime = String(timeValue || '').slice(0, 5);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate) || !/^\d{2}:\d{2}$/.test(normalizedTime)) {
+    return '';
+  }
+  return `${normalizedDate.replace(/-/g, '')}T${normalizedTime.replace(':', '')}00`;
+}
+
+function escapeIcsText(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n');
+}
+
+function buildAgentCalendarFeed(store, token) {
+  const parsedUsers = parseJsonString(store['agent-scheduler-users-v1'], []);
+  const parsedState = parseJsonString(store['agent-scheduler-state-v4'], {});
+  if (!Array.isArray(parsedUsers)) {
+    return { status: 404, ics: '' };
+  }
+
+  const agentUser = parsedUsers.find((user) => user?.role === 'agent' && String(user?.calendarFeedToken || '').trim() === token);
+  if (!agentUser) {
+    return { status: 404, ics: '' };
+  }
+
+  const shifts = Array.isArray(parsedState?.shifts) ? parsedState.shifts : [];
+  const agentShifts = shifts
+    .filter((shift) => Number(shift?.agentId) === Number(agentUser.agentId))
+    .filter((shift) => /^\d{4}-\d{2}-\d{2}$/.test(String(shift?.date || '')))
+    .sort((left, right) => `${left.date || ''}${left.start || ''}`.localeCompare(`${right.date || ''}${right.start || ''}`));
+
+  const nowStamp = formatUtcDateTimeForIcs(new Date());
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'PRODID:-//Audience Services Scheduling//Agent Schedule//EN',
+    `X-WR-CALNAME:${escapeIcsText(`${agentUser.name || agentUser.username || 'Agent'} - Work Schedule`)}`,
+    'X-WR-TIMEZONE:UTC'
+  ];
+
+  agentShifts.forEach((shift, index) => {
+    const dtStart = formatLocalDateTimeForIcs(shift.date, shift.start);
+    const dtEnd = formatLocalDateTimeForIcs(shift.date, shift.end);
+    if (!dtStart || !dtEnd) {
+      return;
+    }
+    const uid = `${shift.id || index}-${agentUser.id || agentUser.agentId}@audience-services-scheduling`;
+    const summary = `Work Shift - ${shift.role || 'Scheduled Shift'}`;
+    const statusText = shift.status ? `Status: ${shift.status}` : 'Status: scheduled';
+    const description = [
+      shift.day ? `Day: ${shift.day}` : '',
+      statusText,
+      shift.location ? `Location: ${shift.location}` : ''
+    ].filter(Boolean).join('\\n');
+
+    lines.push('BEGIN:VEVENT');
+    lines.push(`UID:${escapeIcsText(uid)}`);
+    lines.push(`DTSTAMP:${nowStamp}`);
+    lines.push(`DTSTART:${dtStart}`);
+    lines.push(`DTEND:${dtEnd}`);
+    lines.push(`SUMMARY:${escapeIcsText(summary)}`);
+    if (description) {
+      lines.push(`DESCRIPTION:${escapeIcsText(description)}`);
+    }
+    if (shift.location) {
+      lines.push(`LOCATION:${escapeIcsText(shift.location)}`);
+    }
+    lines.push('END:VEVENT');
+  });
+
+  lines.push('END:VCALENDAR');
+  return { status: 200, ics: `${lines.join('\r\n')}\r\n` };
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
@@ -92,6 +186,25 @@ app.put('/api/store/:key', (req, res) => {
   store[key] = value;
   writeStore(store);
   res.json({ ok: true });
+});
+
+app.get('/api/calendar-feed/:token.ics', (req, res) => {
+  const token = String(req.params.token || '').trim();
+  if (!token) {
+    res.status(400).send('Missing token');
+    return;
+  }
+
+  const store = readStore();
+  const payload = buildAgentCalendarFeed(store, token);
+  if (payload.status !== 200) {
+    res.status(404).send('Calendar feed not found');
+    return;
+  }
+
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.send(payload.ics);
 });
 
 app.listen(port, () => {

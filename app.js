@@ -66,9 +66,9 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', team: 'Audience Services Representative', role: 'In-person', payRate: 24, availability: 'Available' },
-    { id: 2, name: 'Luis', team: 'Audience Services Associate', role: 'WFH', payRate: 18, availability: 'Available' },
-    { id: 3, name: 'Nina', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', team: 'Audience Services Representative', role: 'In-person', payRate: 24, minHours: 0, maxHours: 40, availability: 'Available' },
+    { id: 2, name: 'Luis', team: 'Audience Services Associate', role: 'WFH', payRate: 18, minHours: 0, maxHours: 40, availability: 'Available' },
+    { id: 3, name: 'Nina', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, minHours: 0, maxHours: 40, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -447,13 +447,63 @@ function createTemporaryPassword() {
   return `Temp-${Math.random().toString(36).slice(2, 8)}A1!`;
 }
 
+function createCalendarFeedToken() {
+  if (globalThis.crypto?.randomUUID) {
+    return `cal-${globalThis.crypto.randomUUID().replace(/-/g, '')}`;
+  }
+  return `cal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 16)}`;
+}
+
+function normalizeCalendarFeedToken(value) {
+  const normalized = String(value || '').trim();
+  return normalized || createCalendarFeedToken();
+}
+
+function getAgentCalendarFeedUrl(feedToken) {
+  const normalizedApiBase = normalizeBackendUrl(backendApiBase);
+  const normalizedToken = String(feedToken || '').trim();
+  if (!normalizedApiBase || !normalizedToken) {
+    return '';
+  }
+  return `${normalizedApiBase}/calendar-feed/${encodeURIComponent(normalizedToken)}.ics`;
+}
+
+async function copyTextValue(textValue) {
+  const normalizedText = String(textValue || '').trim();
+  if (!normalizedText) {
+    return false;
+  }
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(normalizedText);
+      return true;
+    } catch {
+      // Fall through to execCommand fallback.
+    }
+  }
+  const input = document.createElement('input');
+  input.value = normalizedText;
+  document.body.appendChild(input);
+  input.select();
+  let didCopy = false;
+  try {
+    didCopy = document.execCommand('copy');
+  } catch {
+    didCopy = false;
+  }
+  document.body.removeChild(input);
+  return didCopy;
+}
+
 function withRequiredEmail(user) {
   const normalizedEmail = normalizeEmail(user?.email);
   const normalizedPhone = normalizePhone(user?.phone);
+  const calendarFeedToken = normalizeCalendarFeedToken(user?.calendarFeedToken);
   return {
     ...user,
     email: normalizedEmail || getFallbackEmail(user),
-    phone: normalizedPhone
+    phone: normalizedPhone,
+    calendarFeedToken
   };
 }
 
@@ -1031,6 +1081,19 @@ function normalizeTeamLabel(team) {
   return matchedTeam || teamOptions[0];
 }
 
+function normalizeMinHours(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return parsed;
+}
+
+function normalizeMaxHours(value) {
+  if (value === '' || value === null || typeof value === 'undefined') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
 function parseCurrencyAmount(value) {
   const normalized = String(value || '').trim().replace(/[$,\s]/g, '');
   if (!normalized) return 0;
@@ -1068,7 +1131,18 @@ function loadState() {
     }
     const parsed = JSON.parse(saved);
     const normalizedAgents = Array.isArray(parsed.agents)
-      ? parsed.agents.map((agent) => ({ ...agent, team: normalizeTeamLabel(agent.team), role: normalizeRoleLabel(agent.role) }))
+      ? parsed.agents.map((agent) => {
+          const minHours = normalizeMinHours(agent.minHours);
+          const maxHoursRaw = typeof agent.maxHours === 'undefined' ? 40 : agent.maxHours;
+          const maxHours = normalizeMaxHours(maxHoursRaw);
+          return {
+            ...agent,
+            team: normalizeTeamLabel(agent.team),
+            role: normalizeRoleLabel(agent.role),
+            minHours,
+            maxHours: Number.isFinite(maxHours) ? Math.max(maxHours, minHours) : maxHours
+          };
+        })
       : createDefaultState().agents;
     const roleByAgentId = normalizedAgents.reduce((acc, agent) => {
       acc[String(agent.id)] = agent.role;
@@ -1276,10 +1350,30 @@ function getApprovedTimeOffConflicts(agentId, date, start, end) {
   });
 }
 
-function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end) {
+function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, options = {}) {
   const activeUser = getCurrentUser();
   if (activeUser?.role !== 'admin') {
     return true;
+  }
+
+  const replacingShiftId = Number(options.replacingShiftId) || null;
+  const durationHours = Number.isFinite(Number(options.durationHours)) ? Number(options.durationHours) : getDurationHours(start, end);
+
+  const targetAgent = getAgent(agentId);
+  const maxHours = normalizeMaxHours(targetAgent?.maxHours);
+  if (Number.isFinite(maxHours) && maxHours >= 0) {
+    let assignedHours = getAssignedHours(agentId);
+    if (replacingShiftId) {
+      const existingShift = state.shifts.find((shift) => Number(shift.id) === replacingShiftId);
+      if (existingShift && Number(existingShift.agentId) === Number(agentId)) {
+        assignedHours -= Number(existingShift.durationHours) || 0;
+      }
+    }
+    const projectedHours = assignedHours + (Number(durationHours) || 0);
+    if (projectedHours > maxHours + 0.0001) {
+      alert(`${targetAgent?.name || 'This agent'} would be scheduled for ${projectedHours.toFixed(2)} hours, above the max of ${maxHours.toFixed(2)} hours.`);
+      return false;
+    }
   }
 
   const approvedTimeOffConflicts = getApprovedTimeOffConflicts(agentId, date, start, end);
@@ -1417,7 +1511,10 @@ function openShiftEditModal(shift, onSave) {
     const nextLocation = requestedLocation && shiftLocationOptions.includes(requestedLocation) ? requestedLocation : '';
     const nextStatus = String(formData.get('status') || '').trim() === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
 
-    if (!confirmShiftAssignmentWithTimeOffWarning(nextAgentId, nextDate, nextStart, nextEnd)) {
+    if (!confirmShiftAssignmentWithTimeOffWarning(nextAgentId, nextDate, nextStart, nextEnd, {
+      replacingShiftId: Number(shift.id),
+      durationHours: getDurationHours(nextStart, nextEnd)
+    })) {
       return;
     }
 
@@ -1447,6 +1544,79 @@ function getDayFromDate(dateValue) {
   }
   const mondayBasedIndex = (parsedDate.getDay() + 6) % 7;
   return days[mondayBasedIndex] || '';
+}
+
+function formatIsoDateLocal(dateValue) {
+  if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) {
+    return '';
+  }
+  const year = dateValue.getFullYear();
+  const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+  const dayOfMonth = String(dateValue.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dayOfMonth}`;
+}
+
+function getNextDateForWeekdayOnOrAfter(anchorDate, weekdayLabel) {
+  const parsedDate = new Date(`${String(anchorDate || '').slice(0, 10)}T00:00:00`);
+  const targetIndex = days.indexOf(String(weekdayLabel || ''));
+  if (Number.isNaN(parsedDate.getTime()) || targetIndex < 0) {
+    return '';
+  }
+  const currentIndex = (parsedDate.getDay() + 6) % 7;
+  const deltaDays = (targetIndex - currentIndex + 7) % 7;
+  parsedDate.setDate(parsedDate.getDate() + deltaDays);
+  return formatIsoDateLocal(parsedDate);
+}
+
+function buildWeeklyRecurringDates(startDate, weekdayLabel, endDate, maxOccurrences = 104) {
+  const normalizedStartDate = String(startDate || '').slice(0, 10);
+  const normalizedEndDate = String(endDate || '').slice(0, 10);
+  if (!normalizedStartDate || !normalizedEndDate || !days.includes(String(weekdayLabel || ''))) {
+    return { dates: [], truncated: false };
+  }
+
+  const parsedStartDate = new Date(`${normalizedStartDate}T00:00:00`);
+  const parsedEndDate = new Date(`${normalizedEndDate}T00:00:00`);
+  if (Number.isNaN(parsedStartDate.getTime()) || Number.isNaN(parsedEndDate.getTime()) || parsedEndDate < parsedStartDate) {
+    return { dates: [], truncated: false };
+  }
+
+  let cursor = getNextDateForWeekdayOnOrAfter(normalizedStartDate, weekdayLabel);
+  if (!cursor) {
+    return { dates: [], truncated: false };
+  }
+
+  const dates = [];
+  let truncated = false;
+  while (cursor && cursor <= normalizedEndDate) {
+    dates.push(cursor);
+    if (dates.length >= maxOccurrences) {
+      truncated = true;
+      break;
+    }
+    const nextDate = new Date(`${cursor}T00:00:00`);
+    nextDate.setDate(nextDate.getDate() + 7);
+    cursor = formatIsoDateLocal(nextDate);
+  }
+
+  return { dates, truncated };
+}
+
+function getAvailabilityRecurrenceLabel(request) {
+  if (request?.recurrenceType !== 'weekly') {
+    return 'One-time request';
+  }
+  const recurrenceDay = days.includes(String(request.recurrenceDay || ''))
+    ? request.recurrenceDay
+    : getDayFromDate(request.unavailableDate || '');
+  const recurrenceEndDate = String(request.recurrenceEndDate || '').slice(0, 10);
+  if (recurrenceDay && recurrenceEndDate) {
+    return `Repeats weekly on ${recurrenceDay} through ${recurrenceEndDate}`;
+  }
+  if (recurrenceDay) {
+    return `Repeats weekly on ${recurrenceDay}`;
+  }
+  return 'Recurring weekly';
 }
 
 function getWeeklySpend() {
@@ -2024,6 +2194,16 @@ function renderProfilePage(currentUser) {
   }
 
   const viewAgent = getViewAgent();
+  let activeAgentUser = currentUser;
+  if (!String(activeAgentUser?.calendarFeedToken || '').trim()) {
+    const nextCalendarFeedToken = createCalendarFeedToken();
+    authUsers = authUsers.map((user) => user.id === activeAgentUser.id
+      ? { ...user, calendarFeedToken: nextCalendarFeedToken }
+      : user);
+    saveAuthUsers();
+    activeAgentUser = getCurrentUser() || { ...activeAgentUser, calendarFeedToken: nextCalendarFeedToken };
+  }
+  const calendarSyncUrl = getAgentCalendarFeedUrl(activeAgentUser.calendarFeedToken);
 
   root.innerHTML = `
     <div class="app">
@@ -2049,8 +2229,23 @@ function renderProfilePage(currentUser) {
               <div><strong>Name:</strong> ${escapeHtml(viewAgent?.name || 'Not set')}</div>
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
-              <div><strong>Email:</strong> ${escapeHtml(currentUser?.email || 'Not set')}</div>
-              <div><strong>Phone:</strong> ${escapeHtml(currentUser?.phone || 'Not set')}</div>
+              <div><strong>Minimum hours:</strong> ${escapeHtml(viewAgent?.minHours ?? 0)}</div>
+              <div><strong>Maximum hours:</strong> ${escapeHtml(viewAgent?.maxHours ?? 'Not set')}</div>
+              <div><strong>Email:</strong> ${escapeHtml(activeAgentUser?.email || 'Not set')}</div>
+              <div><strong>Phone:</strong> ${escapeHtml(activeAgentUser?.phone || 'Not set')}</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>Personal calendar sync</h2>
+            <p class="muted">Subscribe to this URL in Google Calendar, Apple Calendar, or Outlook to keep your shifts in your personal calendar.</p>
+            <div class="stack" style="margin-top:10px;">
+              <input id="agent-calendar-sync-url" value="${escapeHtml(calendarSyncUrl)}" readonly />
+              <div class="row">
+                <button id="copy-agent-calendar-sync-url" type="button">Copy sync URL</button>
+                <button id="regenerate-agent-calendar-sync-url" type="button" class="secondary">Regenerate URL</button>
+              </div>
+              <div class="muted">Regenerating the URL disables the old one.</div>
             </div>
           </div>
 
@@ -2067,7 +2262,7 @@ function renderProfilePage(currentUser) {
           <div class="panel">
             <h2>Update phone number</h2>
             <form id="agent-update-phone-form" class="stack" style="margin-top:10px;">
-              <input name="phone" type="tel" placeholder="Phone number" value="${escapeHtml(currentUser?.phone || '')}" required autocomplete="tel" />
+              <input name="phone" type="tel" placeholder="Phone number" value="${escapeHtml(activeAgentUser?.phone || '')}" required autocomplete="tel" />
               <button type="submit">Save phone number</button>
             </form>
           </div>
@@ -2125,6 +2320,7 @@ function renderAgentRequestsPage(currentUser) {
               <div class="muted">Type: ${escapeHtml(request.unavailabilityType || 'Availability')}</div>
               <div class="muted">Unavailability date: ${escapeHtml(request.unavailableDate || 'Not set')}</div>
               <div class="muted">Time: ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')}</div>
+              <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
               <div class="muted">Approved: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
             </div>
           `).join('') || '<div class="muted">No approved unavailability requests yet.</div>'}
@@ -2198,6 +2394,7 @@ function renderPendingRequestsPage(currentUser) {
                   <div class="muted">Type: ${escapeHtml(request.unavailabilityType || 'Availability')}</div>
                   <div class="muted">Date: ${escapeHtml(request.unavailableDate || 'Not set')}</div>
                   <div class="muted">Time: ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')}</div>
+                  <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
                   <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
                 </div>
                 <span class="status-badge pending">pending</span>
@@ -2368,6 +2565,8 @@ function renderAgentsPage(currentUser) {
               ${teamOptions.map((team) => `<option value="${team}">${escapeHtml(team)}</option>`).join('')}
             </select>
             <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
+            <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Min hrs" />
+            <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Max hrs" />
             <button type="submit">Add agent</button>
           </div>
         </form>
@@ -2379,6 +2578,7 @@ function renderAgentsPage(currentUser) {
                   <div>
                     <strong>${escapeHtml(agent.name)}</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span>
                     <div class="muted">Assigned hours: ${getAssignedHours(agent.id)} hrs</div>
+                    <div class="muted">Hours target: min ${escapeHtml(agent.minHours ?? 0)} / max ${escapeHtml(agent.maxHours ?? 'Not set')}</div>
                     <div class="muted">Email: ${escapeHtml(getUserByAgentId(agent.id)?.email || 'No login email')}</div>
                   </div>
                   <button class="danger" data-remove-agent="${agent.id}" type="button">Remove</button>
@@ -2390,6 +2590,8 @@ function renderAgentsPage(currentUser) {
                     ${teamOptions.map((team) => `<option value="${team}" ${(agent.team || teamOptions[0]) === team ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
                   </select>
                   <input name="payRate" type="text" inputmode="decimal" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" />
+                  <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" value="${escapeHtml(agent.minHours ?? 0)}" />
+                  <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" value="${escapeHtml(agent.maxHours ?? '')}" />
                 </div>
                 <div class="row" style="gap:8px; justify-content:flex-end;">
                   <button class="secondary" type="submit">Save agent</button>
@@ -2568,6 +2770,7 @@ function renderAvailabilityRequestsPage(currentUser) {
                   <div class="muted">Type: ${escapeHtml(request.unavailabilityType || 'Availability')}</div>
                   <div class="muted">Requested unavailability date: ${escapeHtml(request.unavailableDate || 'Not set')}</div>
                   <div class="muted">Time: ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')}</div>
+                  <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
                   <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
                   ${request.note ? `<div class="muted">Note: ${escapeHtml(request.note)}</div>` : ''}
                 </div>
@@ -2846,6 +3049,18 @@ function render() {
                   <input name="unavailableStart" type="time" required />
                   <input name="unavailableEnd" type="time" required />
                 </div>
+                <div class="row">
+                  <select name="recurrenceType">
+                    <option value="once">One-time</option>
+                    <option value="weekly">Weekly recurring</option>
+                  </select>
+                  <select name="recurrenceDay">
+                    <option value="">Match selected date</option>
+                    ${days.map((day) => `<option value="${day}">${day}</option>`).join('')}
+                  </select>
+                  <input name="recurrenceEndDate" type="date" />
+                </div>
+                <div class="muted" style="font-size:12px;">For weekly recurring requests, choose an end date (example: every Thu, 3:00 PM-6:00 PM).</div>
                 <input name="note" placeholder="Reason or note" required />
                 <button type="submit">Submit request</button>
               </form>
@@ -2928,41 +3143,87 @@ function submitAvailabilityRequest(formElement) {
   const unavailableDate = formData.get('unavailableDate')?.toString() || '';
   const unavailableStart = formData.get('unavailableStart')?.toString() || '';
   const unavailableEnd = formData.get('unavailableEnd')?.toString() || '';
+  const recurrenceTypeInput = formData.get('recurrenceType')?.toString() || 'once';
+  const recurrenceDayInput = formData.get('recurrenceDay')?.toString() || '';
+  const recurrenceEndDate = formData.get('recurrenceEndDate')?.toString() || '';
   const note = formData.get('note')?.toString().trim() || '';
   if (!unavailabilityType || !unavailableDate || !unavailableStart || !unavailableEnd || !note) {
     alert('Please complete all request fields before submitting.');
     return false;
   }
 
-  const nextRequest = {
+  const recurrenceType = recurrenceTypeInput === 'weekly' ? 'weekly' : 'once';
+  const derivedDayFromDate = getDayFromDate(unavailableDate);
+  const recurrenceDay = recurrenceType === 'weekly'
+    ? (days.includes(recurrenceDayInput) ? recurrenceDayInput : derivedDayFromDate)
+    : '';
+  if (recurrenceType === 'weekly' && !recurrenceEndDate) {
+    alert('Choose an end date for weekly recurring unavailability.');
+    return false;
+  }
+  if (recurrenceType === 'weekly' && !recurrenceDay) {
+    alert('Choose a valid recurring day or select a valid unavailable date.');
+    return false;
+  }
+
+  const recurrencePlan = recurrenceType === 'weekly'
+    ? buildWeeklyRecurringDates(unavailableDate, recurrenceDay, recurrenceEndDate)
+    : { dates: [unavailableDate], truncated: false };
+  if (!recurrencePlan.dates.length) {
+    alert('No recurring dates were generated. Make sure the end date is on or after the start date.');
+    return false;
+  }
+
+  const recurrenceGroupId = recurrenceType === 'weekly'
+    ? `weekly-${currentId}-${Date.now()}-${createId()}`
+    : '';
+  const requesterName = getAgent(currentId)?.name || currentUser.username || 'Agent';
+  const requestTimestamp = new Date().toISOString();
+
+  const nextRequests = recurrencePlan.dates.map((dateValue, index) => ({
     id: createId(),
     agentId: currentId,
     requesterUserId: currentUser.id,
     requesterEmail: currentUser.email || '',
-    requesterName: getAgent(currentId)?.name || currentUser.username || 'Agent',
+    requesterName,
     availability: 'Unavailable',
     unavailabilityType,
-    unavailableDate,
+    unavailableDate: dateValue,
     unavailableStart,
     unavailableEnd,
     note,
-    requestedAt: new Date().toISOString(),
+    recurrenceType,
+    recurrenceDay,
+    recurrenceEndDate: recurrenceType === 'weekly' ? String(recurrenceEndDate).slice(0, 10) : '',
+    recurrenceGroupId,
+    recurrenceInstance: index + 1,
+    recurrenceTotal: recurrencePlan.dates.length,
+    requestedAt: requestTimestamp,
     status: 'pending'
-  };
+  }));
 
-  const nextAvailabilityRequests = [...getAllAvailabilityRequests(), nextRequest];
+  const nextAvailabilityRequests = [...getAllAvailabilityRequests(), ...nextRequests];
   saveAvailabilityRequests(nextAvailabilityRequests);
   saveState();
+
+  const recurrenceSummary = recurrenceType === 'weekly'
+    ? `weekly every ${recurrenceDay} through ${String(recurrenceEndDate).slice(0, 10)}`
+    : unavailableDate;
 
   sendEmailNotification({
     to: currentUser.email || '',
     subject: 'Unavailability request received',
-    body: `Hi ${nextRequest.requesterName}, your unavailability request for ${unavailableDate} (${formatTimeRange(unavailableStart, unavailableEnd)}) has been submitted successfully.`,
+    body: `Hi ${requesterName}, your unavailability request (${recurrenceSummary}, ${formatTimeRange(unavailableStart, unavailableEnd)}) has been submitted successfully.`,
     type: 'availability-submitted'
   });
 
   const outboxCount = loadEmailOutbox().length;
-  alert(`Unavailability request submitted. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
+  const submittedCount = nextRequests.length;
+  const requestLabel = submittedCount === 1 ? 'request' : 'requests';
+  const truncationNote = recurrencePlan.truncated
+    ? ' For safety, recurring requests are capped at 104 weekly entries per submission.'
+    : '';
+  alert(`${submittedCount} unavailability ${requestLabel} submitted. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.${truncationNote}`);
   render();
   return true;
 }
@@ -2991,12 +3252,18 @@ function bindEvents() {
     const email = normalizeEmail(formData.get('email'));
     const payRateRaw = formData.get('payRate')?.toString().trim() || '0';
     const payRate = parseCurrencyAmount(payRateRaw);
+    const minHours = normalizeMinHours(formData.get('minHours'));
+    const maxHours = normalizeMaxHours(formData.get('maxHours'));
     if (!name || !email) {
       alert('Name and email are required to add an agent.');
       return;
     }
     if (!Number.isFinite(payRate) || payRate < 0) {
       alert('Pay rate must be a valid non-negative amount (example: $15.45).');
+      return;
+    }
+    if (Number.isFinite(maxHours) && maxHours < minHours) {
+      alert('Maximum hours must be greater than or equal to minimum hours.');
       return;
     }
     const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email);
@@ -3010,6 +3277,8 @@ function bindEvents() {
       name,
       team: normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]),
       payRate,
+      minHours,
+      maxHours,
       availability: 'Available'
     });
 
@@ -3019,6 +3288,7 @@ function bindEvents() {
       email,
       phone: '',
       password: createTemporaryPassword(),
+      calendarFeedToken: createCalendarFeedToken(),
       role: 'agent',
       agentId
     });
@@ -3048,7 +3318,9 @@ function bindEvents() {
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
     if (!day || !agentId || !role || !start || !end || !date) return;
-    if (!confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end)) return;
+    if (!confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, {
+      durationHours: getDurationHours(start, end)
+    })) return;
 
     state.shifts.push({ id: createId(), day, date, agentId, role, start, end, durationHours: getDurationHours(start, end), location, status: shiftStatuses.draft });
     saveState();
@@ -3258,6 +3530,35 @@ function bindEvents() {
     render();
   });
 
+  document.getElementById('copy-agent-calendar-sync-url')?.addEventListener('click', async () => {
+    const input = document.getElementById('agent-calendar-sync-url');
+    const syncUrl = input instanceof HTMLInputElement ? input.value : '';
+    if (!syncUrl) {
+      alert('No calendar sync URL is available yet.');
+      return;
+    }
+    const didCopy = await copyTextValue(syncUrl);
+    if (!didCopy) {
+      alert('Unable to copy automatically. Please copy the URL manually.');
+      return;
+    }
+    alert('Calendar sync URL copied.');
+  });
+
+  document.getElementById('regenerate-agent-calendar-sync-url')?.addEventListener('click', () => {
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+    const shouldRegenerate = confirm('Regenerate your personal calendar sync URL? The previous URL will stop working.');
+    if (!shouldRegenerate) return;
+    const nextCalendarFeedToken = createCalendarFeedToken();
+    authUsers = authUsers.map((user) => user.id === currentUser.id
+      ? { ...user, calendarFeedToken: nextCalendarFeedToken }
+      : user);
+    saveAuthUsers();
+    alert('Calendar sync URL regenerated. Use the new URL in your calendar app.');
+    render();
+  });
+
   document.querySelectorAll('[data-role-color]').forEach((input) => {
     input.addEventListener('input', () => {
       const roleName = String(input.getAttribute('data-role-color') || '').trim().toLowerCase();
@@ -3313,12 +3614,18 @@ function bindEvents() {
       const team = normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]);
       const payRateRaw = formData.get('payRate')?.toString().trim() || '0';
       const payRate = parseCurrencyAmount(payRateRaw);
+      const minHours = normalizeMinHours(formData.get('minHours'));
+      const maxHours = normalizeMaxHours(formData.get('maxHours'));
       if (!name || !email) {
         alert('Name and email are required for each agent.');
         return;
       }
       if (!Number.isFinite(payRate) || payRate < 0) {
         alert('Pay rate must be a valid non-negative amount (example: $15.45).');
+        return;
+      }
+      if (Number.isFinite(maxHours) && maxHours < minHours) {
+        alert('Maximum hours must be greater than or equal to minimum hours.');
         return;
       }
       const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email && Number(user.agentId) !== id);
@@ -3332,7 +3639,9 @@ function bindEvents() {
             id,
             name,
             team,
-            payRate
+            payRate,
+            minHours,
+            maxHours
           }
         : agent);
 
@@ -3351,6 +3660,7 @@ function bindEvents() {
           email,
           phone: '',
           password: createTemporaryPassword(),
+          calendarFeedToken: createCalendarFeedToken(),
           role: 'agent',
           agentId: id
         }));
@@ -3609,7 +3919,9 @@ function bindEvents() {
       const shift = state.shifts.find((item) => item.id === id);
       if (!shift) return;
       const duplicatedShift = cloneShift(shift);
-      if (!confirmShiftAssignmentWithTimeOffWarning(duplicatedShift.agentId, duplicatedShift.date, duplicatedShift.start, duplicatedShift.end)) return;
+      if (!confirmShiftAssignmentWithTimeOffWarning(duplicatedShift.agentId, duplicatedShift.date, duplicatedShift.start, duplicatedShift.end, {
+        durationHours: duplicatedShift.durationHours
+      })) return;
       state.shifts.push(duplicatedShift);
       saveState();
       render();
@@ -3622,7 +3934,9 @@ function bindEvents() {
       const day = button.getAttribute('data-paste-shift-day');
       if (!copiedShiftTemplate || !day) return;
       const pastedShift = cloneShift(copiedShiftTemplate, day);
-      if (!confirmShiftAssignmentWithTimeOffWarning(pastedShift.agentId, pastedShift.date, pastedShift.start, pastedShift.end)) return;
+      if (!confirmShiftAssignmentWithTimeOffWarning(pastedShift.agentId, pastedShift.date, pastedShift.start, pastedShift.end, {
+        durationHours: pastedShift.durationHours
+      })) return;
       state.shifts.push(pastedShift);
       saveState();
       render();
@@ -3661,7 +3975,10 @@ function bindEvents() {
       const targetDate = card.getAttribute('data-date') || shiftToMove.date || '';
       const movedToNewDate = String(shiftToMove.date || '') !== String(targetDate || '');
 
-      if (movedToNewDate && !confirmShiftAssignmentWithTimeOffWarning(shiftToMove.agentId, targetDate, shiftToMove.start, shiftToMove.end)) {
+      if (movedToNewDate && !confirmShiftAssignmentWithTimeOffWarning(shiftToMove.agentId, targetDate, shiftToMove.start, shiftToMove.end, {
+        replacingShiftId: Number(shiftToMove.id),
+        durationHours: Number(shiftToMove.durationHours) || getDurationHours(shiftToMove.start, shiftToMove.end)
+      })) {
         return;
       }
 
