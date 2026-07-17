@@ -674,7 +674,12 @@ function loadAuthUsers() {
 
 function saveAuthUsers() {
   // Persist auth users through shared storage so profile edits sync across devices.
-  safeSetLocalStorage(authUsersKey, JSON.stringify(authUsers));
+  const didSave = safeSetLocalStorage(authUsersKey, JSON.stringify(authUsers));
+  if (didSave && !isApplyingRemoteSnapshot && backendApiBase) {
+    // Auth updates are critical for login; push a full snapshot best-effort.
+    void pushLocalSnapshotToBackend();
+  }
+  return didSave;
 }
 
 function loadPasswordResetRequests() {
@@ -1230,13 +1235,22 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     </div>
   `;
 
-  document.getElementById('login-form')?.addEventListener('submit', (event) => {
+  document.getElementById('login-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const email = normalizeEmail(formData.get('email'));
     const password = formData.get('password')?.toString() || '';
     const shouldRememberLogin = Boolean(formData.get('savePassword'));
-    const foundUser = authUsers.find((user) => normalizeEmail(user.email) === email && user.password === password);
+    let foundUser = authUsers.find((user) => normalizeEmail(user.email) === email && user.password === password);
+    if (!foundUser && backendApiBase) {
+      // If local auth data is stale, refresh once from backend before failing login.
+      const remoteStore = await fetchBackendSnapshot();
+      if (remoteStore) {
+        applyRemoteSnapshot(remoteStore);
+        syncFromStorage();
+        foundUser = authUsers.find((user) => normalizeEmail(user.email) === email && user.password === password);
+      }
+    }
     if (!foundUser) {
       renderLoginPage('Invalid email or password.');
       return;
@@ -1342,10 +1356,19 @@ function renderFirstLoginPasswordSetupPage(currentUser) {
           mustChangePassword: false
         }
       : user);
-    saveAuthUsers();
+    const didSaveAuthUsers = saveAuthUsers();
+    if (!didSaveAuthUsers) {
+      alert('Unable to save your new password right now. Please check browser storage settings and try again.');
+      return;
+    }
+    if (backendApiBase) {
+      syncSharedSnapshotToBackend();
+    }
     saveRememberedLogin(currentUser.email, newPassword, shouldRememberLogin);
     // Ensure we land on dashboard without a hard reload that can interrupt agent flow.
     window.history.replaceState({}, '', window.location.pathname);
+    applyAccessForUser({ ...currentUser, mustChangePassword: false });
+    saveUiState();
     render();
   });
 }
