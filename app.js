@@ -1029,6 +1029,13 @@ function normalizeTeamLabel(team) {
   return matchedTeam || teamOptions[0];
 }
 
+function parseCurrencyAmount(value) {
+  const normalized = String(value || '').trim().replace(/[$,\s]/g, '');
+  if (!normalized) return 0;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
 function normalizeTemplates(templates) {
   const defaultTemplates = createDefaultState().templates;
   if (!Array.isArray(templates) || templates.length === 0) {
@@ -2337,7 +2344,7 @@ function renderAgentsPage(currentUser) {
             <select name="team" required>
               ${teamOptions.map((team) => `<option value="${team}">${escapeHtml(team)}</option>`).join('')}
             </select>
-            <input name="payRate" type="number" placeholder="Pay rate" />
+            <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
             <button type="submit">Add agent</button>
           </div>
         </form>
@@ -2359,7 +2366,7 @@ function renderAgentsPage(currentUser) {
                   <select name="team" required>
                     ${teamOptions.map((team) => `<option value="${team}" ${(agent.team || teamOptions[0]) === team ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
                   </select>
-                  <input name="payRate" type="number" step="0.01" min="0" value="${escapeHtml(agent.payRate)}" />
+                  <input name="payRate" type="text" inputmode="decimal" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" />
                 </div>
                 <div class="row">
                   <button class="secondary" type="submit">Save agent</button>
@@ -2959,8 +2966,14 @@ function bindEvents() {
     const formData = new FormData(event.currentTarget);
     const name = formData.get('name')?.toString().trim();
     const email = normalizeEmail(formData.get('email'));
+    const payRateRaw = formData.get('payRate')?.toString().trim() || '0';
+    const payRate = parseCurrencyAmount(payRateRaw);
     if (!name || !email) {
       alert('Name and email are required to add an agent.');
+      return;
+    }
+    if (!Number.isFinite(payRate) || payRate < 0) {
+      alert('Pay rate must be a valid non-negative amount (example: $15.45).');
       return;
     }
     const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email);
@@ -2973,7 +2986,7 @@ function bindEvents() {
       id: agentId,
       name,
       team: normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]),
-      payRate: Number(formData.get('payRate')) || 0,
+      payRate,
       availability: 'Available'
     });
 
@@ -3269,9 +3282,14 @@ function bindEvents() {
       const name = formData.get('name')?.toString().trim();
       const email = normalizeEmail(formData.get('email'));
       const team = normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]);
-      const payRate = Number(formData.get('payRate')) || 0;
+      const payRateRaw = formData.get('payRate')?.toString().trim() || '0';
+      const payRate = parseCurrencyAmount(payRateRaw);
       if (!name || !email) {
         alert('Name and email are required for each agent.');
+        return;
+      }
+      if (!Number.isFinite(payRate) || payRate < 0) {
+        alert('Pay rate must be a valid non-negative amount (example: $15.45).');
         return;
       }
       const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email && Number(user.agentId) !== id);
