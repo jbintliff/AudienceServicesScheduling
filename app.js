@@ -1065,29 +1065,15 @@ function sendAgentInviteEmail(agentUser, agentName, temporaryPassword = '') {
     return null;
   }
   const signInLink = getAppLoginUrl();
-  const passwordResetRequests = loadPasswordResetRequests();
-  const token = createResetToken();
-  const resetLink = getResetLink(token);
-  passwordResetRequests.push({
-    id: createId(),
-    token,
-    userId: agentUser.id,
-    email: normalizeEmail(agentUser.email),
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString(),
-    used: false
-  });
-  savePasswordResetRequests(passwordResetRequests);
   const inviteTempPassword = String(temporaryPassword || agentUser.password || '').trim();
   const inviteMessage = sendEmailNotification({
     to: normalizeEmail(agentUser.email),
     subject: 'You have been invited to Agent Scheduler',
-    body: `Hi ${agentName || 'Agent'}, your agent account is ready.\n\nTemporary password: ${inviteTempPassword || '(not available)'}\nSign in: ${signInLink}\n\nIf the sign-in link does not load, use this direct setup link instead: ${resetLink}\n\nAfter your first sign in, you will be prompted to create your own password.`,
+    body: `Hi ${agentName || 'Agent'}, your agent account is ready.\n\nTemporary password: ${inviteTempPassword || '(not available)'}\nSign in: ${signInLink}\n\nAfter your first sign in, you will be prompted to create your own password.`,
     type: 'agent-invite'
   });
   return {
     signInLink,
-    resetLink,
     temporaryPassword: inviteTempPassword,
     deliveryStatus: inviteMessage?.deliveryStatus || 'local-only'
   };
@@ -4529,7 +4515,7 @@ function bindEvents() {
     saveState();
     const outboxCount = loadEmailOutbox().length;
     if (inviteResult?.deliveryStatus === 'local-only') {
-      alert(`Agent added. Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || '(not available)'}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}\nDirect setup link: ${inviteResult?.resetLink || ''}`);
+      alert(`Agent added. Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || '(not available)'}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}`);
     } else {
       alert(`Agent added and invitation email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
     }
@@ -5001,7 +4987,7 @@ function bindEvents() {
       const inviteResult = sendAgentInviteEmail(refreshedAgentUser, agent.name, temporaryPassword);
       const outboxCount = loadEmailOutbox().length;
       if (inviteResult?.deliveryStatus === 'local-only') {
-        alert(`Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || temporaryPassword}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}\nDirect setup link: ${inviteResult?.resetLink || ''}`);
+        alert(`Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || temporaryPassword}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}`);
       } else {
         alert(`Invite email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
       }
