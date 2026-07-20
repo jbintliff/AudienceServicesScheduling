@@ -2300,8 +2300,9 @@ function getSwapRequestShiftLabel(request, side) {
 function isSwapRequestVisibleToAgent(request, agentId) {
   const isParticipant = Number(request?.fromAgentId) === Number(agentId) || Number(request?.toAgentId) === Number(agentId);
   if (!isParticipant) return false;
-  const linkedShift = getShiftById(getSwapRequestFromShiftId(request));
-  return isPublishedShift(linkedShift);
+  const fromShift = getShiftById(getSwapRequestFromShiftId(request));
+  const toShift = getShiftById(getSwapRequestToShiftId(request));
+  return Boolean(fromShift || toShift || request?.status === 'pending' || request?.status === 'completed');
 }
 
 function getAgentViewShifts(options = {}) {
@@ -3273,10 +3274,10 @@ function renderAgentRequestsPage(currentUser) {
     return;
   }
 
-  const viewAgent = getViewAgent();
-  const currentAgentId = Number(viewAgent?.id);
+  const currentAgentId = Number(currentUser?.agentId);
+  const viewAgent = getAgent(currentAgentId) || getViewAgent();
   const allAvailabilityRequests = getAllAvailabilityRequests();
-  const approvedAvailabilityRequests = allAvailabilityRequests.filter((request) => request.agentId === currentAgentId && request.status === 'approved');
+  const approvedAvailabilityRequests = allAvailabilityRequests.filter((request) => Number(request.agentId) === currentAgentId && request.status === 'approved');
   const approvedSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'completed');
 
   root.innerHTML = `
@@ -3345,10 +3346,10 @@ function renderPendingRequestsPage(currentUser) {
     return;
   }
 
-  const viewAgent = getViewAgent();
-  const currentAgentId = Number(viewAgent?.id);
+  const currentAgentId = Number(currentUser?.agentId);
+  const viewAgent = getAgent(currentAgentId) || getViewAgent();
   const allAvailabilityRequests = getAllAvailabilityRequests();
-  const pendingAvailabilityRequests = allAvailabilityRequests.filter((request) => request.agentId === currentAgentId && request.status === 'pending');
+  const pendingAvailabilityRequests = allAvailabilityRequests.filter((request) => Number(request.agentId) === currentAgentId && request.status === 'pending');
   const pendingSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'pending');
 
   root.innerHTML = `
@@ -4167,14 +4168,14 @@ window.addEventListener('storage', (event) => {
 });
 
 function submitAvailabilityRequest(formElement) {
-  const currentId = getCurrentAgentId();
-  if (!currentId) {
-    alert('Unable to submit request: no agent is selected.');
-    return false;
-  }
   const currentUser = getCurrentUser();
   if (!currentUser) {
     alert('Unable to submit request: no active user session.');
+    return false;
+  }
+  const currentId = Number(currentUser.agentId) || getCurrentAgentId();
+  if (!currentId) {
+    alert('Unable to submit request: no agent is selected.');
     return false;
   }
 
