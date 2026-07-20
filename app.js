@@ -3113,9 +3113,9 @@ function renderProfilePage(currentUser) {
               <div><strong>Name:</strong> ${escapeHtml(viewAgent?.name || 'Not set')}</div>
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
-              <div><strong>Minimum hours:</strong> ${escapeHtml(viewAgent?.minHours ?? 0)}</div>
+              <div><strong>This agent's minimum hours:</strong> ${escapeHtml(viewAgent?.minHours ?? 0)}</div>
               <div><strong>Minimum-hours credit:</strong> ${escapeHtml(getMinimumHoursCredit(viewAgent?.id || 0))} hrs</div>
-              <div><strong>Maximum hours:</strong> ${escapeHtml(viewAgent?.maxHours ?? 'Not set')}</div>
+              <div><strong>This agent's maximum hours:</strong> ${escapeHtml(viewAgent?.maxHours ?? 'Not set')}</div>
               <div><strong>Email:</strong> ${escapeHtml(activeAgentUser?.email || 'Not set')}</div>
               <div><strong>Phone:</strong> ${escapeHtml(activeAgentUser?.phone || 'Not set')}</div>
             </div>
@@ -3463,7 +3463,7 @@ function renderAgentsPage(currentUser) {
                     <strong>${escapeHtml(agent.name)}</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span>
                     <div class="muted">Assigned hours: ${getAssignedHours(agent.id)} hrs</div>
                     <div class="muted">Minimum-hours credit: ${getMinimumHoursCredit(agent.id)} hrs (shifts + approved PTO)</div>
-                    <div class="muted">Hours target: min ${escapeHtml(agent.minHours ?? 0)} / max ${escapeHtml(agent.maxHours ?? 'Not set')}</div>
+                    <div class="muted">This agent's hours target: min ${escapeHtml(agent.minHours ?? 0)} / max ${escapeHtml(agent.maxHours ?? 'Not set')}</div>
                     <div class="muted">Email: ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   </div>
                   <button class="danger" data-remove-agent="${agent.id}" type="button">Remove</button>
