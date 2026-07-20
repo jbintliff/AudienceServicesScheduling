@@ -904,6 +904,9 @@ function buildEmailDeliveryRequest(settings, message) {
       html: htmlBody,
       fromEmail: settings.fromEmail,
       fromName: settings.fromName,
+      senderName: settings.fromName,
+      displayName: settings.fromName,
+      replyToName: settings.fromName,
       type: message.type,
       createdAt: message.createdAt
     })
