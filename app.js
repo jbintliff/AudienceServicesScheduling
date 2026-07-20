@@ -150,6 +150,8 @@ const defaultState = {
     availabilityCalendarMonth: '',
     availabilityFrom: '',
     availabilityTo: '',
+    swapRequestToAgentId: '',
+    swapRequestToShiftId: '',
     accessMode: 'admin',
     currentAgentId: 1,
     calendar: {
@@ -240,6 +242,8 @@ function normalizeUiState(source) {
     availabilityCalendarMonth: source?.availabilityCalendarMonth || defaults.availabilityCalendarMonth,
     availabilityFrom: source?.availabilityFrom || defaults.availabilityFrom,
     availabilityTo: source?.availabilityTo || defaults.availabilityTo,
+    swapRequestToAgentId: source?.swapRequestToAgentId || defaults.swapRequestToAgentId,
+    swapRequestToShiftId: source?.swapRequestToShiftId || defaults.swapRequestToShiftId,
     accessMode: source?.accessMode || defaults.accessMode,
     currentAgentId: source?.currentAgentId ?? defaults.currentAgentId,
     calendar: {
@@ -2249,10 +2253,54 @@ function getShiftById(shiftId) {
   return state.shifts.find((shift) => Number(shift.id) === Number(shiftId)) || null;
 }
 
+function getSwappableShiftsForAgent(agentId) {
+  return state.shifts.filter((shift) => Number(shift.agentId) === Number(agentId) && isPublishedShift(shift));
+}
+
+function getWeekSwappableShiftsForAgent(agentId, referenceDateValue = getActiveCalendarWeekReference()) {
+  const weekDates = getCalendarWeekDates(referenceDateValue);
+  return getSwappableShiftsForAgent(agentId).filter((shift) => shiftIsInWeek(shift, weekDates));
+}
+
+function getProjectedSwapHours(agentId, outgoingShift, incomingShift) {
+  const currentHours = getAssignedHours(agentId, outgoingShift?.date || incomingShift?.date || '');
+  const outgoingHours = Number(outgoingShift?.durationHours || 0);
+  const incomingHours = Number(incomingShift?.durationHours || 0);
+  return currentHours - outgoingHours + incomingHours;
+}
+
+function getSwapRequestFromShiftId(request) {
+  return Number(request?.fromShiftId || request?.shiftId || 0) || null;
+}
+
+function getSwapRequestToShiftId(request) {
+  return Number(request?.toShiftId || request?.targetShiftId || 0) || null;
+}
+
+function getSwapRequestSummary(request) {
+  const fromShift = getShiftById(getSwapRequestFromShiftId(request));
+  const toShift = getShiftById(getSwapRequestToShiftId(request));
+  if (!fromShift && !toShift) {
+    return 'Swap request';
+  }
+  if (fromShift && !toShift) {
+    return getShiftSummary(fromShift);
+  }
+  if (!fromShift && toShift) {
+    return getShiftSummary(toShift);
+  }
+  return `${getShiftSummary(fromShift)} ↔ ${getShiftSummary(toShift)}`;
+}
+
+function getSwapRequestShiftLabel(request, side) {
+  const shift = side === 'to' ? getShiftById(getSwapRequestToShiftId(request)) : getShiftById(getSwapRequestFromShiftId(request));
+  return shift ? getShiftSummary(shift) : 'Unknown shift';
+}
+
 function isSwapRequestVisibleToAgent(request, agentId) {
   const isParticipant = Number(request?.fromAgentId) === Number(agentId) || Number(request?.toAgentId) === Number(agentId);
   if (!isParticipant) return false;
-  const linkedShift = getShiftById(request?.shiftId);
+  const linkedShift = getShiftById(getSwapRequestFromShiftId(request));
   return isPublishedShift(linkedShift);
 }
 
@@ -2513,16 +2561,22 @@ function renderCalendarPage(currentUser) {
       ${isAgentView ? `
         <div class="panel" style="margin-bottom:16px;">
           <h3>Swap a shift</h3>
-          <form id="swap-form" class="row" style="flex-wrap:wrap;">
-            <input type="hidden" name="fromAgentId" value="${viewAgent?.id || ''}" />
-            <select name="shiftId" required>
-              <option value="">Select a shift</option>
-              ${agentViewShifts.map((shift) => `<option value="${shift.id}">${escapeHtml(getShiftSummary(shift))}</option>`).join('')}
-            </select>
-            <select name="toAgentId" required>
-              <option value="">Swap with</option>
-              ${state.agents.filter((agent) => agent.id !== viewAgent?.id).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
-            </select>
+          <div class="muted" style="margin-bottom:8px;">Swaps are limited to the active calendar week.</div>
+          <form id="swap-form" class="stack">
+            <div class="row" style="flex-wrap:wrap;">
+              <select name="fromShiftId" required>
+                <option value="">Select your shift</option>
+                ${getWeekSwappableShiftsForAgent(viewAgent?.id, weekReference).map((shift) => `<option value="${shift.id}">${escapeHtml(getShiftSummary(shift))}</option>`).join('')}
+              </select>
+              <select name="toAgentId" required>
+                <option value="">Swap with agent</option>
+                ${state.agents.filter((agent) => agent.id !== viewAgent?.id).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+              </select>
+              <select name="toShiftId" required>
+                <option value="">Select their shift</option>
+                ${state.shifts.filter((shift) => Number(shift.agentId) !== Number(viewAgent?.id) && isPublishedShift(shift) && shiftIsInWeek(shift, getCalendarWeekDates(weekReference))).map((shift) => `<option value="${shift.id}">${escapeHtml(`${getAgent(shift.agentId)?.name || 'Unknown'} - ${getShiftSummary(shift)}`)}</option>`).join('')}
+              </select>
+            </div>
             <button type="submit">Request swap</button>
           </form>
         </div>` : ''}
@@ -3264,7 +3318,8 @@ function renderAgentRequestsPage(currentUser) {
           ${approvedSwapRequests.map((request) => `
             <div class="card">
               <div class="muted">${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} → ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</div>
-              <div class="muted">${escapeHtml(getShiftSummary(state.shifts.find((shift) => shift.id === request.shiftId) || {}))}</div>
+              <div class="muted">From shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'from'))}</div>
+              <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
               <div class="muted">Approved: ${escapeHtml(request.completedAt ? new Date(request.completedAt).toLocaleString() : (request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown'))}</div>
             </div>
           `).join('') || '<div class="muted">No approved swap requests yet.</div>'}
@@ -3343,12 +3398,20 @@ function renderPendingRequestsPage(currentUser) {
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                 <div>
                   <strong>${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} → ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</strong>
-                  <div class="muted">Shift: ${escapeHtml(getShiftSummary(state.shifts.find((shift) => shift.id === request.shiftId) || {}))}</div>
+                  <div class="muted">From shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'from'))}</div>
+                  <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
                   <div class="muted">Approval state: ${escapeHtml(getSwapApprovalText(request))}</div>
                   <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
                 </div>
                 <span class="status-badge pending">pending</span>
               </div>
+              ${request.fromAgentId === currentAgentId || request.toAgentId === currentAgentId ? `
+                <div class="row" style="margin-top:8px;">
+                  ${request.fromAgentId === currentAgentId && !request.fromApproved ? `<button class="success" data-approve-swap-request="${request.id}">Approve as requester</button>` : ''}
+                  ${request.toAgentId === currentAgentId && !request.toApproved ? `<button class="success" data-approve-swap-request="${request.id}">Approve as swap partner</button>` : ''}
+                  <button class="danger" data-reject-swap-request="${request.id}">Reject</button>
+                </div>
+              ` : ''}
             </div>
           `).join('') || '<div class="muted">No pending swap requests.</div>'}
         </div>
@@ -3727,13 +3790,13 @@ function renderAvailabilityRequestsPage(currentUser) {
           ${visibleSwapRequests.map((request) => {
             const fromAgent = getAgent(request.fromAgentId)?.name || 'Unknown';
             const toAgent = getAgent(request.toAgentId)?.name || 'Unknown';
-            const shiftSummary = getShiftSummary(state.shifts.find((shift) => shift.id === request.shiftId) || {});
             return `
               <div class="card" style="border-left:4px solid ${request.status === 'completed' ? '#7AACAF' : request.status === 'rejected' ? '#AB5C57' : '#FDD592'};">
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
                     <strong>${escapeHtml(fromAgent)} → ${escapeHtml(toAgent)}</strong>
-                    <div class="muted">Shift: ${escapeHtml(shiftSummary)}</div>
+                    <div class="muted">From shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'from'))}</div>
+                    <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
                     <div class="muted">Approval state: ${escapeHtml(getSwapApprovalText(request))}</div>
                     <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
                   </div>
@@ -3920,7 +3983,8 @@ function render() {
                           <div class="row" style="justify-content:space-between;">
                             <div>
                               <strong>${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} → ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</strong>
-                              <div class="muted">${escapeHtml(getShiftSummary(state.shifts.find((shift) => shift.id === request.shiftId) || {}))}</div>
+                              <div class="muted">From shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'from'))}</div>
+                              <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
                               <div class="muted">Approval state: ${escapeHtml(getSwapApprovalText(request))}</div>
                               <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
                             </div>
@@ -4314,29 +4378,65 @@ function bindEvents() {
   document.getElementById('swap-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const fromAgentId = Number(formData.get('fromAgentId')) || Number(state.ui.currentAgentId);
+    const fromAgentId = Number(state.ui.currentAgentId) || Number(getViewAgent()?.id);
+    const fromShiftId = Number(formData.get('fromShiftId'));
     const toAgentId = Number(formData.get('toAgentId'));
-    const shiftId = Number(formData.get('shiftId'));
-    if (!fromAgentId || !toAgentId || !shiftId) {
-      alert('Select both a shift and an agent to swap with before submitting.');
+    const toShiftId = Number(formData.get('toShiftId'));
+    const fromShift = getShiftById(fromShiftId);
+    const toShift = getShiftById(toShiftId);
+    if (!fromAgentId || !fromShiftId || !toAgentId || !toShiftId) {
+      alert('Select your shift, the agent, and the shift they want to trade before submitting.');
+      return;
+    }
+    if (!fromShift || Number(fromShift.agentId) !== fromAgentId) {
+      alert('Choose one of your own published shifts to give up.');
+      return;
+    }
+    if (!toShift || Number(toShift.agentId) !== toAgentId) {
+      alert('Choose a shift that belongs to the selected agent.');
+      return;
+    }
+    const fromWeekDates = getCalendarWeekDates(fromShift.date || '');
+    if (!shiftIsInWeek(toShift, fromWeekDates)) {
+      alert('Swap shifts must be in the same week.');
       return;
     }
     if (fromAgentId === toAgentId) {
       alert('Choose a different agent for the swap request.');
       return;
     }
+    if (fromShiftId === toShiftId) {
+      alert('Pick two different shifts for the swap.');
+      return;
+    }
+    const fromAgent = getAgent(fromAgentId);
+    const toAgent = getAgent(toAgentId);
+    const projectedFromHours = getProjectedSwapHours(fromAgentId, fromShift, toShift);
+    const projectedToHours = getProjectedSwapHours(toAgentId, toShift, fromShift);
+    const fromMaxHours = Number(fromAgent?.maxHours || 0);
+    const toMaxHours = Number(toAgent?.maxHours || 0);
+    if (fromMaxHours > 0 && projectedFromHours > fromMaxHours) {
+      alert(`${fromAgent?.name || 'This agent'} would exceed their weekly max hours with that swap.`);
+      return;
+    }
+    if (toMaxHours > 0 && projectedToHours > toMaxHours) {
+      alert(`${toAgent?.name || 'That agent'} would exceed their weekly max hours with that swap.`);
+      return;
+    }
     state.swapRequests.push({
       id: createId(),
       fromAgentId,
       toAgentId,
-      shiftId,
+      fromShiftId,
+      toShiftId,
+      shiftId: fromShiftId,
       requestedAt: new Date().toISOString(),
-      fromApproved: true,
+      fromApproved: false,
       toApproved: false,
       status: 'pending'
     });
     saveState();
-    alert('Swap request submitted. Admin can review it in Swap alerts and Availability Requests.');
+    alert('Swap request submitted. It will remain pending until both agents approve it.');
     render();
   });
 
@@ -4745,7 +4845,11 @@ function bindEvents() {
 
       selectedCalendarShiftIds.delete(id);
       state.shifts = state.shifts.filter((shift) => shift.id !== id);
-      state.swapRequests = state.swapRequests.filter((request) => request.shiftId !== id);
+      state.swapRequests = state.swapRequests.filter((request) => {
+        const fromShiftId = getSwapRequestFromShiftId(request);
+        const toShiftId = getSwapRequestToShiftId(request);
+        return Number(fromShiftId) !== id && Number(toShiftId) !== id;
+      });
       saveState();
       render();
     });
@@ -4800,7 +4904,11 @@ function bindEvents() {
 
     const selectedIds = new Set(Array.from(selectedCalendarShiftIds));
     state.shifts = state.shifts.filter((shift) => !selectedIds.has(Number(shift.id)));
-    state.swapRequests = state.swapRequests.filter((request) => !selectedIds.has(Number(request.shiftId)));
+    state.swapRequests = state.swapRequests.filter((request) => {
+      const fromShiftId = getSwapRequestFromShiftId(request);
+      const toShiftId = getSwapRequestToShiftId(request);
+      return !selectedIds.has(Number(fromShiftId)) && !selectedIds.has(Number(toShiftId));
+    });
     selectedCalendarShiftIds.clear();
     saveState();
     render();
@@ -4901,7 +5009,17 @@ function bindEvents() {
 
       const updatedRequest = state.swapRequests.find((request) => request.id === id);
       if (updatedRequest?.status === 'pending' && updatedRequest.fromApproved && updatedRequest.toApproved) {
-        state.shifts = state.shifts.map((shift) => shift.id === updatedRequest.shiftId ? { ...shift, agentId: updatedRequest.toAgentId } : shift);
+        const fromShiftId = getSwapRequestFromShiftId(updatedRequest);
+        const toShiftId = getSwapRequestToShiftId(updatedRequest);
+        state.shifts = state.shifts.map((shift) => {
+          if (Number(shift.id) === Number(fromShiftId)) {
+            return { ...shift, agentId: updatedRequest.toAgentId };
+          }
+          if (Number(shift.id) === Number(toShiftId)) {
+            return { ...shift, agentId: updatedRequest.fromAgentId };
+          }
+          return shift;
+        });
         state.swapRequests = state.swapRequests.map((request) => request.id === id
           ? { ...request, status: 'completed', completedAt: new Date().toISOString() }
           : request);
