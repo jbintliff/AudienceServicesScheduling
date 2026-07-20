@@ -582,6 +582,22 @@ function getAllAvailabilityRequests() {
   return canonicalRequests;
 }
 
+function isAvailabilityRequestVisibleToUser(request, user) {
+  if (!request || !user || user.role !== 'agent') {
+    return false;
+  }
+  const requestAgentId = Number(request.agentId);
+  const userAgentId = Number(user.agentId);
+  const requestUserId = Number(request.requesterUserId);
+  const currentUserId = Number(user.id);
+  const requestEmail = normalizeEmail(request.requesterEmail || '');
+  const userEmail = normalizeEmail(user.email || '');
+
+  return requestAgentId === userAgentId
+    || (requestUserId > 0 && requestUserId === currentUserId)
+    || (requestEmail && userEmail && requestEmail === userEmail);
+}
+
 function saveAvailabilityRequests(requests) {
   const canonicalRequests = mergeAvailabilityRequests(requests);
   state.availabilityRequests = canonicalRequests;
@@ -2624,7 +2640,7 @@ function renderCalendarPage(currentUser) {
           <p class="muted">${isAgentView ? 'Review the full published team schedule and request swaps for your own shifts.' : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
         </div>
         <div class="row">
-          ${isAgentView ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>' : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>'}
+          ${isAgentView ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>' : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>'}
           ${!isAgentView ? '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a>' : ''}
           ${!isAgentView ? '<a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>' : ''}
           ${!isAgentView ? '<a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>' : ''}
@@ -3424,7 +3440,7 @@ function renderAgentRequestsPage(currentUser) {
   const currentAgentId = Number(currentUser?.agentId);
   const viewAgent = getAgent(currentAgentId) || getViewAgent();
   const allAvailabilityRequests = getAllAvailabilityRequests();
-  const approvedAvailabilityRequests = allAvailabilityRequests.filter((request) => Number(request.agentId) === currentAgentId && request.status === 'approved');
+  const approvedAvailabilityRequests = allAvailabilityRequests.filter((request) => isAvailabilityRequestVisibleToUser(request, currentUser) && request.status === 'approved');
   const approvedSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'completed');
 
   root.innerHTML = `
@@ -3436,8 +3452,8 @@ function renderAgentRequestsPage(currentUser) {
         </div>
         <div class="row">
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>
-          <a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>
           <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a>
+          <a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>
           <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>
           <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
@@ -3496,7 +3512,7 @@ function renderPendingRequestsPage(currentUser) {
   const currentAgentId = Number(currentUser?.agentId);
   const viewAgent = getAgent(currentAgentId) || getViewAgent();
   const allAvailabilityRequests = getAllAvailabilityRequests();
-  const pendingAvailabilityRequests = allAvailabilityRequests.filter((request) => Number(request.agentId) === currentAgentId && request.status === 'pending');
+  const pendingAvailabilityRequests = allAvailabilityRequests.filter((request) => isAvailabilityRequestVisibleToUser(request, currentUser) && request.status === 'pending');
   const pendingSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'pending');
 
   root.innerHTML = `
@@ -3508,8 +3524,8 @@ function renderPendingRequestsPage(currentUser) {
         </div>
         <div class="row">
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>
-          <a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>
           <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a>
+          <a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>
           <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>
           <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
@@ -4078,7 +4094,7 @@ function render() {
         </div>
         <div class="row">
           ${isAgentView
-            ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>'
+            ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>'
             : '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a><a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a><a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a><a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>'}
           ${!isAgentView ? '<button id="export-data-btn" class="secondary">Export JSON</button>' : ''}
           ${!isAgentView ? `<label class="secondary" style="display:inline-flex; align-items:center; padding:10px 12px; border-radius:10px; cursor:pointer;">
