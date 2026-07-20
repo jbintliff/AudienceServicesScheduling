@@ -471,6 +471,11 @@ function syncFromStorage() {
   Object.assign(state, latestState);
   state.availabilityRequests = getAllAvailabilityRequests();
   authUsers = loadAuthUsers();
+  const didReconcileAgentEmails = reconcileAgentEmailsWithAuthUsers();
+  if (didReconcileAgentEmails) {
+    saveAuthUsers();
+    saveState();
+  }
   currentSession = loadSession();
   emailDeliverySettings = loadEmailDeliverySettings();
 }
@@ -1612,6 +1617,38 @@ function getAgentAccountEmail(agentId) {
     return agentEmail;
   }
   return normalizeEmail(getUserByAgentId(agentId)?.email || '');
+}
+
+function reconcileAgentEmailsWithAuthUsers() {
+  let didChange = false;
+  const linkedUsersByAgentId = new Map(
+    authUsers
+      .filter((user) => user.role === 'agent' && Number.isFinite(Number(user.agentId)))
+      .map((user) => [String(user.agentId), user])
+  );
+
+  state.agents = state.agents.map((agent) => {
+    const linkedUser = linkedUsersByAgentId.get(String(agent.id));
+    const agentEmail = normalizeEmail(agent.email || '');
+    const linkedUserEmail = normalizeEmail(linkedUser?.email || '');
+
+    if (agentEmail && linkedUser && linkedUserEmail !== agentEmail) {
+      authUsers = authUsers.map((user) => user.id === linkedUser.id
+        ? { ...user, email: agentEmail }
+        : user);
+      didChange = true;
+      return { ...agent, email: agentEmail };
+    }
+
+    if (!agentEmail && linkedUserEmail) {
+      didChange = true;
+      return { ...agent, email: linkedUserEmail };
+    }
+
+    return agent;
+  });
+
+  return didChange;
 }
 
 function normalizeTemplates(templates) {
