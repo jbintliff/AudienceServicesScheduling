@@ -3738,6 +3738,7 @@ function render() {
   const visibleShifts = isAgentView ? getAgentViewShifts() : [];
   const blackoutDates = normalizeBlackoutDates(state.blackoutDates);
   const plannerWeekReference = getActiveCalendarWeekReference();
+  const weekDates = getCalendarWeekDates(plannerWeekReference);
   const plannerWeekDates = getCalendarWeekDates(plannerWeekReference);
   const plannerWeekLabel = getCalendarWeekLabel(plannerWeekDates);
   const adminWeeklyShifts = isAgentView
