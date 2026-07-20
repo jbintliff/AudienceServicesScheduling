@@ -1858,16 +1858,17 @@ function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, opt
   const targetAgent = getAgent(agentId);
   const maxHours = normalizeMaxHours(targetAgent?.maxHours);
   if (Number.isFinite(maxHours) && maxHours >= 0) {
-    let assignedHours = getAssignedHours(agentId);
+    const targetWeekDates = getCalendarWeekDates(date);
+    let assignedHours = getAssignedHours(agentId, date);
     if (replacingShiftId) {
       const existingShift = state.shifts.find((shift) => Number(shift.id) === replacingShiftId);
-      if (existingShift && Number(existingShift.agentId) === Number(agentId)) {
+      if (existingShift && Number(existingShift.agentId) === Number(agentId) && shiftIsInWeek(existingShift, targetWeekDates)) {
         assignedHours -= Number(existingShift.durationHours) || 0;
       }
     }
     const projectedHours = assignedHours + (Number(durationHours) || 0);
     if (projectedHours > maxHours + 0.0001) {
-      alert(`${targetAgent?.name || 'This agent'} would be scheduled for ${projectedHours.toFixed(2)} hours, above the max of ${maxHours.toFixed(2)} hours.`);
+      alert(`${targetAgent?.name || 'This agent'} would be scheduled for ${projectedHours.toFixed(2)} hours in that week, above the weekly max of ${maxHours.toFixed(2)} hours.`);
       return false;
     }
   }
@@ -2133,22 +2134,31 @@ function getSpendByDay() {
   }, {});
 }
 
-function getAssignedHours(agentId) {
+function getAssignedHours(agentId, referenceDateValue = '') {
   const normalizedAgentId = Number(agentId);
-  return state.shifts.filter((shift) => Number(shift.agentId) === normalizedAgentId).reduce((sum, shift) => sum + shift.durationHours, 0);
+  const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
+  return state.shifts
+    .filter((shift) => Number(shift.agentId) === normalizedAgentId)
+    .filter((shift) => shiftIsInWeek(shift, weekDates))
+    .reduce((sum, shift) => sum + shift.durationHours, 0);
 }
 
-function getApprovedPtoHours(agentId) {
+function getApprovedPtoHours(agentId, referenceDateValue = '') {
   const normalizedAgentId = Number(agentId);
+  const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
   return getAllAvailabilityRequests()
     .filter((request) => Number(request.agentId) === normalizedAgentId)
     .filter((request) => request.status === 'approved')
     .filter((request) => String(request.unavailabilityType || '').trim() === 'PTO')
+    .filter((request) => {
+      const requestDate = String(request.unavailableDate || '').slice(0, 10);
+      return requestDate && requestDate >= weekDates.Mon.iso && requestDate <= weekDates.Sun.iso;
+    })
     .reduce((sum, request) => sum + getDurationHours(request.unavailableStart, request.unavailableEnd), 0);
 }
 
-function getMinimumHoursCredit(agentId) {
-  return getAssignedHours(agentId) + getApprovedPtoHours(agentId);
+function getMinimumHoursCredit(agentId, referenceDateValue = '') {
+  return getAssignedHours(agentId, referenceDateValue) + getApprovedPtoHours(agentId, referenceDateValue);
 }
 
 function getAvailabilityStats() {
@@ -3113,9 +3123,9 @@ function renderProfilePage(currentUser) {
               <div><strong>Name:</strong> ${escapeHtml(viewAgent?.name || 'Not set')}</div>
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
-              <div><strong>This agent's minimum hours:</strong> ${escapeHtml(viewAgent?.minHours ?? 0)}</div>
-              <div><strong>Minimum-hours credit:</strong> ${escapeHtml(getMinimumHoursCredit(viewAgent?.id || 0))} hrs</div>
-              <div><strong>This agent's maximum hours:</strong> ${escapeHtml(viewAgent?.maxHours ?? 'Not set')}</div>
+              <div><strong>This agent's weekly minimum hours:</strong> ${escapeHtml(viewAgent?.minHours ?? 0)}</div>
+              <div><strong>This week's minimum-hours credit:</strong> ${escapeHtml(getMinimumHoursCredit(viewAgent?.id || 0))} hrs</div>
+              <div><strong>This agent's weekly maximum hours:</strong> ${escapeHtml(viewAgent?.maxHours ?? 'Not set')}</div>
               <div><strong>Email:</strong> ${escapeHtml(activeAgentUser?.email || 'Not set')}</div>
               <div><strong>Phone:</strong> ${escapeHtml(activeAgentUser?.phone || 'Not set')}</div>
             </div>
@@ -3461,9 +3471,9 @@ function renderAgentsPage(currentUser) {
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
                     <strong>${escapeHtml(agent.name)}</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span>
-                    <div class="muted">Assigned hours: ${getAssignedHours(agent.id)} hrs</div>
-                    <div class="muted">Minimum-hours credit: ${getMinimumHoursCredit(agent.id)} hrs (shifts + approved PTO)</div>
-                    <div class="muted">This agent's hours target: min ${escapeHtml(agent.minHours ?? 0)} / max ${escapeHtml(agent.maxHours ?? 'Not set')}</div>
+                    <div class="muted">Assigned hours this week: ${getAssignedHours(agent.id)} hrs</div>
+                    <div class="muted">Minimum-hours credit this week: ${getMinimumHoursCredit(agent.id)} hrs (shifts + approved PTO)</div>
+                    <div class="muted">This agent's weekly hours target: min ${escapeHtml(agent.minHours ?? 0)} / max ${escapeHtml(agent.maxHours ?? 'Not set')}</div>
                     <div class="muted">Email: ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   </div>
                   <button class="danger" data-remove-agent="${agent.id}" type="button">Remove</button>
