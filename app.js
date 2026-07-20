@@ -3063,7 +3063,7 @@ function renderProfilePage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>My profile</h1>
-          <p class="muted">Review your account details. Only your phone number can be updated here; all other changes must be made by an admin.</p>
+          <p class="muted">Review your account details. You can update your phone number and password here; all other changes must be made by an admin.</p>
         </div>
         <div class="row">
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to scheduling</button></a>
@@ -3107,6 +3107,16 @@ function renderProfilePage(currentUser) {
             <form id="agent-update-phone-form" class="stack" style="margin-top:10px;">
               <input name="phone" type="tel" placeholder="Phone number" value="${escapeHtml(activeAgentUser?.phone || '')}" required autocomplete="tel" />
               <button type="submit">Save phone number</button>
+            </form>
+          </div>
+
+          <div class="panel">
+            <h2>Reset password</h2>
+            <form id="agent-reset-password-form" class="stack" style="margin-top:10px;">
+              <input name="currentPassword" type="password" placeholder="Current password" required autocomplete="current-password" />
+              <input name="newPassword" type="password" placeholder="New password" required autocomplete="new-password" />
+              <input name="confirmPassword" type="password" placeholder="Confirm new password" required autocomplete="new-password" />
+              <button type="submit">Save new password</button>
             </form>
           </div>
         </div>
@@ -4418,6 +4428,38 @@ function bindEvents() {
 
   document.getElementById('logout-btn')?.addEventListener('click', () => {
     clearSession();
+    render();
+  });
+
+  document.getElementById('agent-reset-password-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+
+    const formData = new FormData(event.currentTarget);
+    const currentPassword = formData.get('currentPassword')?.toString() || '';
+    const newPassword = formData.get('newPassword')?.toString() || '';
+    const confirmPassword = formData.get('confirmPassword')?.toString() || '';
+
+    if (currentPassword !== currentUser.password) {
+      alert('Current password is incorrect.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      alert('New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert('New password and confirmation do not match.');
+      return;
+    }
+
+    authUsers = authUsers.map((user) => user.id === currentUser.id
+      ? { ...user, password: newPassword, mustChangePassword: false }
+      : user);
+    saveAuthUsers();
+    syncRememberedLoginPassword(currentUser, newPassword);
+    alert('Password updated successfully.');
     render();
   });
 
