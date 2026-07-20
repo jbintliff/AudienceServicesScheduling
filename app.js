@@ -18,6 +18,7 @@ const syncStatusKey = 'agent-scheduler-sync-status-v1';
 const uiStateKey = 'agent-scheduler-ui-state-v1';
 const fixedEmailSenderName = 'Audience Services Manager';
 const emailDeliveryProviders = ['generic', 'sendgrid', 'mailgun'];
+const agentPasswordMaxAgeDays = 90;
 const shiftStatuses = {
   draft: 'draft',
   published: 'published'
@@ -37,6 +38,27 @@ const sharedStorageKeys = [
 
 function normalizeBackendUrl(url) {
   return String(url || '').trim().replace(/\/$/, '');
+}
+
+function getCurrentIsoTimestamp() {
+  return new Date().toISOString();
+}
+
+function normalizePasswordUpdatedAt(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return getCurrentIsoTimestamp();
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return getCurrentIsoTimestamp();
+  return parsed.toISOString();
+}
+
+function isAgentPasswordExpired(user) {
+  if (user?.role !== 'agent') return false;
+  const updatedAt = normalizePasswordUpdatedAt(user?.passwordUpdatedAt);
+  const parsed = new Date(updatedAt);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const expiresAt = new Date(parsed.getTime() + (agentPasswordMaxAgeDays * 24 * 60 * 60 * 1000));
+  return Date.now() >= expiresAt.getTime();
 }
 
 function normalizeAppLoginUrl(url) {
@@ -144,10 +166,10 @@ const defaultState = {
 };
 
 const defaultAuthUsers = [
-  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', email: 'admin@scheduler.local', phone: '215-555-0100', password: 'Admin123!', role: 'admin' },
-  { id: 1002, username: 'maya', email: 'maya@scheduler.local', phone: '215-555-0101', password: 'Agent123!', role: 'agent', agentId: 1 },
-  { id: 1003, username: 'luis', email: 'luis@scheduler.local', phone: '215-555-0102', password: 'Agent123!', role: 'agent', agentId: 2 },
-  { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', role: 'agent', agentId: 3 }
+  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', email: 'admin@scheduler.local', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: getCurrentIsoTimestamp(), role: 'admin' },
+  { id: 1002, username: 'maya', email: 'maya@scheduler.local', phone: '215-555-0101', password: 'Agent123!', passwordUpdatedAt: getCurrentIsoTimestamp(), role: 'agent', agentId: 1 },
+  { id: 1003, username: 'luis', email: 'luis@scheduler.local', phone: '215-555-0102', password: 'Agent123!', passwordUpdatedAt: getCurrentIsoTimestamp(), role: 'agent', agentId: 2 },
+  { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', passwordUpdatedAt: getCurrentIsoTimestamp(), role: 'agent', agentId: 3 }
 ];
 
 const state = loadState();
@@ -677,6 +699,7 @@ function withRequiredEmail(user) {
     email: normalizedEmail || getFallbackEmail(user),
     phone: normalizedPhone,
     calendarFeedToken,
+    passwordUpdatedAt: normalizePasswordUpdatedAt(user?.passwordUpdatedAt),
     mustChangePassword: Boolean(user?.mustChangePassword),
     isActive: user?.isActive !== false
   };
@@ -1280,7 +1303,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       }
 
       authUsers = authUsers.map((user) => user.id === Number(matchingRequest.userId)
-        ? { ...user, password: newPassword, mustChangePassword: false }
+        ? { ...user, password: newPassword, passwordUpdatedAt: getCurrentIsoTimestamp(), mustChangePassword: false }
         : user);
       saveAuthUsers();
 
@@ -1401,12 +1424,14 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
   });
 }
 
-function renderFirstLoginPasswordSetupPage(currentUser) {
+function renderFirstLoginPasswordSetupPage(currentUser, options = {}) {
+  const title = options.title || 'Set your password';
+  const description = options.description || 'For security, you must create your own password before continuing.';
   root.innerHTML = `
     <div class="app" style="max-width:560px; padding-top:48px;">
       <div class="panel">
-        <h1>Set your password</h1>
-        <p class="muted">For security, you must create your own password before continuing.</p>
+        <h1>${escapeHtml(title)}</h1>
+        <p class="muted">${escapeHtml(description)}</p>
         <form id="first-login-password-form" class="stack">
           <input name="newPassword" type="password" placeholder="New password" required autocomplete="new-password" />
           <input name="confirmPassword" type="password" placeholder="Confirm new password" required autocomplete="new-password" />
@@ -1455,6 +1480,7 @@ function renderFirstLoginPasswordSetupPage(currentUser) {
         ? {
             ...user,
             password: newPassword,
+            passwordUpdatedAt: getCurrentIsoTimestamp(),
             mustChangePassword: false
           }
         : user);
@@ -2814,7 +2840,9 @@ function renderProfilePage(currentUser) {
         return;
       }
 
-      authUsers = authUsers.map((user) => user.id === activeUser.id ? { ...user, password: newPassword } : user);
+      authUsers = authUsers.map((user) => user.id === activeUser.id
+        ? { ...user, password: newPassword, passwordUpdatedAt: getCurrentIsoTimestamp() }
+        : user);
       saveAuthUsers();
       alert('Admin password updated successfully.');
       render();
@@ -3692,6 +3720,13 @@ function render() {
     renderFirstLoginPasswordSetupPage(currentUser);
     return;
   }
+  if (currentUser.role === 'agent' && isAgentPasswordExpired(currentUser)) {
+    renderFirstLoginPasswordSetupPage(currentUser, {
+      title: 'Reset your password',
+      description: `Your password has expired after ${agentPasswordMaxAgeDays} days. Create a new password to continue.`
+    });
+    return;
+  }
   applyAccessForUser(currentUser);
 
   if (pageMode === 'profile') {
@@ -4458,7 +4493,7 @@ function bindEvents() {
     }
 
     authUsers = authUsers.map((user) => user.id === currentUser.id
-      ? { ...user, password: newPassword, mustChangePassword: false }
+      ? { ...user, password: newPassword, passwordUpdatedAt: getCurrentIsoTimestamp(), mustChangePassword: false }
       : user);
     saveAuthUsers();
     syncRememberedLoginPassword(currentUser, newPassword);
