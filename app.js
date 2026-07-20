@@ -542,6 +542,18 @@ function loadAvailabilityRequestsFromLegacyStateStorage() {
   }
 }
 
+function normalizeAvailabilityRequest(request, fallbackId) {
+  if (!request) return null;
+  return {
+    ...request,
+    id: request.id != null ? request.id : fallbackId,
+    status: String(request.status || 'pending').trim() || 'pending',
+    requesterEmail: normalizeEmail(request.requesterEmail || ''),
+    requesterName: String(request.requesterName || '').trim(),
+    requesterUserId: request.requesterUserId != null ? Number(request.requesterUserId) || request.requesterUserId : request.requesterUserId
+  };
+}
+
 function mergeAvailabilityRequests(...sources) {
   const merged = sources.flatMap((source) => (Array.isArray(source) ? source : []));
   const byId = new Map();
@@ -558,7 +570,9 @@ function mergeAvailabilityRequests(...sources) {
       index
     ].join('|');
     const requestId = request.id != null ? String(request.id) : fallbackId;
-    byId.set(requestId, request.id == null ? { ...request, id: requestId } : request);
+    const normalizedRequest = normalizeAvailabilityRequest(request, requestId);
+    if (!normalizedRequest) return;
+    byId.set(requestId, normalizedRequest);
   });
   return Array.from(byId.values());
 }
