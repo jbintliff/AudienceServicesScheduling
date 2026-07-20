@@ -2337,7 +2337,7 @@ function renderCalendarPage(currentUser) {
   const baseCalendarShifts = getFilteredCalendarShifts();
   const scopedCalendarShifts = baseCalendarShifts.filter((shift) => shiftIsInWeek(shift, weekDates));
   const visibleCalendarShifts = isAgentView
-    ? scopedCalendarShifts.filter((shift) => shift.agentId === viewAgent?.id && isPublishedShift(shift))
+    ? scopedCalendarShifts.filter((shift) => isPublishedShift(shift))
     : scopedCalendarShifts;
   const agentViewShifts = getAgentViewShifts();
   const visibleShiftIdSet = new Set(visibleCalendarShifts.map((shift) => Number(shift.id)));
@@ -2349,7 +2349,7 @@ function renderCalendarPage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>${isAgentView ? 'My calendar' : 'Calendar view'}</h1>
-          <p class="muted">${isAgentView ? 'Review your assigned shifts and request swaps.' : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
+          <p class="muted">${isAgentView ? 'Review the full published team schedule and request swaps for your own shifts.' : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
         </div>
         <div class="row">
           ${isAgentView ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>' : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>'}
