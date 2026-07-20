@@ -1109,6 +1109,46 @@ function sendShiftPublishedEmail(shift) {
   return true;
 }
 
+function sendSwapNotificationEmails(request, mode, actingAgentId = null) {
+  const fromAgentId = Number(request?.fromAgentId);
+  const toAgentId = Number(request?.toAgentId);
+  const fromAgentName = getAgent(fromAgentId)?.name || 'Agent';
+  const toAgentName = getAgent(toAgentId)?.name || 'Agent';
+  const fromShiftLabel = getSwapRequestShiftLabel(request, 'from');
+  const toShiftLabel = getSwapRequestShiftLabel(request, 'to');
+  const approvalState = getSwapApprovalText(request);
+  const actingAgentName = actingAgentId ? (getAgent(actingAgentId)?.name || 'An agent') : 'An agent';
+  const notifications = [
+    { agentId: fromAgentId, name: fromAgentName },
+    { agentId: toAgentId, name: toAgentName }
+  ];
+
+  let subject = 'Swap request update';
+  let detail = `${actingAgentName} approved the swap request. Current approval state: ${approvalState}.`;
+  let type = 'swap-approved';
+
+  if (mode === 'submitted') {
+    subject = 'Swap request submitted';
+    detail = `${fromAgentName} requested a shift swap with ${toAgentName}. Current approval state: ${approvalState}.`;
+    type = 'swap-request-submitted';
+  } else if (mode === 'completed') {
+    subject = 'Swap request approved';
+    detail = `Both agents approved the swap request. The shifts have been exchanged.`;
+    type = 'swap-approved';
+  }
+
+  notifications.forEach(({ agentId, name }) => {
+    const recipientEmail = getAgentAccountEmail(agentId);
+    if (!recipientEmail) return;
+    sendEmailNotification({
+      to: recipientEmail,
+      subject,
+      body: `Hi ${name}, ${detail}\n\nFrom shift: ${fromShiftLabel}\nTo shift: ${toShiftLabel}`,
+      type
+    });
+  });
+}
+
 function getAppLoginUrl() {
   const configuredUrl = loadConfiguredAppLoginUrl();
   if (configuredUrl) {
@@ -2067,6 +2107,113 @@ function openShiftEditModal(shift, onSave) {
       location: nextLocation,
       status: nextStatus,
       durationHours: getDurationHours(nextStart, nextEnd)
+    });
+    closeModal();
+  });
+
+  document.addEventListener('keydown', onEscape);
+  document.body.appendChild(overlay);
+}
+
+function openAvailabilityRequestEditModal(request, onSave) {
+  const existingOverlay = document.getElementById('availability-request-edit-modal-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'availability-request-edit-modal-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:min(720px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
+      <h2 style="margin:0 0 12px;">Edit approved PTO request</h2>
+      <p class="muted" style="margin:0 0 14px;">Update the approved PTO details for this request.</p>
+      <form id="availability-request-edit-form" class="stack">
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Agent</span>
+            <input type="text" value="${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')}" disabled />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:180px; flex:1;">
+            <span>Date</span>
+            <input name="unavailableDate" type="date" value="${escapeHtml(request.unavailableDate || '')}" required />
+          </label>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:150px; flex:1;">
+            <span>Start</span>
+            <input name="unavailableStart" type="time" value="${escapeHtml(request.unavailableStart || '09:00')}" required />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:150px; flex:1;">
+            <span>End</span>
+            <input name="unavailableEnd" type="time" value="${escapeHtml(request.unavailableEnd || '17:00')}" required />
+          </label>
+        </div>
+
+        <label style="display:flex; flex-direction:column; gap:6px;">
+          <span>Note</span>
+          <textarea name="note" rows="4" required>${escapeHtml(request.note || '')}</textarea>
+        </label>
+
+        <div class="row" style="justify-content:flex-end; margin-top:8px;">
+          <button type="button" id="availability-request-edit-cancel" class="secondary">Cancel</button>
+          <button type="submit">Save changes</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  const closeModal = () => {
+    document.removeEventListener('keydown', onEscape);
+    overlay.remove();
+  };
+
+  const onEscape = (event) => {
+    if (event.key === 'Escape') {
+      closeModal();
+    }
+  };
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeModal();
+    }
+  });
+
+  overlay.querySelector('#availability-request-edit-cancel')?.addEventListener('click', () => {
+    closeModal();
+  });
+
+  overlay.querySelector('#availability-request-edit-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const nextDate = String(formData.get('unavailableDate') || '').trim();
+    if (!getDayFromDate(nextDate)) {
+      alert('Enter a valid PTO date.');
+      return;
+    }
+
+    const nextStart = String(formData.get('unavailableStart') || '').trim();
+    const nextEnd = String(formData.get('unavailableEnd') || '').trim();
+    if (!nextStart || !nextEnd || toMinutes(nextEnd) <= toMinutes(nextStart)) {
+      alert('End time must be later than start time.');
+      return;
+    }
+
+    const nextNote = String(formData.get('note') || '').trim();
+    if (!nextNote) {
+      alert('Enter a note for this PTO request.');
+      return;
+    }
+
+    onSave({
+      ...request,
+      unavailableDate: nextDate,
+      unavailableStart: nextStart,
+      unavailableEnd: nextEnd,
+      note: nextNote,
+      updatedAt: new Date().toISOString()
     });
     closeModal();
   });
@@ -3780,6 +3927,10 @@ function renderAvailabilityRequestsPage(currentUser) {
                   <button class="success" data-approve-availability-request="${request.id}">Approve</button>
                   <button class="danger" data-reject-availability-request="${request.id}">Deny</button>
                 </div>` : ''}
+              ${request.status === 'approved' && String(request.unavailabilityType || '').trim() === 'PTO' ? `
+                <div class="row" style="margin-top:8px;">
+                  <button class="secondary" data-edit-availability-request="${request.id}">Edit PTO</button>
+                </div>` : ''}
             </div>
           `).join('') || '<div class="muted">No unavailability requests yet.</div>'}
         </div>
@@ -4424,7 +4575,7 @@ function bindEvents() {
       alert(`${toAgent?.name || 'That agent'} would exceed their weekly max hours with that swap.`);
       return;
     }
-    state.swapRequests.push({
+    const newSwapRequest = {
       id: createId(),
       fromAgentId,
       toAgentId,
@@ -4435,8 +4586,10 @@ function bindEvents() {
       fromApproved: false,
       toApproved: false,
       status: 'pending'
-    });
+    };
+    state.swapRequests.push(newSwapRequest);
     saveState();
+    sendSwapNotificationEmails(newSwapRequest, 'submitted');
     alert('Swap request submitted. It will remain pending until both agents approve it.');
     render();
   });
@@ -4990,12 +5143,43 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll('[data-edit-availability-request]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = Number(button.getAttribute('data-edit-availability-request'));
+      const allAvailabilityRequests = getAllAvailabilityRequests();
+      const request = allAvailabilityRequests.find((item) => Number(item.id) === id);
+      if (!request) return;
+      if (request.status !== 'approved' || String(request.unavailabilityType || '').trim() !== 'PTO') {
+        return;
+      }
+
+      openAvailabilityRequestEditModal(request, (updatedRequest) => {
+        const nextAvailabilityRequests = allAvailabilityRequests.map((item) => Number(item.id) === id ? updatedRequest : item);
+        saveAvailabilityRequests(nextAvailabilityRequests);
+        saveState();
+        const requestOwner = getUserByAgentId(updatedRequest.agentId);
+        const recipientEmail = updatedRequest.requesterEmail || requestOwner?.email || '';
+        const recipientName = updatedRequest.requesterName || requestOwner?.username || 'Agent';
+        if (recipientEmail) {
+          sendEmailNotification({
+            to: recipientEmail,
+            subject: 'Approved PTO request updated',
+            body: `Hi ${recipientName}, your approved PTO request has been updated by an admin.\n\nDate: ${updatedRequest.unavailableDate || 'Not set'}\nTime: ${formatTimeRange(updatedRequest.unavailableStart, updatedRequest.unavailableEnd)}\nNote: ${updatedRequest.note || 'No note provided'}`,
+            type: 'availability-approved-updated'
+          });
+        }
+        render();
+      });
+    });
+  });
+
   document.querySelectorAll('[data-approve-swap-request]').forEach((button) => {
     button.addEventListener('click', () => {
       const id = Number(button.getAttribute('data-approve-swap-request'));
       const currentUser = getCurrentUser();
       const currentAgentId = Number(currentUser?.agentId);
       if (!currentAgentId) return;
+      const previousRequest = state.swapRequests.find((request) => request.id === id) || null;
 
       state.swapRequests = state.swapRequests.map((request) => {
         if (request.id !== id || request.status !== 'pending') return request;
@@ -5027,6 +5211,14 @@ function bindEvents() {
       }
 
       saveState();
+      const finalizedRequest = state.swapRequests.find((request) => request.id === id) || updatedRequest;
+      if (finalizedRequest && previousRequest && (
+        previousRequest.fromApproved !== finalizedRequest.fromApproved
+        || previousRequest.toApproved !== finalizedRequest.toApproved
+        || previousRequest.status !== finalizedRequest.status
+      )) {
+        sendSwapNotificationEmails(finalizedRequest, finalizedRequest.status === 'completed' ? 'completed' : 'approved', currentAgentId);
+      }
       render();
     });
   });
