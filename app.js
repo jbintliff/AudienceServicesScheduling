@@ -1645,9 +1645,9 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
         ${shouldPrefillRememberedLogin ? '<button id="clear-saved-login" type="button" class="secondary" style="margin-top:10px;">Clear saved password on this device</button>' : ''}
         <form id="forgot-password-form" class="stack" style="margin-top:10px;">
           <input name="email" type="email" placeholder="Forgot password? Enter your email" required autocomplete="email" />
-          <button type="submit" class="secondary">Send reset email</button>
+          <button type="submit" class="secondary">Get reset link</button>
         </form>
-        <div class="muted" style="margin-top:8px;">Local mode note: this app generates a reset link you can open directly.</div>
+        <div class="muted" style="margin-top:8px;">Enter your agent email to generate a password reset link directly on this screen.</div>
       </div>
     </div>
   `;
@@ -1709,14 +1709,16 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       }
     }
 
-    if (!foundUser) {
-      renderLoginPage('', 'If the account exists, a reset email has been sent.');
+    const linkedAgent = foundUser ? state.agents.find((agent) => Number(agent.id) === Number(foundUser.agentId)) : null;
+    const isAssociatedAgentEmail = Boolean(foundUser && foundUser.role === 'agent' && linkedAgent);
+
+    if (!isAssociatedAgentEmail) {
+      renderLoginPage('', 'If an agent account exists for that email, a reset link will appear here.');
       return;
     }
 
     const passwordResetRequests = loadPasswordResetRequests();
     const token = createResetToken();
-    const resetLink = getResetLink(token);
     const localResetLink = getCurrentPageResetLink(token);
     const expiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
     const updatedRequests = [
@@ -1732,14 +1734,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       }
     ];
     savePasswordResetRequests(updatedRequests);
-    sendEmailNotification({
-      to: email,
-      subject: 'Password reset request',
-      body: `We received a request to reset your password. Use this link within 1 hour: ${resetLink}`,
-      type: 'password-reset'
-    });
-    // Always navigate to a same-origin reset URL so the token saved in this browser storage can be resolved.
-    window.location.assign(localResetLink);
+    renderLoginPage('', 'Reset link generated for this agent account (valid for 1 hour).', localResetLink);
   });
 }
 
@@ -4780,8 +4775,17 @@ function renderAvailabilityRequestsPage(currentUser) {
             `;
           }).join('')}
         </div>
-        <div class="muted" style="margin-top:10px;">Blackout date summary for ${escapeHtml(calendarData.label)}: ${monthBlackoutDates.length} date${monthBlackoutDates.length === 1 ? '' : 's'} (${allBlackoutDates.length} total)</div>
-        <div class="muted" style="margin-top:4px;">${monthBlackoutDates.length > 0 ? escapeHtml(monthBlackoutDates.join(', ')) : 'No blackout dates in this month.'}</div>
+        <div class="card" style="margin-top:10px; padding:8px 10px;">
+          <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+            <strong style="font-size:0.95rem;">Blackout dates</strong>
+            <span class="muted" style="font-size:12px;">${monthBlackoutDates.length} this month • ${allBlackoutDates.length} total</span>
+          </div>
+          <div class="row" style="margin-top:6px; gap:6px; flex-wrap:wrap;">
+            ${monthBlackoutDates.length > 0
+              ? `${monthBlackoutDates.slice(0, 8).map((dateValue) => `<span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}${monthBlackoutDates.length > 8 ? `<span class="chip" style="background:rgba(23,56,59,0.08); border:1px solid rgba(23,56,59,0.2);">+${monthBlackoutDates.length - 8} more</span>` : ''}`
+              : '<span class="muted">No blackout dates in this month.</span>'}
+          </div>
+        </div>
       </div>
 
       <div class="panel">
