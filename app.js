@@ -44,6 +44,57 @@ function getCurrentIsoTimestamp() {
   return new Date().toISOString();
 }
 
+function getAuthUserUpdatedAtScore(user) {
+  const candidateValues = [user?.profileUpdatedAt, user?.passwordUpdatedAt, user?.createdAt, user?.updatedAt];
+  let best = 0;
+  candidateValues.forEach((value) => {
+    const parsed = new Date(String(value || ''));
+    const timestamp = parsed.getTime();
+    if (!Number.isNaN(timestamp) && timestamp > best) {
+      best = timestamp;
+    }
+  });
+  return best;
+}
+
+function parseAuthUsersForMerge(rawValue) {
+  try {
+    const parsed = JSON.parse(String(rawValue || '[]'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function mergeAuthUsersSnapshotByRecency(localRawValue, remoteRawValue) {
+  const localUsers = parseAuthUsersForMerge(localRawValue);
+  const remoteUsers = parseAuthUsersForMerge(remoteRawValue);
+  const mergedById = new Map();
+
+  remoteUsers.forEach((user) => {
+    const id = String(user?.id ?? '');
+    if (!id) return;
+    mergedById.set(id, user);
+  });
+
+  localUsers.forEach((localUser) => {
+    const id = String(localUser?.id ?? '');
+    if (!id) return;
+    const remoteUser = mergedById.get(id);
+    if (!remoteUser) {
+      mergedById.set(id, localUser);
+      return;
+    }
+    const localScore = getAuthUserUpdatedAtScore(localUser);
+    const remoteScore = getAuthUserUpdatedAtScore(remoteUser);
+    if (localScore >= remoteScore) {
+      mergedById.set(id, localUser);
+    }
+  });
+
+  return JSON.stringify(Array.from(mergedById.values()));
+}
+
 function normalizePasswordUpdatedAt(value) {
   const normalized = String(value || '').trim();
   if (!normalized) return getCurrentIsoTimestamp();
@@ -500,6 +551,14 @@ function mergeRemoteSnapshotWithPendingLocal(remoteStore) {
   }
   const mergedStore = { ...remoteStore };
   const preservedLocalKeys = [];
+
+  // Auth users are critical for profile persistence; keep the most recently updated version per account.
+  const localAuthUsers = localStorage.getItem(authUsersKey);
+  const remoteAuthUsers = typeof remoteStore[authUsersKey] === 'string' ? remoteStore[authUsersKey] : null;
+  if (localAuthUsers !== null && remoteAuthUsers !== null && localAuthUsers !== remoteAuthUsers) {
+    mergedStore[authUsersKey] = mergeAuthUsersSnapshotByRecency(localAuthUsers, remoteAuthUsers);
+  }
+
   pendingSharedWriteKeys.forEach((key) => {
     const localValue = localStorage.getItem(key);
     const remoteValue = typeof remoteStore[key] === 'string' ? remoteStore[key] : null;
@@ -3255,11 +3314,24 @@ function renderProfilePage(currentUser) {
           <div class="stack">
             <div class="panel">
               <div class="card" style="margin-bottom:10px;">
+                ${currentUser?.profilePhotoDataUrl ? `<div style="margin-bottom:10px;"><img src="${escapeHtml(currentUser.profilePhotoDataUrl)}" alt="Profile photo" style="width:84px; height:84px; border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,0.35);" /></div>` : ''}
                 <div><strong>Name:</strong> ${escapeHtml(currentUser?.name || currentUser?.username || 'Not set')}</div>
                 <div><strong>Job title:</strong> ${escapeHtml(currentUser?.jobTitle || 'Scheduling Administrator')}</div>
                 <div><strong>Email:</strong> ${escapeHtml(currentUser?.email || 'Not set')}</div>
                 <div><strong>Phone:</strong> ${escapeHtml(currentUser?.phone || 'Not set')}</div>
               </div>
+            </div>
+
+            <div class="panel">
+              <h2>Profile photo</h2>
+              <p class="muted">Upload a JPG, PNG, GIF, or WEBP image up to 2 MB.</p>
+              <form id="upload-profile-photo-form" class="stack" style="margin-top:10px;">
+                <input name="profilePhoto" type="file" accept="image/*" required />
+                <div class="row" style="gap:8px;">
+                  <button type="submit">Upload photo</button>
+                  ${currentUser?.profilePhotoDataUrl ? '<button id="remove-profile-photo" type="button" class="danger">Remove photo</button>' : ''}
+                </div>
+              </form>
             </div>
 
             <div class="panel">
@@ -3419,7 +3491,8 @@ function renderProfilePage(currentUser) {
             name,
             jobTitle,
             email,
-            phone
+            phone,
+            profileUpdatedAt: getCurrentIsoTimestamp()
           }
         : user);
       const didSaveAuthUsers = saveAuthUsers();
@@ -3835,6 +3908,7 @@ function renderProfilePage(currentUser) {
         <div class="stack">
           <div class="panel">
             <div class="card" style="margin-bottom:10px;">
+              ${activeAgentUser?.profilePhotoDataUrl ? `<div style="margin-bottom:10px;"><img src="${escapeHtml(activeAgentUser.profilePhotoDataUrl)}" alt="Profile photo" style="width:84px; height:84px; border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,0.35);" /></div>` : ''}
               <div><strong>Name:</strong> ${escapeHtml(viewAgent?.name || 'Not set')}</div>
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
@@ -3844,6 +3918,18 @@ function renderProfilePage(currentUser) {
               <div><strong>Email:</strong> ${escapeHtml(activeAgentUser?.email || 'Not set')}</div>
               <div><strong>Phone:</strong> ${escapeHtml(activeAgentUser?.phone || 'Not set')}</div>
             </div>
+          </div>
+
+          <div class="panel">
+            <h2>Profile photo</h2>
+            <p class="muted">Upload a JPG, PNG, GIF, or WEBP image up to 2 MB.</p>
+            <form id="upload-profile-photo-form" class="stack" style="margin-top:10px;">
+              <input name="profilePhoto" type="file" accept="image/*" required />
+              <div class="row" style="gap:8px;">
+                <button type="submit">Upload photo</button>
+                ${activeAgentUser?.profilePhotoDataUrl ? '<button id="remove-profile-photo" type="button" class="danger">Remove photo</button>' : ''}
+              </div>
+            </form>
           </div>
 
           <div class="panel">
@@ -5947,6 +6033,62 @@ function bindEvents() {
     authUsers = authUsers.map((user) => user.id === currentUser.id ? { ...user, phone } : user);
     saveAuthUsers();
     alert('Phone number updated successfully.');
+    render();
+  });
+
+  document.getElementById('upload-profile-photo-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+
+    const formData = new FormData(event.currentTarget);
+    const profilePhoto = formData.get('profilePhoto');
+    if (!(profilePhoto instanceof File) || profilePhoto.size <= 0) {
+      alert('Please choose an image file to upload.');
+      return;
+    }
+    if (!String(profilePhoto.type || '').toLowerCase().startsWith('image/')) {
+      alert('Profile photo must be an image file.');
+      return;
+    }
+    if (profilePhoto.size > (2 * 1024 * 1024)) {
+      alert('Profile photo must be 2 MB or smaller.');
+      return;
+    }
+
+    try {
+      const imageDataUrl = await readFileAsDataUrl(profilePhoto);
+      if (!String(imageDataUrl || '').startsWith('data:image/')) {
+        alert('Unable to process the selected image. Please choose a different file.');
+        return;
+      }
+      authUsers = authUsers.map((user) => user.id === currentUser.id
+        ? {
+            ...user,
+            profilePhotoDataUrl: imageDataUrl,
+            profileUpdatedAt: getCurrentIsoTimestamp()
+          }
+        : user);
+      saveAuthUsers();
+      alert('Profile photo uploaded successfully.');
+      render();
+    } catch {
+      alert('Unable to upload the selected profile photo. Please try again.');
+    }
+  });
+
+  document.getElementById('remove-profile-photo')?.addEventListener('click', () => {
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+    authUsers = authUsers.map((user) => user.id === currentUser.id
+      ? {
+          ...user,
+          profilePhotoDataUrl: '',
+          profileUpdatedAt: getCurrentIsoTimestamp()
+        }
+      : user);
+    saveAuthUsers();
+    alert('Profile photo removed.');
     render();
   });
 
