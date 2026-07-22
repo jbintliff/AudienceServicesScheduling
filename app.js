@@ -6137,6 +6137,7 @@ function bindEvents() {
       email,
       phone: '',
       password: createTemporaryPassword(),
+        passwordUpdatedAt: createdAt,
       createdAt,
       profileUpdatedAt: createdAt,
       mustChangePassword: true,
@@ -6988,6 +6989,7 @@ function bindEvents() {
           email,
           phone: '',
           password: createTemporaryPassword(),
+          passwordUpdatedAt: createdAt,
           createdAt,
           profileUpdatedAt: createdAt,
           mustChangePassword: true,
@@ -7018,15 +7020,17 @@ function bindEvents() {
         return;
       }
       const temporaryPassword = createTemporaryPassword();
+      const passwordUpdatedAt = getCurrentIsoTimestamp();
       authUsers = authUsers.map((user) => user.id === agentUser.id
         ? {
             ...user,
             password: temporaryPassword,
+            passwordUpdatedAt,
             mustChangePassword: true
           }
         : user);
       saveAuthUsers();
-      const refreshedAgentUser = getUserByAgentId(agentId) || { ...agentUser, password: temporaryPassword, mustChangePassword: true };
+      const refreshedAgentUser = getUserByAgentId(agentId) || { ...agentUser, password: temporaryPassword, passwordUpdatedAt, mustChangePassword: true };
       const inviteResult = sendAgentInviteEmail(refreshedAgentUser, agent.name, temporaryPassword);
       const outboxCount = loadEmailOutbox().length;
       if (inviteResult?.deliveryStatus === 'local-only') {
