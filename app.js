@@ -213,11 +213,13 @@ const defaultState = {
     availabilityAllTo: '',
     availabilityAllAgentId: 'All',
     availabilityAllStatus: 'All',
+    availabilityAllRequestsHidden: false,
     availabilitySwapDate: '',
     availabilitySwapFrom: '',
     availabilitySwapTo: '',
     availabilitySwapAgentId: 'All',
     availabilitySwapStatus: 'All',
+    availabilitySwapRequestsHidden: false,
     availabilityDebugAgentId: '',
     swapRequestToAgentId: '',
     swapRequestToShiftId: '',
@@ -322,11 +324,13 @@ function getDefaultUiState() {
     availabilityAllTo: '',
     availabilityAllAgentId: 'All',
     availabilityAllStatus: 'All',
+    availabilityAllRequestsHidden: false,
     availabilitySwapDate: '',
     availabilitySwapFrom: '',
     availabilitySwapTo: '',
     availabilitySwapAgentId: 'All',
     availabilitySwapStatus: 'All',
+    availabilitySwapRequestsHidden: false,
     availabilityDebugAgentId: '',
     accessMode: 'admin',
     currentAgentId: defaultState.agents[0]?.id ?? null,
@@ -363,11 +367,13 @@ function normalizeUiState(source) {
     availabilityAllTo: source?.availabilityAllTo || defaults.availabilityAllTo,
     availabilityAllAgentId: source?.availabilityAllAgentId || defaults.availabilityAllAgentId,
     availabilityAllStatus: source?.availabilityAllStatus || defaults.availabilityAllStatus,
+    availabilityAllRequestsHidden: Boolean(source?.availabilityAllRequestsHidden),
     availabilitySwapDate: source?.availabilitySwapDate || defaults.availabilitySwapDate,
     availabilitySwapFrom: source?.availabilitySwapFrom || defaults.availabilitySwapFrom,
     availabilitySwapTo: source?.availabilitySwapTo || defaults.availabilitySwapTo,
     availabilitySwapAgentId: source?.availabilitySwapAgentId || defaults.availabilitySwapAgentId,
     availabilitySwapStatus: source?.availabilitySwapStatus || defaults.availabilitySwapStatus,
+    availabilitySwapRequestsHidden: Boolean(source?.availabilitySwapRequestsHidden),
     availabilityDebugAgentId: source?.availabilityDebugAgentId || defaults.availabilityDebugAgentId,
     swapRequestToAgentId: source?.swapRequestToAgentId || defaults.swapRequestToAgentId,
     swapRequestToShiftId: source?.swapRequestToShiftId || defaults.swapRequestToShiftId,
@@ -1491,6 +1497,8 @@ function applyAccessForUser(user) {
       state.ui.availabilitySwapTo = '';
       state.ui.availabilitySwapAgentId = 'All';
       state.ui.availabilitySwapStatus = 'All';
+      state.ui.availabilityAllRequestsHidden = false;
+      state.ui.availabilitySwapRequestsHidden = false;
       state.ui.availabilityRequestsCollapsed = false;
       state.ui.swapAlertsCollapsed = false;
       state.ui.calendar = {
@@ -4647,6 +4655,8 @@ function renderAvailabilityRequestsPage(currentUser) {
     agentId: state.ui.availabilitySwapAgentId || 'All',
     status: state.ui.availabilitySwapStatus || 'All'
   };
+  const hideAllRequests = Boolean(state.ui.availabilityAllRequestsHidden);
+  const hideSwapRequests = Boolean(state.ui.availabilitySwapRequestsHidden);
   const visibleAvailabilityRequestsForList = filterAvailabilityRequestsForAdminList(visibleAvailabilityRequests, allRequestFilters);
   const visibleSwapRequestsForList = filterSwapRequestsForAdminList(visibleSwapRequests, swapRequestFilters);
   const filteredPendingCount = visibleAvailabilityRequestsForList.filter((request) => normalizeAvailabilityRequestStatus(request.status) === 'pending').length;
@@ -4706,6 +4716,16 @@ function renderAvailabilityRequestsPage(currentUser) {
         <div class="muted">Total requests loaded: ${allAvailabilityRequests.length}</div>
         <div class="muted">Visible requests: ${visibleAvailabilityRequests.length} (${pendingCount} pending)</div>
         <div class="muted">Swap requests: ${visibleSwapRequests.length} (${pendingSwapCount} pending)</div>
+        <div class="row" style="margin-top:8px; gap:12px; flex-wrap:wrap;">
+          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+            <input id="availability-hide-all-requests" type="checkbox" ${hideAllRequests ? 'checked' : ''} />
+            <span>Hide All requests</span>
+          </label>
+          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+            <input id="availability-hide-swap-requests" type="checkbox" ${hideSwapRequests ? 'checked' : ''} />
+            <span>Hide Swap requests</span>
+          </label>
+        </div>
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
@@ -4788,6 +4808,7 @@ function renderAvailabilityRequestsPage(currentUser) {
         </div>
       </div>
 
+      ${hideAllRequests ? '' : `
       <div class="panel">
         <h2>All requests</h2>
         <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
@@ -4836,7 +4857,9 @@ function renderAvailabilityRequestsPage(currentUser) {
           `).join('') || '<div class="muted">No unavailability requests yet.</div>'}
         </div>
       </div>
+      `}
 
+      ${hideSwapRequests ? '' : `
       <div class="panel" style="margin-top:16px;">
         <h2>Swap requests</h2>
         <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
@@ -4879,6 +4902,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           }).join('') || '<div class="muted">No swap requests yet.</div>'}
         </div>
       </div>
+      `}
     </div>
   `;
 
@@ -5886,6 +5910,18 @@ function bindEvents() {
   document.getElementById('availability-filters-reset')?.addEventListener('click', () => {
     state.ui.availabilityFrom = '';
     state.ui.availabilityTo = '';
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('availability-hide-all-requests')?.addEventListener('change', (event) => {
+    state.ui.availabilityAllRequestsHidden = Boolean(event.target.checked);
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('availability-hide-swap-requests')?.addEventListener('change', (event) => {
+    state.ui.availabilitySwapRequestsHidden = Boolean(event.target.checked);
     saveUiState();
     render();
   });
