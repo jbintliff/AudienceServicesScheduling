@@ -13,6 +13,7 @@ const rememberedLoginKey = 'agent-scheduler-remembered-login-v1';
 const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
 const emailDeliverySettingsKey = 'agent-scheduler-email-delivery-settings-v1';
 const profilePhotosKey = 'agent-scheduler-profile-photos-v1';
+const maxPolicyUploadBytes = 2 * 1024 * 1024;
 const backendUrlKey = 'agent-scheduler-backend-url-v1';
 const appLoginUrlKey = 'agent-scheduler-app-login-url-v1';
 const syncStatusKey = 'agent-scheduler-sync-status-v1';
@@ -2461,6 +2462,7 @@ function getPolicyBlob(policy) {
 }
 
 function isTextLikePolicy(policy) {
+  if (isDocxPolicy(policy)) return false;
   const mimeType = String(policy?.mimeType || '').trim().toLowerCase();
   const policyName = String(policy?.name || '').trim().toLowerCase();
   if (mimeType.startsWith('text/')) return true;
@@ -6060,6 +6062,10 @@ function bindEvents() {
       alert('Please upload a PDF or DOCX file.');
       return;
     }
+    if ((Number(selectedFile.size) || 0) > maxPolicyUploadBytes) {
+      alert(`This file is too large to store reliably in the browser (${formatBytes(selectedFile.size)}). Please upload a file smaller than ${formatBytes(maxPolicyUploadBytes)}.`);
+      return;
+    }
 
     try {
       const dataUrl = await readFileAsDataUrl(selectedFile);
@@ -6076,7 +6082,7 @@ function bindEvents() {
         if (!shouldReplace) return;
       }
 
-      state.policies = [
+      const nextPolicies = [
         ...(Array.isArray(state.policies) ? state.policies : []),
         {
           id: createId(),
@@ -6087,7 +6093,14 @@ function bindEvents() {
           uploadedAt: new Date().toISOString()
         }
       ];
-      saveState();
+      state.policies = nextPolicies;
+      const didSaveState = saveState();
+      if (!didSaveState) {
+        alert('Unable to save this policy file permanently. Browser storage may be full. Try a smaller PDF/DOCX or remove older uploads.');
+        syncFromStorage();
+        render();
+        return;
+      }
       render();
     } catch {
       alert('Unable to upload this policy file right now.');
@@ -6105,7 +6118,11 @@ function bindEvents() {
       const shouldDelete = confirm(`Delete policy ${policy.name || 'this file'}?`);
       if (!shouldDelete) return;
       state.policies = (Array.isArray(state.policies) ? state.policies : []).filter((item) => Number(item.id) !== policyId);
-      saveState();
+      const didSaveState = saveState();
+      if (!didSaveState) {
+        alert('Unable to remove this policy permanently right now. Please check browser storage settings and try again.');
+        syncFromStorage();
+      }
       render();
     });
   });
