@@ -259,6 +259,7 @@ const pendingSharedWriteKeys = new Set();
 let adminManagerNotice = null;
 let adminProfileNotice = null;
 const attemptedResetTokenLookups = new Set();
+let activePolicyPreviewBlobUrl = '';
 const defaultEmailDeliverySettings = {
   enabled: false,
   provider: 'generic',
@@ -2395,14 +2396,43 @@ function getPolicyDataUrl(policy) {
   return `data:${mimeType};base64,${base64}`;
 }
 
+function getPolicyBytes(policy) {
+  const base64 = String(policy?.contentBase64 || '').trim();
+  if (!base64) return null;
+  try {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let index = 0; index < binaryString.length; index += 1) {
+      bytes[index] = binaryString.charCodeAt(index);
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+function getPolicyBlob(policy) {
+  const bytes = getPolicyBytes(policy);
+  if (!bytes) return null;
+  const mimeType = String(policy?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+  return new Blob([bytes], { type: mimeType });
+}
+
+function isTextLikePolicy(policy) {
+  const mimeType = String(policy?.mimeType || '').trim().toLowerCase();
+  const policyName = String(policy?.name || '').trim().toLowerCase();
+  if (mimeType.startsWith('text/')) return true;
+  if (mimeType.includes('json') || mimeType.includes('xml') || mimeType.includes('csv')) return true;
+  return /\.(txt|md|json|csv|xml)$/i.test(policyName);
+}
+
 function canPreviewPolicyInline(policy) {
   const mimeType = String(policy?.mimeType || '').trim().toLowerCase();
   const policyName = String(policy?.name || '').trim().toLowerCase();
   if (mimeType.startsWith('image/')) return true;
   if (mimeType === 'application/pdf') return true;
-  if (mimeType.startsWith('text/')) return true;
-  if (mimeType.includes('json') || mimeType.includes('xml')) return true;
-  if (/\.(pdf|png|jpg|jpeg|gif|webp|svg|txt|md|json|csv|xml)$/i.test(policyName)) return true;
+  if (isTextLikePolicy(policy)) return true;
+  if (/\.(pdf|png|jpg|jpeg|gif|webp|svg)$/i.test(policyName)) return true;
   return false;
 }
 
@@ -2433,13 +2463,29 @@ function openPolicyPreviewModal(policy) {
   if (!(modal instanceof HTMLElement) || !(frame instanceof HTMLIFrameElement) || !(title instanceof HTMLElement) || !(openTabLink instanceof HTMLAnchorElement)) {
     return;
   }
-  const previewSrc = getPolicyDataUrl(policy);
-  if (!previewSrc) {
+  closePolicyPreviewModal();
+  const previewBlob = getPolicyBlob(policy);
+  if (!previewBlob) {
     alert('Preview data is unavailable for this file.');
     return;
   }
+  const previewSrc = URL.createObjectURL(previewBlob);
+  activePolicyPreviewBlobUrl = previewSrc;
   title.textContent = policy?.name || 'Policy preview';
-  frame.src = previewSrc;
+  if (isTextLikePolicy(policy)) {
+    const bytes = getPolicyBytes(policy);
+    let textContent = '';
+    try {
+      textContent = bytes ? new TextDecoder('utf-8', { fatal: false }).decode(bytes) : '';
+    } catch {
+      textContent = '';
+    }
+    const escapedText = escapeHtml(textContent || '[No preview text available]');
+    frame.srcdoc = `<!doctype html><html><body style="margin:0; padding:16px; font-family:Consolas, Menlo, Monaco, monospace; white-space:pre-wrap; background:#fff; color:#111;"><pre style="margin:0; white-space:pre-wrap; word-break:break-word;">${escapedText}</pre></body></html>`;
+  } else {
+    frame.removeAttribute('srcdoc');
+    frame.src = previewSrc;
+  }
   openTabLink.href = previewSrc;
   modal.style.display = 'flex';
 }
@@ -2449,10 +2495,15 @@ function closePolicyPreviewModal() {
   const frame = document.getElementById('policy-preview-frame');
   const openTabLink = document.getElementById('policy-preview-open-tab');
   if (frame instanceof HTMLIFrameElement) {
+    frame.removeAttribute('srcdoc');
     frame.src = 'about:blank';
   }
   if (openTabLink instanceof HTMLAnchorElement) {
     openTabLink.href = '#';
+  }
+  if (activePolicyPreviewBlobUrl) {
+    URL.revokeObjectURL(activePolicyPreviewBlobUrl);
+    activePolicyPreviewBlobUrl = '';
   }
   if (modal instanceof HTMLElement) {
     modal.style.display = 'none';
@@ -5812,7 +5863,11 @@ function bindEvents() {
       const shouldDelete = confirm(`Delete shift template ${templateName}?`);
       if (!shouldDelete) return;
       state.templates = state.templates.filter((template) => Number(template.id) !== templateId);
-      saveState();
+      const didSaveState = saveState();
+      if (!didSaveState) {
+        alert('Unable to remove this template permanently right now. Please check browser storage settings and try again.');
+        syncFromStorage();
+      }
       render();
     });
   });
