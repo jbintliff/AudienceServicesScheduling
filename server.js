@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dataFilePath = path.join(__dirname, 'backend', 'data.json');
+const policyFilesDirPath = path.join(__dirname, 'backend', 'policy-files');
 const port = Number(process.env.PORT || 8787);
 
 const allowedKeys = new Set([
@@ -27,6 +28,57 @@ function ensureDataFile() {
   }
   if (!fs.existsSync(dataFilePath)) {
     fs.writeFileSync(dataFilePath, JSON.stringify({ store: {} }, null, 2), 'utf8');
+  }
+}
+
+function ensurePolicyFilesDir() {
+  if (!fs.existsSync(policyFilesDirPath)) {
+    fs.mkdirSync(policyFilesDirPath, { recursive: true });
+  }
+}
+
+function getPolicyFileRecordPath(policyId) {
+  const safeId = String(policyId || '').trim().replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeId) return '';
+  return path.join(policyFilesDirPath, `${safeId}.json`);
+}
+
+function writePolicyFileRecord(policyId, payload) {
+  const recordPath = getPolicyFileRecordPath(policyId);
+  if (!recordPath) return false;
+  ensurePolicyFilesDir();
+  try {
+    fs.writeFileSync(recordPath, JSON.stringify(payload, null, 2), 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readPolicyFileRecord(policyId) {
+  const recordPath = getPolicyFileRecordPath(policyId);
+  if (!recordPath || !fs.existsSync(recordPath)) {
+    return null;
+  }
+  try {
+    const raw = fs.readFileSync(recordPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function deletePolicyFileRecord(policyId) {
+  const recordPath = getPolicyFileRecordPath(policyId);
+  if (!recordPath || !fs.existsSync(recordPath)) {
+    return true;
+  }
+  try {
+    fs.unlinkSync(recordPath);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -153,7 +205,7 @@ function buildAgentCalendarFeed(store, token) {
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '40mb' }));
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
@@ -185,6 +237,72 @@ app.put('/api/store/:key', (req, res) => {
   const store = readStore();
   store[key] = value;
   writeStore(store);
+  res.json({ ok: true });
+});
+
+app.put('/api/policy-files/:id', (req, res) => {
+  const policyId = String(req.params.id || '').trim();
+  if (!policyId) {
+    res.status(400).json({ ok: false, error: 'Missing policy id' });
+    return;
+  }
+
+  const mimeType = String(req.body?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+  const contentBase64 = String(req.body?.contentBase64 || '').trim();
+  if (!contentBase64) {
+    res.status(400).json({ ok: false, error: 'Missing contentBase64' });
+    return;
+  }
+
+  const didWrite = writePolicyFileRecord(policyId, {
+    id: policyId,
+    mimeType,
+    contentBase64,
+    updatedAt: new Date().toISOString()
+  });
+  if (!didWrite) {
+    res.status(500).json({ ok: false, error: 'Failed to persist policy file' });
+    return;
+  }
+
+  res.json({ ok: true });
+});
+
+app.get('/api/policy-files/:id', (req, res) => {
+  const policyId = String(req.params.id || '').trim();
+  if (!policyId) {
+    res.status(400).json({ ok: false, error: 'Missing policy id' });
+    return;
+  }
+
+  const record = readPolicyFileRecord(policyId);
+  if (!record || !record.contentBase64) {
+    res.status(404).json({ ok: false, error: 'Policy file not found' });
+    return;
+  }
+
+  res.json({
+    ok: true,
+    id: policyId,
+    mimeType: String(record.mimeType || 'application/octet-stream'),
+    contentBase64: String(record.contentBase64 || ''),
+    updatedAt: String(record.updatedAt || '')
+  });
+});
+
+app.delete('/api/policy-files/:id', (req, res) => {
+  const policyId = String(req.params.id || '').trim();
+  if (!policyId) {
+    res.status(400).json({ ok: false, error: 'Missing policy id' });
+    return;
+  }
+
+  const didDelete = deletePolicyFileRecord(policyId);
+  if (!didDelete) {
+    res.status(500).json({ ok: false, error: 'Failed to delete policy file' });
+    return;
+  }
+
   res.json({ ok: true });
 });
 

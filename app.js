@@ -13,7 +13,9 @@ const rememberedLoginKey = 'agent-scheduler-remembered-login-v1';
 const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
 const emailDeliverySettingsKey = 'agent-scheduler-email-delivery-settings-v1';
 const profilePhotosKey = 'agent-scheduler-profile-photos-v1';
-const maxPolicyUploadBytes = 2 * 1024 * 1024;
+const maxPolicyUploadBytes = 25 * 1024 * 1024;
+const policyFilesDbName = 'agent-scheduler-policy-files-v1';
+const policyFilesStoreName = 'policy-files';
 const backendUrlKey = 'agent-scheduler-backend-url-v1';
 const appLoginUrlKey = 'agent-scheduler-app-login-url-v1';
 const syncStatusKey = 'agent-scheduler-sync-status-v1';
@@ -38,6 +40,202 @@ const sharedStorageKeys = [
   emailOutboxKey,
   emailDeliverySettingsKey
 ];
+let policyFilesDbPromise = null;
+
+function openPolicyFilesDb() {
+  if (typeof indexedDB === 'undefined') {
+    return Promise.resolve(null);
+  }
+  if (policyFilesDbPromise) {
+    return policyFilesDbPromise;
+  }
+  policyFilesDbPromise = new Promise((resolve) => {
+    try {
+      const request = indexedDB.open(policyFilesDbName, 1);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(policyFilesStoreName)) {
+          database.createObjectStore(policyFilesStoreName, { keyPath: 'id' });
+        }
+      };
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+  return policyFilesDbPromise;
+}
+
+function bytesToBase64(bytes) {
+  const source = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || 0);
+  if (!source.length) return '';
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let index = 0; index < source.length; index += chunkSize) {
+    const chunk = source.subarray(index, Math.min(source.length, index + chunkSize));
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(base64Value) {
+  const base64 = String(base64Value || '').trim();
+  if (!base64) return null;
+  try {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let index = 0; index < binaryString.length; index += 1) {
+      bytes[index] = binaryString.charCodeAt(index);
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+async function savePolicyFileBytes(policyId, mimeType, bytes) {
+  const normalizedId = String(policyId || '').trim();
+  if (!normalizedId || !(bytes instanceof Uint8Array) || bytes.length === 0) {
+    return false;
+  }
+  const database = await openPolicyFilesDb();
+  const normalizedMimeType = String(mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+
+  if (!database) {
+    return uploadPolicyFileToBackend(normalizedId, normalizedMimeType, bytes);
+  }
+
+  const didSaveLocal = await new Promise((resolve) => {
+    try {
+      const transaction = database.transaction(policyFilesStoreName, 'readwrite');
+      const store = transaction.objectStore(policyFilesStoreName);
+      store.put({
+        id: normalizedId,
+        mimeType: normalizedMimeType,
+        bytes,
+        updatedAt: getCurrentIsoTimestamp()
+      });
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => resolve(false);
+      transaction.onabort = () => resolve(false);
+    } catch {
+      resolve(false);
+    }
+  });
+
+  if (!didSaveLocal) return false;
+  if (!isApplyingRemoteSnapshot) {
+    void uploadPolicyFileToBackend(normalizedId, normalizedMimeType, bytes);
+  }
+  return true;
+}
+
+async function loadPolicyFileBytes(policyId) {
+  const normalizedId = String(policyId || '').trim();
+  if (!normalizedId) return null;
+  const database = await openPolicyFilesDb();
+
+  if (database) {
+    const localBytes = await new Promise((resolve) => {
+      try {
+        const transaction = database.transaction(policyFilesStoreName, 'readonly');
+        const store = transaction.objectStore(policyFilesStoreName);
+        const request = store.get(normalizedId);
+        request.onsuccess = () => {
+          const record = request.result;
+          if (record?.bytes instanceof Uint8Array) {
+            resolve(record.bytes);
+            return;
+          }
+          if (record?.bytes instanceof ArrayBuffer) {
+            resolve(new Uint8Array(record.bytes));
+            return;
+          }
+          resolve(null);
+        };
+        request.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+    if (localBytes && localBytes.length > 0) {
+      return localBytes;
+    }
+  }
+
+  const remoteFile = await fetchPolicyFileFromBackend(normalizedId);
+  if (!remoteFile?.bytes || remoteFile.bytes.length === 0) {
+    return null;
+  }
+  if (database) {
+    await savePolicyFileBytes(normalizedId, remoteFile.mimeType || 'application/octet-stream', remoteFile.bytes);
+  }
+  return remoteFile.bytes;
+}
+
+async function deletePolicyFileBytes(policyId) {
+  const normalizedId = String(policyId || '').trim();
+  if (!normalizedId) return true;
+  const database = await openPolicyFilesDb();
+  if (!database) {
+    return deletePolicyFileFromBackend(normalizedId);
+  }
+
+  const didDeleteLocal = await new Promise((resolve) => {
+    try {
+      const transaction = database.transaction(policyFilesStoreName, 'readwrite');
+      const store = transaction.objectStore(policyFilesStoreName);
+      store.delete(normalizedId);
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => resolve(false);
+      transaction.onabort = () => resolve(false);
+    } catch {
+      resolve(false);
+    }
+  });
+  if (!didDeleteLocal) return false;
+  void deletePolicyFileFromBackend(normalizedId);
+  return true;
+}
+
+function sanitizePoliciesForStorage(policies) {
+  return (Array.isArray(policies) ? policies : [])
+    .map((policy) => ({
+      id: Number(policy?.id) || createId(),
+      name: String(policy?.name || '').trim(),
+      mimeType: String(policy?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream',
+      sizeBytes: Number(policy?.sizeBytes) || 0,
+      uploadedAt: String(policy?.uploadedAt || '').trim() || getCurrentIsoTimestamp()
+    }))
+    .filter((policy) => policy.name);
+}
+
+async function migrateLegacyPolicyContentToIndexedDb() {
+  const policies = Array.isArray(state.policies) ? state.policies : [];
+  if (!policies.length) return;
+  let didMigrateAny = false;
+
+  for (const policy of policies) {
+    const policyId = Number(policy?.id) || 0;
+    if (!policyId) continue;
+    const existingBytes = await loadPolicyFileBytes(policyId);
+    if (existingBytes && existingBytes.length > 0) continue;
+    const legacyBase64 = String(policy?.legacyContentBase64 || policy?.contentBase64 || '').trim();
+    if (!legacyBase64) continue;
+    const legacyBytes = base64ToBytes(legacyBase64);
+    if (!legacyBytes) continue;
+    const didSave = await savePolicyFileBytes(policyId, policy?.mimeType || 'application/octet-stream', legacyBytes);
+    if (didSave) {
+      didMigrateAny = true;
+    }
+  }
+
+  if (didMigrateAny) {
+    state.policies = sanitizePoliciesForStorage(state.policies);
+    saveState();
+  }
+}
 
 function normalizeBackendUrl(url) {
   return String(url || '').trim().replace(/\/$/, '');
@@ -515,6 +713,51 @@ async function requestBackend(path, options = {}) {
   } catch {
     return null;
   }
+}
+
+async function uploadPolicyFileToBackend(policyId, mimeType, bytes) {
+  if (!backendApiBase || !(bytes instanceof Uint8Array) || bytes.length === 0) return false;
+  const response = await requestBackend(`/policy-files/${encodeURIComponent(String(policyId || ''))}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      mimeType: String(mimeType || 'application/octet-stream').trim() || 'application/octet-stream',
+      contentBase64: bytesToBase64(bytes)
+    })
+  });
+  const didSync = Boolean(response);
+  if (didSync) {
+    markSyncSuccess();
+  }
+  return didSync;
+}
+
+async function fetchPolicyFileFromBackend(policyId) {
+  if (!backendApiBase) return null;
+  const response = await requestBackend(`/policy-files/${encodeURIComponent(String(policyId || ''))}`);
+  if (!response) return null;
+  try {
+    const payload = await response.json();
+    const bytes = base64ToBytes(payload?.contentBase64);
+    if (!bytes || bytes.length === 0) return null;
+    return {
+      mimeType: String(payload?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream',
+      bytes
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function deletePolicyFileFromBackend(policyId) {
+  if (!backendApiBase) return true;
+  const response = await requestBackend(`/policy-files/${encodeURIComponent(String(policyId || ''))}`, {
+    method: 'DELETE'
+  });
+  const didDelete = Boolean(response);
+  if (didDelete) {
+    markSyncSuccess();
+  }
+  return didDelete;
 }
 
 async function pushSharedKeyToBackend(key, rawValue) {
@@ -2082,11 +2325,11 @@ function normalizePolicies(policies) {
       id: Number(policy?.id) || createId(),
       name: String(policy?.name || '').trim(),
       mimeType: String(policy?.mimeType || 'application/octet-stream').trim(),
-      contentBase64: String(policy?.contentBase64 || '').trim(),
+      legacyContentBase64: String(policy?.contentBase64 || '').trim(),
       sizeBytes: Number(policy?.sizeBytes) || 0,
       uploadedAt: String(policy?.uploadedAt || '').trim() || new Date().toISOString()
     }))
-    .filter((policy) => policy.name && policy.contentBase64);
+    .filter((policy) => policy.name);
 }
 
 function loadState() {
@@ -2178,6 +2421,9 @@ function saveState() {
   state.availabilityRequests = getAllAvailabilityRequests();
   memoryAvailabilityInbox = state.availabilityRequests;
   const { ui, ...sharedState } = state;
+  const sanitizedPolicies = sanitizePoliciesForStorage(sharedState.policies);
+  sharedState.policies = sanitizedPolicies;
+  state.policies = sanitizedPolicies;
   const persistableState = {
     ...sharedState,
     availabilityRequests: state.availabilityRequests
@@ -2375,6 +2621,15 @@ function readFileAsDataUrl(file) {
   });
 }
 
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Unable to read selected file.'));
+    reader.readAsText(file);
+  });
+}
+
 function getDataUrlApproxBytes(dataUrl) {
   const normalized = String(dataUrl || '');
   const commaIndex = normalized.indexOf(',');
@@ -2415,15 +2670,12 @@ function optimizeImageFileForProfilePhoto(file, maxDimension = 640, quality = 0.
   });
 }
 
-function triggerPolicyDownload(policy) {
-  const base64 = String(policy?.contentBase64 || '').trim();
-  if (!base64) return;
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let index = 0; index < binaryString.length; index += 1) {
-    bytes[index] = binaryString.charCodeAt(index);
+async function triggerPolicyDownload(policy) {
+  const blob = await getPolicyBlob(policy);
+  if (!blob) {
+    alert('This policy file data is unavailable on this device. Upload it again to restore download and preview.');
+    return;
   }
-  const blob = new Blob([bytes], { type: policy?.mimeType || 'application/octet-stream' });
   const blobUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = blobUrl;
@@ -2432,30 +2684,28 @@ function triggerPolicyDownload(policy) {
   URL.revokeObjectURL(blobUrl);
 }
 
-function getPolicyDataUrl(policy) {
-  const base64 = String(policy?.contentBase64 || '').trim();
+async function getPolicyDataUrl(policy) {
+  const bytes = await getPolicyBytes(policy);
+  if (!bytes) return '';
+  const base64 = bytesToBase64(bytes);
   if (!base64) return '';
   const mimeType = String(policy?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
   return `data:${mimeType};base64,${base64}`;
 }
 
-function getPolicyBytes(policy) {
-  const base64 = String(policy?.contentBase64 || '').trim();
-  if (!base64) return null;
-  try {
-    const binaryString = atob(base64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let index = 0; index < binaryString.length; index += 1) {
-      bytes[index] = binaryString.charCodeAt(index);
-    }
-    return bytes;
-  } catch {
-    return null;
+async function getPolicyBytes(policy) {
+  const policyId = Number(policy?.id) || 0;
+  if (!policyId) return null;
+  const storedBytes = await loadPolicyFileBytes(policyId);
+  if (storedBytes && storedBytes.length > 0) {
+    return storedBytes;
   }
+  const legacyBase64 = String(policy?.legacyContentBase64 || policy?.contentBase64 || '').trim();
+  return base64ToBytes(legacyBase64);
 }
 
-function getPolicyBlob(policy) {
-  const bytes = getPolicyBytes(policy);
+async function getPolicyBlob(policy) {
+  const bytes = await getPolicyBytes(policy);
   if (!bytes) return null;
   const mimeType = String(policy?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
   return new Blob([bytes], { type: mimeType });
@@ -2512,7 +2762,7 @@ async function inflateZipEntry(entryBytes, method) {
 }
 
 async function extractDocxXmlText(policy) {
-  const bytes = getPolicyBytes(policy);
+  const bytes = await getPolicyBytes(policy);
   if (!bytes) return '';
 
   const targetFileName = 'word/document.xml';
@@ -2605,7 +2855,7 @@ async function openPolicyPreviewModal(policy) {
     return;
   }
   closePolicyPreviewModal();
-  const previewBlob = getPolicyBlob(policy);
+  const previewBlob = await getPolicyBlob(policy);
   if (!previewBlob) {
     alert('Preview data is unavailable for this file.');
     return;
@@ -2619,7 +2869,7 @@ async function openPolicyPreviewModal(policy) {
   modal.style.display = 'flex';
 
   if (isTextLikePolicy(policy)) {
-    const bytes = getPolicyBytes(policy);
+    const bytes = await getPolicyBytes(policy);
     let textContent = '';
     try {
       textContent = bytes ? new TextDecoder('utf-8', { fatal: false }).decode(bytes) : '';
@@ -3428,8 +3678,18 @@ function getActiveCalendarWeekReference() {
   return state.ui.calendar?.weekReference || state.ui.calendar?.date || new Date().toISOString().slice(0, 10);
 }
 
-function exportData() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+async function exportData() {
+  const exportState = {
+    ...state,
+    policies: await Promise.all((Array.isArray(state.policies) ? state.policies : []).map(async (policy) => {
+      const bytes = await getPolicyBytes(policy);
+      return {
+        ...policy,
+        contentBase64: bytes ? bytesToBase64(bytes) : ''
+      };
+    }))
+  };
+  const blob = new Blob([JSON.stringify(exportState, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -3438,22 +3698,32 @@ function exportData() {
   URL.revokeObjectURL(url);
 }
 
-function importData(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const parsed = JSON.parse(reader.result);
-      Object.assign(state, parsed);
-      state.roleColors = parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : {};
-      state.ui = loadUiState(parsed.ui);
-      saveState();
-      saveUiState();
-      render();
-    } catch {
-      alert('The selected file is not a valid scheduler export.');
+async function importData(file) {
+  try {
+    const fileText = await readFileAsText(file);
+    const parsed = JSON.parse(fileText);
+    const importedPolicies = normalizePolicies(parsed?.policies);
+
+    Object.assign(state, parsed);
+    state.policies = importedPolicies;
+    state.roleColors = parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : {};
+    state.ui = loadUiState(parsed.ui);
+
+    for (const importedPolicy of importedPolicies) {
+      const legacyBase64 = String(importedPolicy?.legacyContentBase64 || importedPolicy?.contentBase64 || '').trim();
+      if (!legacyBase64) continue;
+      const bytes = base64ToBytes(legacyBase64);
+      if (!bytes) continue;
+      await savePolicyFileBytes(importedPolicy.id, importedPolicy.mimeType || 'application/octet-stream', bytes);
     }
-  };
-  reader.readAsText(file);
+
+    state.policies = sanitizePoliciesForStorage(importedPolicies);
+    saveState();
+    saveUiState();
+    render();
+  } catch {
+    alert('The selected file is not a valid scheduler export.');
+  }
 }
 
 function renderCalendarPage(currentUser) {
@@ -6068,9 +6338,9 @@ function bindEvents() {
     }
 
     try {
-      const dataUrl = await readFileAsDataUrl(selectedFile);
-      const base64Content = String(dataUrl.split(',')[1] || '').trim();
-      if (!base64Content) {
+      const fileArrayBuffer = await selectedFile.arrayBuffer();
+      const fileBytes = new Uint8Array(fileArrayBuffer);
+      if (!fileBytes.length) {
         alert('Unable to read the selected file.');
         return;
       }
@@ -6082,13 +6352,19 @@ function bindEvents() {
         if (!shouldReplace) return;
       }
 
+      const nextPolicyId = createId();
+      const didSavePolicyFile = await savePolicyFileBytes(nextPolicyId, selectedFile.type || 'application/octet-stream', fileBytes);
+      if (!didSavePolicyFile) {
+        alert('Unable to save this policy file in browser storage right now. Please try a smaller file or clear site data.');
+        return;
+      }
+
       const nextPolicies = [
         ...(Array.isArray(state.policies) ? state.policies : []),
         {
-          id: createId(),
+          id: nextPolicyId,
           name: selectedFile.name,
           mimeType: selectedFile.type || 'application/octet-stream',
-          contentBase64: base64Content,
           sizeBytes: Number(selectedFile.size) || 0,
           uploadedAt: new Date().toISOString()
         }
@@ -6096,6 +6372,7 @@ function bindEvents() {
       state.policies = nextPolicies;
       const didSaveState = saveState();
       if (!didSaveState) {
+        await deletePolicyFileBytes(nextPolicyId);
         alert('Unable to save this policy file permanently. Browser storage may be full. Try a smaller PDF/DOCX or remove older uploads.');
         syncFromStorage();
         render();
@@ -6108,7 +6385,7 @@ function bindEvents() {
   });
 
   document.querySelectorAll('[data-delete-policy]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const currentUser = getCurrentUser();
       if (currentUser?.role !== 'admin') return;
       const policyId = Number(button.getAttribute('data-delete-policy'));
@@ -6117,6 +6394,10 @@ function bindEvents() {
       if (!policy) return;
       const shouldDelete = confirm(`Delete policy ${policy.name || 'this file'}?`);
       if (!shouldDelete) return;
+      const didDeletePolicyFile = await deletePolicyFileBytes(policyId);
+      if (!didDeletePolicyFile) {
+        alert('Unable to remove stored policy file bytes from browser storage right now. The policy entry will still be removed.');
+      }
       state.policies = (Array.isArray(state.policies) ? state.policies : []).filter((item) => Number(item.id) !== policyId);
       const didSaveState = saveState();
       if (!didSaveState) {
@@ -6128,22 +6409,22 @@ function bindEvents() {
   });
 
   document.querySelectorAll('[data-download-policy]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const policyId = Number(button.getAttribute('data-download-policy'));
       if (!policyId) return;
       const policy = (Array.isArray(state.policies) ? state.policies : []).find((item) => Number(item.id) === policyId);
       if (!policy) return;
-      triggerPolicyDownload(policy);
+      await triggerPolicyDownload(policy);
     });
   });
 
   document.querySelectorAll('[data-preview-policy]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const policyId = Number(button.getAttribute('data-preview-policy'));
       if (!policyId) return;
       const policy = (Array.isArray(state.policies) ? state.policies : []).find((item) => Number(item.id) === policyId);
       if (!policy) return;
-      openPolicyPreviewModal(policy);
+      await openPolicyPreviewModal(policy);
     });
   });
 
@@ -7240,7 +7521,9 @@ function bindEvents() {
 }
 
 void initializeBackendSync().finally(() => {
-  render();
+  void migrateLegacyPolicyContentToIndexedDb().finally(() => {
+    render();
+  });
   if (backendApiBase) {
     window.setInterval(() => {
       void pollBackendSync();
