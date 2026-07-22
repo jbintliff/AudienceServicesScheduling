@@ -2020,9 +2020,13 @@ function normalizeTemplates(templates, roleCatalog = roleOptions, locationCatalo
 
   return templates.map((template) => {
     const requestedLocation = String(template?.location || '').trim();
+    const normalizedStart = normalizeTimeInputValue(template?.start || '');
+    const normalizedEnd = normalizeTimeInputValue(template?.end || '');
     return {
       ...template,
       active: template?.active !== false,
+      start: normalizedStart || '08:00',
+      end: normalizedEnd || '16:00',
       role: template?.role ? normalizeRoleLabel(template.role, normalizedRoles) : '',
       location: requestedLocation && normalizedLocations.includes(requestedLocation) ? requestedLocation : ''
     };
@@ -3189,6 +3193,15 @@ function parseTime12HourInput(timeValue) {
   return `${String(hours).padStart(2, '0')}:${minutes}`;
 }
 
+function normalizeTimeInputValue(timeValue) {
+  const normalizedValue = String(timeValue || '').trim();
+  if (!normalizedValue) return '';
+  if (/^(?:[01]?\d|2[0-3]):[0-5]\d$/.test(normalizedValue)) {
+    return normalizedValue.padStart(5, '0');
+  }
+  return parseTime12HourInput(normalizedValue);
+}
+
 function formatTimeRange(startTime, endTime) {
   return `${formatTime12Hour(startTime)} - ${formatTime12Hour(endTime)}`;
 }
@@ -4255,8 +4268,8 @@ function renderAdminOptionsPage(currentUser) {
           <form id="add-shift-template-form" class="stack" style="margin-bottom:12px;">
             <div class="row" style="flex-wrap:wrap;">
               <input name="name" placeholder="Template name" required />
-              <input name="start" type="text" placeholder="8:00 AM" value="8:00 AM" required pattern="^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(AM|PM|am|pm)$" title="Use 12-hour time like 8:00 AM" />
-              <input name="end" type="text" placeholder="4:00 PM" value="4:00 PM" required pattern="^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(AM|PM|am|pm)$" title="Use 12-hour time like 4:00 PM" />
+              <input name="start" type="time" value="08:00" required />
+              <input name="end" type="time" value="16:00" required />
               <select name="role">
                 <option value="">No default role</option>
                 ${roleChoices.map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
@@ -4278,8 +4291,8 @@ function renderAdminOptionsPage(currentUser) {
                 <form class="stack" data-update-shift-template="${template.id}" style="gap:8px;">
                   <div class="row" style="flex-wrap:wrap; align-items:flex-end;">
                     <input name="name" value="${escapeHtml(template.name || '')}" required />
-                    <input name="start" type="text" value="${escapeHtml(formatTime12Hour(template.start || '08:00'))}" required pattern="^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(AM|PM|am|pm)$" title="Use 12-hour time like 8:00 AM" />
-                    <input name="end" type="text" value="${escapeHtml(formatTime12Hour(template.end || '16:00'))}" required pattern="^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(AM|PM|am|pm)$" title="Use 12-hour time like 4:00 PM" />
+                    <input name="start" type="time" value="${escapeHtml(normalizeTimeInputValue(template.start || '08:00') || '08:00')}" required />
+                    <input name="end" type="time" value="${escapeHtml(normalizeTimeInputValue(template.end || '16:00') || '16:00')}" required />
                     <select name="role">
                       <option value="">No default role</option>
                       ${roleChoices.map((role) => `<option value="${escapeHtml(role)}" ${String(template.role || '') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
@@ -5778,10 +5791,10 @@ function bindEvents() {
       roleInput.value = normalizeRoleLabel(template.role);
     }
     if (startInput instanceof HTMLInputElement && template.start) {
-      startInput.value = template.start;
+      startInput.value = normalizeTimeInputValue(template.start) || template.start;
     }
     if (endInput instanceof HTMLInputElement && template.end) {
-      endInput.value = template.end;
+      endInput.value = normalizeTimeInputValue(template.end) || template.end;
     }
     if (locationInput instanceof HTMLSelectElement) {
       const requestedLocation = String(template.location || '').trim();
@@ -5793,8 +5806,8 @@ function bindEvents() {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const name = String(formData.get('name') || '').trim();
-    const start = parseTime12HourInput(formData.get('start'));
-    const end = parseTime12HourInput(formData.get('end'));
+    const start = String(formData.get('start') || '').trim();
+    const end = String(formData.get('end') || '').trim();
     const requestedRole = String(formData.get('role') || '').trim();
     const requestedLocation = String(formData.get('location') || '').trim();
     const active = formData.get('active') !== null;
@@ -5824,8 +5837,8 @@ function bindEvents() {
       if (!templateId) return;
       const formData = new FormData(form);
       const name = String(formData.get('name') || '').trim();
-      const start = parseTime12HourInput(formData.get('start'));
-      const end = parseTime12HourInput(formData.get('end'));
+      const start = String(formData.get('start') || '').trim();
+      const end = String(formData.get('end') || '').trim();
       const requestedRole = String(formData.get('role') || '').trim();
       const requestedLocation = String(formData.get('location') || '').trim();
       const active = formData.get('active') !== null;
