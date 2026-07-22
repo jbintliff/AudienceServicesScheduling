@@ -2611,7 +2611,7 @@ function openShiftEditModal(shift, onSave) {
           <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
             <span>Agent</span>
             <select name="agentId" required>
-              ${state.agents.map((agent) => `<option value="${agent.id}" ${Number(shift.agentId) === Number(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+              ${[...state.agents].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}" ${Number(shift.agentId) === Number(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
             </select>
           </label>
           <label style="display:flex; flex-direction:column; gap:6px; min-width:180px; flex:1;">
@@ -3395,7 +3395,7 @@ function renderCalendarPage(currentUser) {
               </select>
               <select name="agentId" required>
                 <option value="">Assign agent</option>
-                ${state.agents.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+                ${[...state.agents].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
               </select>
               <select name="role" required>
                 ${getRoleLegendItems().map((role) => `<option value="${role}">${escapeHtml(role)}</option>`).join('')}
@@ -3464,7 +3464,7 @@ function renderCalendarPage(currentUser) {
                   </div>
                   ${!isAgentView && getAgent(shift.agentId)?.team ? `<div class="muted">${escapeHtml(normalizeTeamLabel(getAgent(shift.agentId)?.team))}</div>` : ''}
                   ${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
-                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row calendar-shift-actions" style="margin-top:6px;"><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Dup</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
+                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row calendar-shift-actions" style="margin-top:6px;"><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-dup-shift="${shift.id}">Copy/Dup</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
                   ${isAgentView ? `
                     <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
                     <div class="row" style="margin-top:6px;">
@@ -6953,30 +6953,29 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll('[data-copy-shift]').forEach((button) => {
+  document.querySelectorAll('[data-copy-dup-shift]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.preventDefault();
-      const id = Number(button.getAttribute('data-copy-shift'));
+      const id = Number(button.getAttribute('data-copy-dup-shift'));
       const shift = state.shifts.find((item) => item.id === id);
       if (!shift) return;
-      copiedShiftTemplate = { ...shift };
-      render();
-    });
-  });
 
-  document.querySelectorAll('[data-duplicate-shift]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      const id = Number(button.getAttribute('data-duplicate-shift'));
-      const shift = state.shifts.find((item) => item.id === id);
-      if (!shift) return;
-      const duplicatedShift = cloneShift(shift);
-      if (!confirmShiftAssignmentWithTimeOffWarning(duplicatedShift.agentId, duplicatedShift.date, duplicatedShift.start, duplicatedShift.end, {
-        durationHours: duplicatedShift.durationHours,
-        role: duplicatedShift.role
-      })) return;
-      state.shifts.push(duplicatedShift);
-      saveState();
+      const shouldDuplicateNow = confirm('Shift action:\n\nSelect OK to duplicate this shift now.\nSelect Cancel for copy options.');
+      if (shouldDuplicateNow) {
+        const duplicatedShift = cloneShift(shift);
+        if (!confirmShiftAssignmentWithTimeOffWarning(duplicatedShift.agentId, duplicatedShift.date, duplicatedShift.start, duplicatedShift.end, {
+          durationHours: duplicatedShift.durationHours,
+          role: duplicatedShift.role
+        })) return;
+        state.shifts.push(duplicatedShift);
+        saveState();
+        render();
+        return;
+      }
+
+      const shouldCopyForPaste = confirm('Copy this shift so you can paste it elsewhere?');
+      if (!shouldCopyForPaste) return;
+      copiedShiftTemplate = { ...shift };
       render();
     });
   });
