@@ -262,6 +262,7 @@ let adminManagerNotice = null;
 let adminProfileNotice = null;
 const attemptedResetTokenLookups = new Set();
 let activePolicyPreviewBlobUrl = '';
+let activePolicyPreviewRequestId = 0;
 const defaultEmailDeliverySettings = {
   enabled: false,
   provider: 'generic',
@@ -2427,14 +2428,83 @@ function isTextLikePolicy(policy) {
   return /\.(txt|md|json|csv|xml)$/i.test(policyName);
 }
 
+function isDocxPolicy(policy) {
+  const mimeType = String(policy?.mimeType || '').trim().toLowerCase();
+  const policyName = String(policy?.name || '').trim().toLowerCase();
+  return mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    || /\.docx$/i.test(policyName);
+}
+
 function canPreviewPolicyInline(policy) {
   const mimeType = String(policy?.mimeType || '').trim().toLowerCase();
   const policyName = String(policy?.name || '').trim().toLowerCase();
   if (mimeType.startsWith('image/')) return true;
   if (mimeType === 'application/pdf') return true;
   if (isTextLikePolicy(policy)) return true;
+  if (isDocxPolicy(policy)) return true;
   if (/\.(pdf|png|jpg|jpeg|gif|webp|svg)$/i.test(policyName)) return true;
   return false;
+}
+
+async function inflateZipEntry(entryBytes, method) {
+  if (method === 0) {
+    return entryBytes;
+  }
+  if (method !== 8) {
+    return null;
+  }
+  if (typeof DecompressionStream !== 'function') {
+    return null;
+  }
+  const stream = new Blob([entryBytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  const arrayBuffer = await new Response(stream).arrayBuffer();
+  return new Uint8Array(arrayBuffer);
+}
+
+async function extractDocxXmlText(policy) {
+  const bytes = getPolicyBytes(policy);
+  if (!bytes) return '';
+
+  const targetFileName = 'word/document.xml';
+  let offset = 0;
+  while (offset + 30 <= bytes.length) {
+    const signature = new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0, true);
+    if (signature !== 0x04034b50) break;
+
+    const method = new DataView(bytes.buffer, bytes.byteOffset + offset + 8, 2).getUint16(0, true);
+    const compressedSize = new DataView(bytes.buffer, bytes.byteOffset + offset + 18, 4).getUint32(0, true);
+    const fileNameLength = new DataView(bytes.buffer, bytes.byteOffset + offset + 26, 2).getUint16(0, true);
+    const extraLength = new DataView(bytes.buffer, bytes.byteOffset + offset + 28, 2).getUint16(0, true);
+
+    const fileNameStart = offset + 30;
+    const fileNameEnd = fileNameStart + fileNameLength;
+    const fileName = new TextDecoder('utf-8').decode(bytes.slice(fileNameStart, fileNameEnd));
+    const dataStart = fileNameEnd + extraLength;
+    const dataEnd = dataStart + compressedSize;
+    const entryBytes = bytes.slice(dataStart, dataEnd);
+
+    if (fileName === targetFileName) {
+      const inflatedBytes = await inflateZipEntry(entryBytes, method);
+      if (!inflatedBytes) return '';
+      return new TextDecoder('utf-8', { fatal: false }).decode(inflatedBytes);
+    }
+
+    offset = dataEnd;
+  }
+
+  return '';
+}
+
+function extractDocxPlainText(xmlText) {
+  const parsed = new DOMParser().parseFromString(String(xmlText || ''), 'application/xml');
+  const parserError = parsed.getElementsByTagName('parsererror')[0];
+  if (parserError) return '';
+  const paragraphNodes = Array.from(parsed.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'p'));
+  const lines = paragraphNodes.map((paragraph) => {
+    const textNodes = Array.from(paragraph.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 't'));
+    return textNodes.map((node) => node.textContent || '').join('');
+  });
+  return lines.join('\n').trim();
 }
 
 function renderPolicyPreviewModal() {
@@ -2449,19 +2519,19 @@ function renderPolicyPreviewModal() {
           </div>
         </div>
         <div class="card" style="padding:8px; flex:1; min-height:64vh;">
-          <iframe id="policy-preview-frame" src="about:blank" title="Policy preview" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;"></iframe>
+          <div id="policy-preview-body" style="width:100%; height:100%; min-height:62vh; overflow:auto; border-radius:8px; background:#fff;"></div>
         </div>
       </div>
     </div>
   `;
 }
 
-function openPolicyPreviewModal(policy) {
+async function openPolicyPreviewModal(policy) {
   const modal = document.getElementById('policy-preview-modal');
-  const frame = document.getElementById('policy-preview-frame');
+  const body = document.getElementById('policy-preview-body');
   const title = document.getElementById('policy-preview-title');
   const openTabLink = document.getElementById('policy-preview-open-tab');
-  if (!(modal instanceof HTMLElement) || !(frame instanceof HTMLIFrameElement) || !(title instanceof HTMLElement) || !(openTabLink instanceof HTMLAnchorElement)) {
+  if (!(modal instanceof HTMLElement) || !(body instanceof HTMLElement) || !(title instanceof HTMLElement) || !(openTabLink instanceof HTMLAnchorElement)) {
     return;
   }
   closePolicyPreviewModal();
@@ -2472,7 +2542,12 @@ function openPolicyPreviewModal(policy) {
   }
   const previewSrc = URL.createObjectURL(previewBlob);
   activePolicyPreviewBlobUrl = previewSrc;
+  const requestId = Date.now();
+  activePolicyPreviewRequestId = requestId;
   title.textContent = policy?.name || 'Policy preview';
+  body.innerHTML = '<div class="muted" style="padding:16px;">Loading preview...</div>';
+  modal.style.display = 'flex';
+
   if (isTextLikePolicy(policy)) {
     const bytes = getPolicyBytes(policy);
     let textContent = '';
@@ -2482,22 +2557,30 @@ function openPolicyPreviewModal(policy) {
       textContent = '';
     }
     const escapedText = escapeHtml(textContent || '[No preview text available]');
-    frame.srcdoc = `<!doctype html><html><body style="margin:0; padding:16px; font-family:Consolas, Menlo, Monaco, monospace; white-space:pre-wrap; background:#fff; color:#111;"><pre style="margin:0; white-space:pre-wrap; word-break:break-word;">${escapedText}</pre></body></html>`;
+    if (requestId === activePolicyPreviewRequestId) {
+      body.innerHTML = `<pre style="margin:0; padding:16px; font-family:Consolas, Menlo, Monaco, monospace; white-space:pre-wrap; word-break:break-word; color:#111;">${escapedText}</pre>`;
+    }
+  } else if (isDocxPolicy(policy)) {
+    const xmlText = await extractDocxXmlText(policy);
+    const plainText = extractDocxPlainText(xmlText) || '[No preview text could be extracted from this DOCX file.]';
+    if (requestId === activePolicyPreviewRequestId) {
+      body.innerHTML = `<pre style="margin:0; padding:16px; font-family:Consolas, Menlo, Monaco, monospace; white-space:pre-wrap; word-break:break-word; color:#111;">${escapeHtml(plainText)}</pre>`;
+    }
   } else {
-    frame.removeAttribute('srcdoc');
-    frame.src = previewSrc;
+    if (requestId === activePolicyPreviewRequestId) {
+      body.innerHTML = `<iframe src="${escapeHtml(previewSrc)}" title="${escapeHtml(policy?.name || 'Policy preview')}" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;"></iframe>`;
+    }
   }
   openTabLink.href = previewSrc;
-  modal.style.display = 'flex';
 }
 
 function closePolicyPreviewModal() {
   const modal = document.getElementById('policy-preview-modal');
-  const frame = document.getElementById('policy-preview-frame');
+  const body = document.getElementById('policy-preview-body');
   const openTabLink = document.getElementById('policy-preview-open-tab');
-  if (frame instanceof HTMLIFrameElement) {
-    frame.removeAttribute('srcdoc');
-    frame.src = 'about:blank';
+  activePolicyPreviewRequestId += 1;
+  if (body instanceof HTMLElement) {
+    body.innerHTML = '';
   }
   if (openTabLink instanceof HTMLAnchorElement) {
     openTabLink.href = '#';
