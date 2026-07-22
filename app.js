@@ -5807,6 +5807,10 @@ function bindEvents() {
     button.addEventListener('click', () => {
       const templateId = Number(button.getAttribute('data-remove-shift-template'));
       if (!templateId) return;
+      const template = state.templates.find((item) => Number(item.id) === templateId);
+      const templateName = String(template?.name || 'this template').trim() || 'this template';
+      const shouldDelete = confirm(`Delete shift template ${templateName}?`);
+      if (!shouldDelete) return;
       state.templates = state.templates.filter((template) => Number(template.id) !== templateId);
       saveState();
       render();
