@@ -12,6 +12,7 @@ const passwordResetRequestsKey = 'agent-scheduler-password-reset-requests-v1';
 const rememberedLoginKey = 'agent-scheduler-remembered-login-v1';
 const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
 const emailDeliverySettingsKey = 'agent-scheduler-email-delivery-settings-v1';
+const profilePhotosKey = 'agent-scheduler-profile-photos-v1';
 const backendUrlKey = 'agent-scheduler-backend-url-v1';
 const appLoginUrlKey = 'agent-scheduler-app-login-url-v1';
 const syncStatusKey = 'agent-scheduler-sync-status-v1';
@@ -32,6 +33,7 @@ const sharedStorageKeys = [
   availabilityRequestLedgerKey,
   passwordResetRequestsKey,
   appLoginUrlKey,
+  profilePhotosKey,
   emailOutboxKey,
   emailDeliverySettingsKey
 ];
@@ -957,15 +959,44 @@ function withRequiredEmail(user) {
   };
 }
 
+function loadProfilePhotos() {
+  try {
+    const saved = localStorage.getItem(profilePhotosKey);
+    if (!saved) return {};
+    const parsed = JSON.parse(saved);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveProfilePhotos(profilePhotos) {
+  return safeSetLocalStorage(profilePhotosKey, JSON.stringify(profilePhotos && typeof profilePhotos === 'object' ? profilePhotos : {}));
+}
+
+function serializeAuthUsersForStorage(users) {
+  return (Array.isArray(users) ? users : []).map((user) => {
+    const { profilePhotoDataUrl, ...safeUser } = user || {};
+    return safeUser;
+  });
+}
+
 function loadAuthUsers() {
   try {
     const saved = localStorage.getItem(authUsersKey);
+    const storedProfilePhotos = loadProfilePhotos();
     if (!saved) return defaultAuthUsers.map((user) => withRequiredEmail(user));
     const parsed = JSON.parse(saved);
     if (!Array.isArray(parsed) || parsed.length === 0) {
       return defaultAuthUsers.map((user) => withRequiredEmail(user));
     }
-    return parsed.map((user) => withRequiredEmail(user));
+    return parsed.map((user) => {
+      const normalizedUser = withRequiredEmail(user);
+      const userPhoto = normalizedUser?.profilePhotoDataUrl || storedProfilePhotos[String(normalizedUser?.id || '')] || '';
+      return userPhoto
+        ? { ...normalizedUser, profilePhotoDataUrl: userPhoto }
+        : normalizedUser;
+    });
   } catch {
     return defaultAuthUsers.map((user) => withRequiredEmail(user));
   }
@@ -973,12 +1004,21 @@ function loadAuthUsers() {
 
 function saveAuthUsers() {
   // Persist auth users through shared storage so profile edits sync across devices.
-  const didSave = safeSetLocalStorage(authUsersKey, JSON.stringify(authUsers));
-  if (didSave && !isApplyingRemoteSnapshot && backendApiBase) {
+  const profilePhotos = (Array.isArray(authUsers) ? authUsers : []).reduce((accumulator, user) => {
+    const userId = String(user?.id || '');
+    const photoDataUrl = String(user?.profilePhotoDataUrl || '').trim();
+    if (userId && photoDataUrl) {
+      accumulator[userId] = photoDataUrl;
+    }
+    return accumulator;
+  }, {});
+  const didSavePhotos = saveProfilePhotos(profilePhotos);
+  const didSave = safeSetLocalStorage(authUsersKey, JSON.stringify(serializeAuthUsersForStorage(authUsers)));
+  if (didSave && didSavePhotos && !isApplyingRemoteSnapshot && backendApiBase) {
     // Auth updates are critical for login; push a full snapshot best-effort.
     void pushLocalSnapshotToBackend();
   }
-  return didSave;
+  return didSave && didSavePhotos;
 }
 
 function loadPasswordResetRequests() {
@@ -2433,6 +2473,14 @@ function isDocxPolicy(policy) {
   const policyName = String(policy?.name || '').trim().toLowerCase();
   return mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     || /\.docx$/i.test(policyName);
+}
+
+function getPolicyTypeLabel(policy) {
+  if (isDocxPolicy(policy)) return 'DOCX';
+  const mimeType = String(policy?.mimeType || '').trim().toLowerCase();
+  const policyName = String(policy?.name || '').trim().toLowerCase();
+  if (mimeType === 'application/pdf' || /\.pdf$/i.test(policyName)) return 'PDF';
+  return String(policy?.mimeType || 'FILE').split('/')[0].toUpperCase() || 'FILE';
 }
 
 function canPreviewPolicyInline(policy) {
@@ -4444,7 +4492,7 @@ function renderAdminOptionsPage(currentUser) {
           <h2>Policies</h2>
           <p class="muted">Upload policy files that agents can view and download from the Policies page.</p>
           <form id="upload-policy-form" class="row" style="margin-bottom:10px; flex-wrap:wrap;">
-            <input name="policyFile" type="file" required />
+            <input name="policyFile" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
             <button type="submit">Upload policy</button>
           </form>
           <div class="request-list">
@@ -4452,12 +4500,15 @@ function renderAdminOptionsPage(currentUser) {
               <div class="card">
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
-                    <strong>${escapeHtml(policy.name || 'Policy')}</strong>
+                    <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+                      <strong>${escapeHtml(policy.name || 'Policy')}</strong>
+                      <span class="chip" style="font-size:0.72rem; padding:3px 8px;">${escapeHtml(getPolicyTypeLabel(policy))}</span>
+                    </div>
                     <div class="muted">Uploaded: ${escapeHtml(policy.uploadedAt ? new Date(policy.uploadedAt).toLocaleString() : 'Unknown')}</div>
                     <div class="muted">Size: ${escapeHtml(formatBytes(policy.sizeBytes))}</div>
                   </div>
                   <div class="row" style="gap:8px;">
-                    ${canPreviewPolicyInline(policy) ? `<button type="button" class="secondary" data-preview-policy="${policy.id}">Preview</button>` : ''}
+                    ${canPreviewPolicyInline(policy) ? `<button type="button" class="secondary" data-preview-policy="${policy.id}">Preview ${escapeHtml(getPolicyTypeLabel(policy))}</button>` : ''}
                     <button type="button" class="secondary" data-download-policy="${policy.id}">Download</button>
                     <button type="button" class="danger" data-delete-policy="${policy.id}">Delete</button>
                   </div>
@@ -4527,12 +4578,15 @@ function renderPoliciesPage(currentUser) {
             <div class="card">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                 <div>
-                  <strong>${escapeHtml(policy.name || 'Policy')}</strong>
+                    <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+                      <strong>${escapeHtml(policy.name || 'Policy')}</strong>
+                      <span class="chip" style="font-size:0.72rem; padding:3px 8px;">${escapeHtml(getPolicyTypeLabel(policy))}</span>
+                    </div>
                   <div class="muted">Uploaded: ${escapeHtml(policy.uploadedAt ? new Date(policy.uploadedAt).toLocaleString() : 'Unknown')}</div>
                   <div class="muted">Size: ${escapeHtml(formatBytes(policy.sizeBytes))}</div>
                 </div>
                 <div class="row" style="gap:8px;">
-                  ${canPreviewPolicyInline(policy) ? `<button type="button" class="secondary" data-preview-policy="${policy.id}">Preview</button>` : ''}
+                  ${canPreviewPolicyInline(policy) ? `<button type="button" class="secondary" data-preview-policy="${policy.id}">Preview ${escapeHtml(getPolicyTypeLabel(policy))}</button>` : ''}
                   <button type="button" class="secondary" data-download-policy="${policy.id}">Download</button>
                 </div>
               </div>
@@ -5996,6 +6050,14 @@ function bindEvents() {
     const selectedFile = fileInput.files?.[0];
     if (!selectedFile) {
       alert('Choose a file to upload.');
+      return;
+    }
+    const selectedFileName = String(selectedFile.name || '').trim().toLowerCase();
+    const selectedFileType = String(selectedFile.type || '').trim().toLowerCase();
+    const isPdfPolicy = selectedFileType === 'application/pdf' || selectedFileName.endsWith('.pdf');
+    const isDocxPolicyFile = selectedFileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || selectedFileName.endsWith('.docx');
+    if (!isPdfPolicy && !isDocxPolicyFile) {
+      alert('Please upload a PDF or DOCX file.');
       return;
     }
 
