@@ -157,6 +157,16 @@ const defaultState = {
     availabilityCalendarMonth: '',
     availabilityFrom: '',
     availabilityTo: '',
+    availabilityAllDate: '',
+    availabilityAllFrom: '',
+    availabilityAllTo: '',
+    availabilityAllAgentId: 'All',
+    availabilityAllStatus: 'All',
+    availabilitySwapDate: '',
+    availabilitySwapFrom: '',
+    availabilitySwapTo: '',
+    availabilitySwapAgentId: 'All',
+    availabilitySwapStatus: 'All',
     availabilityDebugAgentId: '',
     swapRequestToAgentId: '',
     swapRequestToShiftId: '',
@@ -256,6 +266,16 @@ function getDefaultUiState() {
     availabilityCalendarMonth: '',
     availabilityFrom: '',
     availabilityTo: '',
+    availabilityAllDate: '',
+    availabilityAllFrom: '',
+    availabilityAllTo: '',
+    availabilityAllAgentId: 'All',
+    availabilityAllStatus: 'All',
+    availabilitySwapDate: '',
+    availabilitySwapFrom: '',
+    availabilitySwapTo: '',
+    availabilitySwapAgentId: 'All',
+    availabilitySwapStatus: 'All',
     availabilityDebugAgentId: '',
     accessMode: 'admin',
     currentAgentId: defaultState.agents[0]?.id ?? null,
@@ -287,6 +307,16 @@ function normalizeUiState(source) {
     availabilityCalendarMonth: source?.availabilityCalendarMonth || defaults.availabilityCalendarMonth,
     availabilityFrom: source?.availabilityFrom || defaults.availabilityFrom,
     availabilityTo: source?.availabilityTo || defaults.availabilityTo,
+    availabilityAllDate: source?.availabilityAllDate || defaults.availabilityAllDate,
+    availabilityAllFrom: source?.availabilityAllFrom || defaults.availabilityAllFrom,
+    availabilityAllTo: source?.availabilityAllTo || defaults.availabilityAllTo,
+    availabilityAllAgentId: source?.availabilityAllAgentId || defaults.availabilityAllAgentId,
+    availabilityAllStatus: source?.availabilityAllStatus || defaults.availabilityAllStatus,
+    availabilitySwapDate: source?.availabilitySwapDate || defaults.availabilitySwapDate,
+    availabilitySwapFrom: source?.availabilitySwapFrom || defaults.availabilitySwapFrom,
+    availabilitySwapTo: source?.availabilitySwapTo || defaults.availabilitySwapTo,
+    availabilitySwapAgentId: source?.availabilitySwapAgentId || defaults.availabilitySwapAgentId,
+    availabilitySwapStatus: source?.availabilitySwapStatus || defaults.availabilitySwapStatus,
     availabilityDebugAgentId: source?.availabilityDebugAgentId || defaults.availabilityDebugAgentId,
     swapRequestToAgentId: source?.swapRequestToAgentId || defaults.swapRequestToAgentId,
     swapRequestToShiftId: source?.swapRequestToShiftId || defaults.swapRequestToShiftId,
@@ -1379,6 +1409,16 @@ function applyAccessForUser(user) {
     if (switchedIntoAdmin) {
       state.ui.availabilityFrom = '';
       state.ui.availabilityTo = '';
+      state.ui.availabilityAllDate = '';
+      state.ui.availabilityAllFrom = '';
+      state.ui.availabilityAllTo = '';
+      state.ui.availabilityAllAgentId = 'All';
+      state.ui.availabilityAllStatus = 'All';
+      state.ui.availabilitySwapDate = '';
+      state.ui.availabilitySwapFrom = '';
+      state.ui.availabilitySwapTo = '';
+      state.ui.availabilitySwapAgentId = 'All';
+      state.ui.availabilitySwapStatus = 'All';
       state.ui.availabilityRequestsCollapsed = false;
       state.ui.swapAlertsCollapsed = false;
       state.ui.calendar = {
@@ -1570,11 +1610,21 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     renderLoginPage('', 'Saved login was cleared on this device.');
   });
 
-  document.getElementById('forgot-password-form')?.addEventListener('submit', (event) => {
+  document.getElementById('forgot-password-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const email = normalizeEmail(formData.get('email'));
-    const foundUser = authUsers.find((user) => normalizeEmail(user.email) === email);
+    let foundUser = authUsers.find((user) => normalizeEmail(user.email) === email);
+
+    if (!foundUser && backendApiBase) {
+      // Match login behavior: refresh once from shared backend before treating the email as unknown.
+      const remoteStore = await fetchBackendSnapshot();
+      if (remoteStore) {
+        applyRemoteSnapshot(remoteStore);
+        syncFromStorage();
+        foundUser = authUsers.find((user) => normalizeEmail(user.email) === email);
+      }
+    }
 
     if (!foundUser) {
       renderLoginPage('', 'If the account exists, a reset email has been sent.');
@@ -1604,7 +1654,8 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       body: `We received a request to reset your password. Use this link within 1 hour: ${resetLink}`,
       type: 'password-reset'
     });
-    renderLoginPage('', 'Reset email sent. Open the link below to reset your password.', resetLink);
+    // In local mode, take the user directly to the reset form so the flow works even without email delivery.
+    window.location.assign(resetLink);
   });
 }
 
@@ -2001,10 +2052,67 @@ function getFilteredAvailabilityRequests(requests) {
   const fromDate = (state.ui.availabilityFrom || '').trim();
   const toDate = (state.ui.availabilityTo || '').trim();
   return (Array.isArray(requests) ? requests : []).filter((request) => {
-    const requestDate = (request.unavailableDate || '').slice(0, 10) || (request.requestedAt || '').slice(0, 10);
+    const requestDate = getAvailabilityRequestDate(request);
     const matchesFrom = !fromDate || (requestDate && requestDate >= fromDate);
     const matchesTo = !toDate || (requestDate && requestDate <= toDate);
     return matchesFrom && matchesTo;
+  });
+}
+
+function getAvailabilityRequestDate(request) {
+  return (request?.unavailableDate || '').slice(0, 10) || (request?.requestedAt || '').slice(0, 10);
+}
+
+function getSwapRequestDate(request) {
+  const fromShift = getShiftById(getSwapRequestFromShiftId(request));
+  const toShift = getShiftById(getSwapRequestToShiftId(request));
+  return (fromShift?.date || toShift?.date || request?.requestedAt || '').slice(0, 10);
+}
+
+function getSwapRequestFilterStatus(request) {
+  const normalizedStatus = String(request?.status || 'pending').trim().toLowerCase();
+  if (normalizedStatus === 'completed' || normalizedStatus === 'approved') return 'approved';
+  if (normalizedStatus === 'rejected' || normalizedStatus === 'denied' || normalizedStatus === 'declined') return 'rejected';
+  return 'pending';
+}
+
+function filterAvailabilityRequestsForAdminList(requests, filters = {}) {
+  const date = String(filters.date || '').trim();
+  const from = String(filters.from || '').trim();
+  const to = String(filters.to || '').trim();
+  const agentId = String(filters.agentId || 'All');
+  const status = String(filters.status || 'All');
+
+  return (Array.isArray(requests) ? requests : []).filter((request) => {
+    const requestDate = getAvailabilityRequestDate(request);
+    const normalizedStatus = normalizeAvailabilityRequestStatus(request?.status);
+    const matchesDate = !date || (requestDate && requestDate === date);
+    const matchesFrom = !from || (requestDate && requestDate >= from);
+    const matchesTo = !to || (requestDate && requestDate <= to);
+    const matchesAgent = agentId === 'All' || String(request?.agentId || '') === agentId;
+    const matchesStatus = status === 'All' || normalizedStatus === status;
+    return matchesDate && matchesFrom && matchesTo && matchesAgent && matchesStatus;
+  });
+}
+
+function filterSwapRequestsForAdminList(requests, filters = {}) {
+  const date = String(filters.date || '').trim();
+  const from = String(filters.from || '').trim();
+  const to = String(filters.to || '').trim();
+  const agentId = String(filters.agentId || 'All');
+  const status = String(filters.status || 'All');
+
+  return (Array.isArray(requests) ? requests : []).filter((request) => {
+    const requestDate = getSwapRequestDate(request);
+    const normalizedStatus = getSwapRequestFilterStatus(request);
+    const matchesDate = !date || (requestDate && requestDate === date);
+    const matchesFrom = !from || (requestDate && requestDate >= from);
+    const matchesTo = !to || (requestDate && requestDate <= to);
+    const matchesAgent = agentId === 'All'
+      || String(request?.fromAgentId || '') === agentId
+      || String(request?.toAgentId || '') === agentId;
+    const matchesStatus = status === 'All' || normalizedStatus === status;
+    return matchesDate && matchesFrom && matchesTo && matchesAgent && matchesStatus;
   });
 }
 
@@ -2638,11 +2746,9 @@ function getAvailabilityStats() {
 
 function getFilteredAgents() {
   const search = state.ui.agentSearch.trim().toLowerCase();
-  const selectedRole = String(state.ui.agentRoleFilter || 'All');
   return state.agents.filter((agent) => {
     const matchesName = !search || String(agent.name || '').toLowerCase().includes(search);
-    const matchesRole = selectedRole === 'All' || String(agent.role || '') === selectedRole;
-    return matchesName && matchesRole;
+    return matchesName;
   });
 }
 
@@ -4199,8 +4305,6 @@ function renderAgentsPage(currentUser) {
 
   const visibleAgents = getFilteredAgents();
   const agentSort = state.ui.agentSort === 'team' ? 'team' : 'name';
-  const selectedAgentRoleFilter = String(state.ui.agentRoleFilter || 'All');
-  const agentRoleOptions = Array.from(new Set(state.agents.map((agent) => String(agent.role || '').trim()).filter(Boolean))).sort((left, right) => left.localeCompare(right));
   const sortedAgents = [...visibleAgents].sort((left, right) => {
     if (agentSort === 'team') {
       const teamCompare = String(left.team || '').localeCompare(String(right.team || ''), undefined, { sensitivity: 'base' });
@@ -4236,10 +4340,6 @@ function renderAgentsPage(currentUser) {
         </div>
         <div class="row" style="justify-content:space-between; margin-bottom:6px; gap:6px; flex-wrap:wrap;">
           <input id="agent-search" placeholder="Search agents" value="${escapeHtml(state.ui.agentSearch)}" />
-          <select id="agent-role-filter" style="max-width:220px;">
-            <option value="All" ${selectedAgentRoleFilter === 'All' ? 'selected' : ''}>Filter: All roles</option>
-            ${agentRoleOptions.map((role) => `<option value="${escapeHtml(role)}" ${selectedAgentRoleFilter === role ? 'selected' : ''}>Filter: ${escapeHtml(role)}</option>`).join('')}
-          </select>
           <select id="agent-sort" style="max-width:220px;">
             <option value="name" ${agentSort === 'name' ? 'selected' : ''}>Sort: Name (A-Z)</option>
             <option value="team" ${agentSort === 'team' ? 'selected' : ''}>Sort: Team</option>
@@ -4276,9 +4376,6 @@ function renderAgentsPage(currentUser) {
                 <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:5px;">
                     <input name="name" value="${escapeHtml(agent.name)}" placeholder="Name" required />
                     <input name="email" type="email" value="${escapeHtml(getAgentAccountEmail(agent.id) || '')}" placeholder="Email" required />
-                    <select name="role" required>
-                      ${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}" ${String(agent.role || '') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
-                    </select>
                     <select name="team" required>
                       ${teamOptions.map((team) => `<option value="${team}" ${(agent.team || teamOptions[0]) === team ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
                     </select>
@@ -4386,6 +4483,24 @@ function renderAvailabilityRequestsPage(currentUser) {
     .sort((left, right) => (right.requestedAt || '').localeCompare(left.requestedAt || ''));
   const pendingCount = visibleAvailabilityRequests.filter((request) => request.status === 'pending').length;
   const pendingSwapCount = visibleSwapRequests.filter((request) => request.status === 'pending').length;
+  const allRequestFilters = {
+    date: state.ui.availabilityAllDate || '',
+    from: state.ui.availabilityAllFrom || '',
+    to: state.ui.availabilityAllTo || '',
+    agentId: state.ui.availabilityAllAgentId || 'All',
+    status: state.ui.availabilityAllStatus || 'All'
+  };
+  const swapRequestFilters = {
+    date: state.ui.availabilitySwapDate || '',
+    from: state.ui.availabilitySwapFrom || '',
+    to: state.ui.availabilitySwapTo || '',
+    agentId: state.ui.availabilitySwapAgentId || 'All',
+    status: state.ui.availabilitySwapStatus || 'All'
+  };
+  const visibleAvailabilityRequestsForList = filterAvailabilityRequestsForAdminList(visibleAvailabilityRequests, allRequestFilters);
+  const visibleSwapRequestsForList = filterSwapRequestsForAdminList(visibleSwapRequests, swapRequestFilters);
+  const filteredPendingCount = visibleAvailabilityRequestsForList.filter((request) => normalizeAvailabilityRequestStatus(request.status) === 'pending').length;
+  const filteredPendingSwapCount = visibleSwapRequestsForList.filter((request) => getSwapRequestFilterStatus(request) === 'pending').length;
   const selectedMonth = state.ui.availabilityCalendarMonth || new Date().toISOString().slice(0, 7);
   const calendarData = getAvailabilityCalendarCells(selectedMonth, visibleAvailabilityRequests);
   const availabilityDebugAgentId = Number(state.ui.availabilityDebugAgentId || state.agents[0]?.id || 0);
@@ -4510,8 +4625,26 @@ function renderAvailabilityRequestsPage(currentUser) {
 
       <div class="panel">
         <h2>All requests</h2>
+        <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+          <input id="availability-all-date-filter" type="date" value="${escapeHtml(allRequestFilters.date)}" />
+          <input id="availability-all-from-filter" type="date" value="${escapeHtml(allRequestFilters.from)}" />
+          <input id="availability-all-to-filter" type="date" value="${escapeHtml(allRequestFilters.to)}" />
+          <select id="availability-all-agent-filter" style="max-width:220px;">
+            <option value="All" ${allRequestFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
+            ${state.agents.map((agent) => `<option value="${agent.id}" ${String(allRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+          </select>
+          <select id="availability-all-status-filter" style="max-width:220px;">
+            <option value="All" ${allRequestFilters.status === 'All' ? 'selected' : ''}>All statuses</option>
+            <option value="pending" ${allRequestFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
+            <option value="approved" ${allRequestFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
+            <option value="rejected" ${allRequestFilters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
+          </select>
+          <button id="availability-all-filters-apply" type="button">Apply filters</button>
+          <button id="availability-all-filters-reset" class="secondary" type="button">Reset filters</button>
+        </div>
+        <div class="muted">Visible after filters: ${visibleAvailabilityRequestsForList.length} (${filteredPendingCount} pending)</div>
         <div class="request-list" style="margin-top:12px;">
-          ${visibleAvailabilityRequests.map((request) => `
+          ${visibleAvailabilityRequestsForList.map((request) => `
             <div class="card" style="border-left:4px solid ${request.status === 'approved' ? '#7AACAF' : request.status === 'rejected' ? '#AB5C57' : '#FDD592'};">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                 <div>
@@ -4541,10 +4674,29 @@ function renderAvailabilityRequestsPage(currentUser) {
 
       <div class="panel" style="margin-top:16px;">
         <h2>Swap requests</h2>
+        <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+          <input id="availability-swap-date-filter" type="date" value="${escapeHtml(swapRequestFilters.date)}" />
+          <input id="availability-swap-from-filter" type="date" value="${escapeHtml(swapRequestFilters.from)}" />
+          <input id="availability-swap-to-filter" type="date" value="${escapeHtml(swapRequestFilters.to)}" />
+          <select id="availability-swap-agent-filter" style="max-width:220px;">
+            <option value="All" ${swapRequestFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
+            ${state.agents.map((agent) => `<option value="${agent.id}" ${String(swapRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+          </select>
+          <select id="availability-swap-status-filter" style="max-width:220px;">
+            <option value="All" ${swapRequestFilters.status === 'All' ? 'selected' : ''}>All statuses</option>
+            <option value="pending" ${swapRequestFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
+            <option value="approved" ${swapRequestFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
+            <option value="rejected" ${swapRequestFilters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
+          </select>
+          <button id="availability-swap-filters-apply" type="button">Apply filters</button>
+          <button id="availability-swap-filters-reset" class="secondary" type="button">Reset filters</button>
+        </div>
+        <div class="muted">Visible after filters: ${visibleSwapRequestsForList.length} (${filteredPendingSwapCount} pending)</div>
         <div class="request-list" style="margin-top:12px;">
-          ${visibleSwapRequests.map((request) => {
+          ${visibleSwapRequestsForList.map((request) => {
             const fromAgent = getAgent(request.fromAgentId)?.name || 'Unknown';
             const toAgent = getAgent(request.toAgentId)?.name || 'Unknown';
+            const swapFilterStatus = getSwapRequestFilterStatus(request);
             return `
               <div class="card" style="border-left:4px solid ${request.status === 'completed' ? '#7AACAF' : request.status === 'rejected' ? '#AB5C57' : '#FDD592'};">
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
@@ -4555,7 +4707,7 @@ function renderAvailabilityRequestsPage(currentUser) {
                     <div class="muted">Approval state: ${escapeHtml(getSwapApprovalText(request))}</div>
                     <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
                   </div>
-                  <span class="status-badge ${request.status || 'pending'}">${request.status || 'pending'}</span>
+                  <span class="status-badge ${swapFilterStatus}">${swapFilterStatus}</span>
                 </div>
               </div>
             `;
@@ -5494,12 +5646,6 @@ function bindEvents() {
     render();
   });
 
-  document.getElementById('agent-role-filter')?.addEventListener('change', (event) => {
-    state.ui.agentRoleFilter = event.target.value || 'All';
-    saveUiState();
-    render();
-  });
-
   document.getElementById('agent-sort')?.addEventListener('change', (event) => {
     state.ui.agentSort = event.target.value === 'team' ? 'team' : 'name';
     saveUiState();
@@ -5575,6 +5721,56 @@ function bindEvents() {
   document.getElementById('availability-filters-reset')?.addEventListener('click', () => {
     state.ui.availabilityFrom = '';
     state.ui.availabilityTo = '';
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('availability-all-filters-apply')?.addEventListener('click', () => {
+    const dateInput = document.getElementById('availability-all-date-filter');
+    const fromInput = document.getElementById('availability-all-from-filter');
+    const toInput = document.getElementById('availability-all-to-filter');
+    const agentInput = document.getElementById('availability-all-agent-filter');
+    const statusInput = document.getElementById('availability-all-status-filter');
+    state.ui.availabilityAllDate = dateInput?.value || '';
+    state.ui.availabilityAllFrom = fromInput?.value || '';
+    state.ui.availabilityAllTo = toInput?.value || '';
+    state.ui.availabilityAllAgentId = agentInput?.value || 'All';
+    state.ui.availabilityAllStatus = statusInput?.value || 'All';
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('availability-all-filters-reset')?.addEventListener('click', () => {
+    state.ui.availabilityAllDate = '';
+    state.ui.availabilityAllFrom = '';
+    state.ui.availabilityAllTo = '';
+    state.ui.availabilityAllAgentId = 'All';
+    state.ui.availabilityAllStatus = 'All';
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('availability-swap-filters-apply')?.addEventListener('click', () => {
+    const dateInput = document.getElementById('availability-swap-date-filter');
+    const fromInput = document.getElementById('availability-swap-from-filter');
+    const toInput = document.getElementById('availability-swap-to-filter');
+    const agentInput = document.getElementById('availability-swap-agent-filter');
+    const statusInput = document.getElementById('availability-swap-status-filter');
+    state.ui.availabilitySwapDate = dateInput?.value || '';
+    state.ui.availabilitySwapFrom = fromInput?.value || '';
+    state.ui.availabilitySwapTo = toInput?.value || '';
+    state.ui.availabilitySwapAgentId = agentInput?.value || 'All';
+    state.ui.availabilitySwapStatus = statusInput?.value || 'All';
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('availability-swap-filters-reset')?.addEventListener('click', () => {
+    state.ui.availabilitySwapDate = '';
+    state.ui.availabilitySwapFrom = '';
+    state.ui.availabilitySwapTo = '';
+    state.ui.availabilitySwapAgentId = 'All';
+    state.ui.availabilitySwapStatus = 'All';
     saveUiState();
     render();
   });
