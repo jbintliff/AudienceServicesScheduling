@@ -2779,6 +2779,21 @@ function formatTime12Hour(timeValue) {
   return `${normalizedHours}:${safeMinutes} ${period}`;
 }
 
+function parseTime12HourInput(timeValue) {
+  const normalizedValue = String(timeValue || '').trim().toUpperCase();
+  const matches = normalizedValue.match(/^(0?[1-9]|1[0-2]):([0-5][0-9])\s*(AM|PM)$/);
+  if (!matches) return '';
+  let hours = Number(matches[1]);
+  const minutes = matches[2];
+  const period = matches[3];
+  if (period === 'AM' && hours === 12) {
+    hours = 0;
+  } else if (period === 'PM' && hours < 12) {
+    hours += 12;
+  }
+  return `${String(hours).padStart(2, '0')}:${minutes}`;
+}
+
 function formatTimeRange(startTime, endTime) {
   return `${formatTime12Hour(startTime)} - ${formatTime12Hour(endTime)}`;
 }
@@ -2975,7 +2990,7 @@ function renderCalendarPage(currentUser) {
             <div class="row">
               <select name="templateId">
                 <option value="">Use template (optional)</option>
-                ${state.templates.filter((template) => isTemplateActive(template)).map((template) => `<option value="${template.id}">${escapeHtml(template.name)} (${escapeHtml(template.start)}-${escapeHtml(template.end)})</option>`).join('')}
+                ${state.templates.filter((template) => isTemplateActive(template)).map((template) => `<option value="${template.id}">${escapeHtml(template.name)} (${escapeHtml(formatTimeRange(template.start, template.end))})</option>`).join('')}
               </select>
               <select name="agentId" required>
                 <option value="">Assign agent</option>
@@ -3042,8 +3057,8 @@ function renderCalendarPage(currentUser) {
               </div>
               ${visibleCalendarShifts.filter((shift) => shift.day === day).map((shift) => `
                 <div class="shift ${!isAgentView && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                  <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
-                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row calendar-shift-actions" style="margin-top:6px;"><button type="button" class="secondary" data-toggle-shift-select="${shift.id}">${selectedCalendarShiftIds.has(Number(shift.id)) ? 'Selected' : 'Select'}</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Duplicate</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
+                  <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>${getAgent(shift.agentId)?.role ? `<span class="muted"> (${escapeHtml(getAgent(shift.agentId)?.role)})</span>` : ''}<br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
+                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row calendar-shift-actions" style="margin-top:6px;"><button type="button" class="secondary" data-toggle-shift-select="${shift.id}">${selectedCalendarShiftIds.has(Number(shift.id)) ? 'Selected' : 'Select'}</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Dup</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
                   ${isAgentView ? `
                     <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
                     <div class="row" style="margin-top:6px;">
@@ -3762,8 +3777,8 @@ function renderAdminOptionsPage(currentUser) {
           <form id="add-shift-template-form" class="stack" style="margin-bottom:12px;">
             <div class="row" style="flex-wrap:wrap;">
               <input name="name" placeholder="Template name" required />
-              <input name="start" type="time" required />
-              <input name="end" type="time" required />
+              <input name="start" type="text" placeholder="8:00 AM" value="8:00 AM" required pattern="^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(AM|PM|am|pm)$" title="Use 12-hour time like 8:00 AM" />
+              <input name="end" type="text" placeholder="4:00 PM" value="4:00 PM" required pattern="^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(AM|PM|am|pm)$" title="Use 12-hour time like 4:00 PM" />
               <select name="role">
                 <option value="">No default role</option>
                 ${roleChoices.map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
@@ -3785,8 +3800,8 @@ function renderAdminOptionsPage(currentUser) {
                 <form class="stack" data-update-shift-template="${template.id}" style="gap:8px;">
                   <div class="row" style="flex-wrap:wrap; align-items:flex-end;">
                     <input name="name" value="${escapeHtml(template.name || '')}" required />
-                    <input name="start" type="time" value="${escapeHtml(template.start || '08:00')}" required />
-                    <input name="end" type="time" value="${escapeHtml(template.end || '16:00')}" required />
+                    <input name="start" type="text" value="${escapeHtml(formatTime12Hour(template.start || '08:00'))}" required pattern="^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(AM|PM|am|pm)$" title="Use 12-hour time like 8:00 AM" />
+                    <input name="end" type="text" value="${escapeHtml(formatTime12Hour(template.end || '16:00'))}" required pattern="^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(AM|PM|am|pm)$" title="Use 12-hour time like 4:00 PM" />
                     <select name="role">
                       <option value="">No default role</option>
                       ${roleChoices.map((role) => `<option value="${escapeHtml(role)}" ${String(template.role || '') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
@@ -3802,6 +3817,7 @@ function renderAdminOptionsPage(currentUser) {
                     <button class="secondary" type="submit">Save</button>
                     <button class="danger" type="button" data-remove-shift-template="${template.id}">Remove</button>
                   </div>
+                  <div class="muted">Template time: ${escapeHtml(formatTimeRange(template.start || '08:00', template.end || '16:00'))}</div>
                 </form>
               </div>
             `).join('') || '<div class="muted">No shift templates yet.</div>'}
@@ -5171,13 +5187,13 @@ function bindEvents() {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const name = String(formData.get('name') || '').trim();
-    const start = String(formData.get('start') || '').trim();
-    const end = String(formData.get('end') || '').trim();
+    const start = parseTime12HourInput(formData.get('start'));
+    const end = parseTime12HourInput(formData.get('end'));
     const requestedRole = String(formData.get('role') || '').trim();
     const requestedLocation = String(formData.get('location') || '').trim();
     const active = formData.get('active') !== null;
     if (!name || !start || !end || toMinutes(end) <= toMinutes(start)) {
-      alert('Template name, start, and end are required. End time must be later than start time.');
+      alert('Template name, start, and end are required. Use 12-hour time (for example, 8:00 AM). End time must be later than start time.');
       return;
     }
 
@@ -5202,13 +5218,13 @@ function bindEvents() {
       if (!templateId) return;
       const formData = new FormData(form);
       const name = String(formData.get('name') || '').trim();
-      const start = String(formData.get('start') || '').trim();
-      const end = String(formData.get('end') || '').trim();
+      const start = parseTime12HourInput(formData.get('start'));
+      const end = parseTime12HourInput(formData.get('end'));
       const requestedRole = String(formData.get('role') || '').trim();
       const requestedLocation = String(formData.get('location') || '').trim();
       const active = formData.get('active') !== null;
       if (!name || !start || !end || toMinutes(end) <= toMinutes(start)) {
-        alert('Template name, start, and end are required. End time must be later than start time.');
+        alert('Template name, start, and end are required. Use 12-hour time (for example, 8:00 AM). End time must be later than start time.');
         return;
       }
 
