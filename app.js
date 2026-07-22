@@ -2003,7 +2003,7 @@ function normalizeTemplates(templates, roleCatalog = roleOptions, locationCatalo
   const defaultTemplates = createDefaultState().templates;
   const normalizedRoles = normalizeRoleCatalog(roleCatalog);
   const normalizedLocations = normalizeLocationCatalog(locationCatalog);
-  if (!Array.isArray(templates) || templates.length === 0) {
+  if (!Array.isArray(templates)) {
     return defaultTemplates.map((template) => ({
       ...template,
       active: template?.active !== false
@@ -2018,12 +2018,7 @@ function normalizeTemplates(templates, roleCatalog = roleOptions, locationCatalo
     return defaultTemplates;
   }
 
-  const existingNameSet = new Set(incomingNames);
-  const missingDefaultTemplates = defaultTemplates
-    .filter((template) => !existingNameSet.has(template.name))
-    .map((template) => ({ ...template, id: createId() }));
-
-  return [...templates, ...missingDefaultTemplates].map((template) => {
+  return templates.map((template) => {
     const requestedLocation = String(template?.location || '').trim();
     return {
       ...template,
