@@ -103,6 +103,8 @@ const pageMode = (() => {
   if (queryMode === 'profile') return 'profile';
   if (queryMode === 'email-outbox') return 'email-outbox';
   if (queryMode === 'availability-requests') return 'availability-requests';
+  if (queryMode === 'admin-options') return 'admin-options';
+  if (queryMode === 'policies') return 'policies';
   const mode = document.body?.dataset?.page;
   if (mode === 'calendar') return 'calendar';
   if (mode === 'agents') return 'agents';
@@ -110,14 +112,16 @@ const pageMode = (() => {
   if (mode === 'profile') return 'profile';
   if (mode === 'email-outbox') return 'email-outbox';
   if (mode === 'availability-requests') return 'availability-requests';
+  if (mode === 'admin-options') return 'admin-options';
+  if (mode === 'policies') return 'policies';
   return 'dashboard';
 })();
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, minHours: 0, maxHours: 40, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, minHours: 0, maxHours: 40, availability: 'Available' },
-    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, minHours: 0, maxHours: 40, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Available' },
+    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -135,8 +139,11 @@ const defaultState = {
   ],
   swapRequests: [],
   availabilityRequests: [],
+  policies: [],
   blackoutDates: [],
   roleColors: {},
+  roleCatalog: [...roleOptions],
+  locationCatalog: [...shiftLocationOptions],
   ui: {
     agentSearch: '',
     agentSort: 'name',
@@ -150,6 +157,7 @@ const defaultState = {
     availabilityCalendarMonth: '',
     availabilityFrom: '',
     availabilityTo: '',
+    availabilityDebugAgentId: '',
     swapRequestToAgentId: '',
     swapRequestToShiftId: '',
     accessMode: 'admin',
@@ -183,6 +191,7 @@ let selectedCalendarShiftIds = new Set();
 let memoryAvailabilityInbox = [];
 let memoryEmailOutbox = [];
 let lastSuccessfulSyncAt = loadLastSuccessfulSyncAt();
+const pendingSharedWriteKeys = new Set();
 let adminManagerNotice = null;
 let adminProfileNotice = null;
 const attemptedResetTokenLookups = new Set();
@@ -198,6 +207,41 @@ let emailDeliverySettings = loadEmailDeliverySettings();
 let availabilitySubmitFallbackBound = false;
 const root = document.getElementById('root');
 
+function normalizeOptionCatalog(values, fallbackValues = []) {
+  const source = Array.isArray(values) ? values : [];
+  const normalized = source
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  const fallback = Array.isArray(fallbackValues)
+    ? fallbackValues.map((value) => String(value || '').trim()).filter(Boolean)
+    : [];
+  return Array.from(new Set(normalized.length > 0 ? normalized : fallback));
+}
+
+function normalizeRoleCatalog(values) {
+  return normalizeOptionCatalog(values, roleOptions);
+}
+
+function normalizeLocationCatalog(values) {
+  return normalizeOptionCatalog(values, shiftLocationOptions);
+}
+
+function getRoleCatalog() {
+  return normalizeRoleCatalog(state?.roleCatalog);
+}
+
+function getPrimaryRole() {
+  return getRoleCatalog()[0] || roleOptions[0];
+}
+
+function getLocationCatalog() {
+  return normalizeLocationCatalog(state?.locationCatalog);
+}
+
+function isTemplateActive(template) {
+  return template?.active !== false;
+}
+
 function getDefaultUiState() {
   return {
     agentSearch: '',
@@ -212,6 +256,7 @@ function getDefaultUiState() {
     availabilityCalendarMonth: '',
     availabilityFrom: '',
     availabilityTo: '',
+    availabilityDebugAgentId: '',
     accessMode: 'admin',
     currentAgentId: defaultState.agents[0]?.id ?? null,
     calendar: {
@@ -242,6 +287,7 @@ function normalizeUiState(source) {
     availabilityCalendarMonth: source?.availabilityCalendarMonth || defaults.availabilityCalendarMonth,
     availabilityFrom: source?.availabilityFrom || defaults.availabilityFrom,
     availabilityTo: source?.availabilityTo || defaults.availabilityTo,
+    availabilityDebugAgentId: source?.availabilityDebugAgentId || defaults.availabilityDebugAgentId,
     swapRequestToAgentId: source?.swapRequestToAgentId || defaults.swapRequestToAgentId,
     swapRequestToShiftId: source?.swapRequestToShiftId || defaults.swapRequestToShiftId,
     accessMode: source?.accessMode || defaults.accessMode,
@@ -320,7 +366,12 @@ function safeSetLocalStorage(key, value) {
   try {
     localStorage.setItem(key, value);
     if (!isApplyingRemoteSnapshot && sharedStorageKeys.includes(key)) {
-      void pushSharedKeyToBackend(key, value);
+      pendingSharedWriteKeys.add(key);
+      void pushSharedKeyToBackend(key, value).then((didPush) => {
+        if (didPush) {
+          pendingSharedWriteKeys.delete(key);
+        }
+      });
     }
     return true;
   } catch {
@@ -342,7 +393,11 @@ function syncSharedSnapshotToBackend() {
     xhr.open('PUT', `${backendApiBase}/snapshot`, false);
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.send(JSON.stringify({ store }));
-    return xhr.status >= 200 && xhr.status < 300;
+    const didSync = xhr.status >= 200 && xhr.status < 300;
+    if (didSync) {
+      pendingSharedWriteKeys.clear();
+    }
+    return didSync;
   } catch {
     return false;
   }
@@ -402,7 +457,28 @@ async function pushLocalSnapshotToBackend() {
     method: 'PUT',
     body: JSON.stringify({ store })
   });
-  return Boolean(response);
+  const didSync = Boolean(response);
+  if (didSync) {
+    pendingSharedWriteKeys.clear();
+  }
+  return didSync;
+}
+
+function mergeRemoteSnapshotWithPendingLocal(remoteStore) {
+  if (!remoteStore || typeof remoteStore !== 'object') {
+    return { store: remoteStore, preservedLocalKeys: [] };
+  }
+  const mergedStore = { ...remoteStore };
+  const preservedLocalKeys = [];
+  pendingSharedWriteKeys.forEach((key) => {
+    const localValue = localStorage.getItem(key);
+    const remoteValue = typeof remoteStore[key] === 'string' ? remoteStore[key] : null;
+    if (localValue !== null && localValue !== remoteValue) {
+      mergedStore[key] = localValue;
+      preservedLocalKeys.push(key);
+    }
+  });
+  return { store: mergedStore, preservedLocalKeys };
 }
 
 function getSnapshotHash(store) {
@@ -441,10 +517,17 @@ async function initializeBackendSync() {
   });
 
   if (hasRemoteData) {
-    applyRemoteSnapshot(remoteStore);
+    const mergeResult = mergeRemoteSnapshotWithPendingLocal(remoteStore);
+    applyRemoteSnapshot(mergeResult.store);
     lastRemoteSnapshotHash = getSnapshotHash(remoteStore);
     markSyncSuccess();
     syncFromStorage();
+    if (mergeResult.preservedLocalKeys.length > 0) {
+      const pushed = await pushLocalSnapshotToBackend();
+      if (pushed) {
+        markSyncSuccess();
+      }
+    }
   } else if (hasLocalData) {
     const pushed = await pushLocalSnapshotToBackend();
     if (pushed) {
@@ -460,8 +543,15 @@ async function pollBackendSync() {
   const nextHash = getSnapshotHash(remoteStore);
   if (!nextHash || nextHash === lastRemoteSnapshotHash) return;
   lastRemoteSnapshotHash = nextHash;
-  applyRemoteSnapshot(remoteStore);
+  const mergeResult = mergeRemoteSnapshotWithPendingLocal(remoteStore);
+  applyRemoteSnapshot(mergeResult.store);
   markSyncSuccess();
+  if (mergeResult.preservedLocalKeys.length > 0) {
+    const pushed = await pushLocalSnapshotToBackend();
+    if (pushed) {
+      markSyncSuccess();
+    }
+  }
   syncFromStorage();
   render();
 }
@@ -542,12 +632,19 @@ function loadAvailabilityRequestsFromLegacyStateStorage() {
   }
 }
 
+function normalizeAvailabilityRequestStatus(value) {
+  const normalized = String(value || 'pending').trim().toLowerCase();
+  if (normalized === 'approved') return 'approved';
+  if (normalized === 'rejected' || normalized === 'denied' || normalized === 'declined') return 'rejected';
+  return 'pending';
+}
+
 function normalizeAvailabilityRequest(request, fallbackId) {
   if (!request) return null;
   return {
     ...request,
     id: request.id != null ? request.id : fallbackId,
-    status: String(request.status || 'pending').trim() || 'pending',
+    status: normalizeAvailabilityRequestStatus(request.status),
     requesterEmail: normalizeEmail(request.requesterEmail || ''),
     requesterName: String(request.requesterName || '').trim(),
     requesterUserId: request.requesterUserId != null ? Number(request.requesterUserId) || request.requesterUserId : request.requesterUserId
@@ -600,6 +697,13 @@ function isAvailabilityRequestVisibleToUser(request, user) {
   if (!request || !user || user.role !== 'agent') {
     return false;
   }
+  return Boolean(getAvailabilityRequestVisibilityReason(request, user));
+}
+
+function getAvailabilityRequestVisibilityReason(request, user) {
+  if (!request || !user || user.role !== 'agent') {
+    return '';
+  }
   const requestAgentId = Number(request.agentId);
   const userAgentId = Number(user.agentId);
   const requestUserId = Number(request.requesterUserId);
@@ -607,9 +711,16 @@ function isAvailabilityRequestVisibleToUser(request, user) {
   const requestEmail = normalizeEmail(request.requesterEmail || '');
   const userEmail = normalizeEmail(user.email || '');
 
-  return requestAgentId === userAgentId
-    || (requestUserId > 0 && requestUserId === currentUserId)
-    || (requestEmail && userEmail && requestEmail === userEmail);
+  if (requestAgentId > 0 && requestAgentId === userAgentId) {
+    return 'agentId';
+  }
+  if (requestUserId > 0 && requestUserId === currentUserId) {
+    return 'requesterUserId';
+  }
+  if (requestEmail && userEmail && requestEmail === userEmail) {
+    return 'requesterEmail';
+  }
+  return '';
 }
 
 function saveAvailabilityRequests(requests) {
@@ -1125,6 +1236,14 @@ function sendShiftPublishedEmail(shift) {
   return true;
 }
 
+function shouldSendPublishedScheduleEmails(shiftCount = 1) {
+  const total = Math.max(1, Number(shiftCount) || 1);
+  if (total === 1) {
+    return confirm('Send a published schedule email to the assigned agent?');
+  }
+  return confirm(`Send published schedule emails to assigned agents for ${total} shifts?`);
+}
+
 function sendSwapNotificationEmails(request, mode, actingAgentId = null) {
   const fromAgentId = Number(request?.fromAgentId);
   const toAgentId = Number(request?.toAgentId);
@@ -1260,6 +1379,8 @@ function applyAccessForUser(user) {
     if (switchedIntoAdmin) {
       state.ui.availabilityFrom = '';
       state.ui.availabilityTo = '';
+      state.ui.availabilityRequestsCollapsed = false;
+      state.ui.swapAlertsCollapsed = false;
       state.ui.calendar = {
         ...(state.ui.calendar || {}),
         search: '',
@@ -1272,8 +1393,6 @@ function applyAccessForUser(user) {
         location: 'All'
       };
     }
-    state.ui.availabilityRequestsCollapsed = false;
-    state.ui.swapAlertsCollapsed = false;
     return;
   }
   state.ui.accessMode = 'agent';
@@ -1595,15 +1714,21 @@ function createDefaultState() {
     shifts: defaultState.shifts.map((shift) => ({ ...shift })),
     swapRequests: defaultState.swapRequests.map((request) => ({ ...request })),
     availabilityRequests: defaultState.availabilityRequests.map((request) => ({ ...request })),
+    policies: defaultState.policies.map((policy) => ({ ...policy })),
     blackoutDates: [...defaultState.blackoutDates],
     roleColors: { ...defaultState.roleColors },
+    roleCatalog: [...defaultState.roleCatalog],
+    locationCatalog: [...defaultState.locationCatalog],
     ui: getDefaultUiState()
   };
 }
 
-function normalizeRoleLabel(role) {
+function normalizeRoleLabel(role, availableRoles = null) {
+  const roleChoices = Array.isArray(availableRoles) && availableRoles.length > 0
+    ? normalizeRoleCatalog(availableRoles)
+    : normalizeRoleCatalog(roleOptions);
   const normalizedRole = String(role || '').trim().toLowerCase();
-  if (!normalizedRole) return roleOptions[0];
+  if (!normalizedRole) return roleChoices[0] || roleOptions[0];
   const legacyRoleMap = {
     senior: 'In-person',
     mid: 'WFH',
@@ -1613,7 +1738,7 @@ function normalizeRoleLabel(role) {
   if (legacyRoleMap[normalizedRole]) {
     return legacyRoleMap[normalizedRole];
   }
-  const matchedRole = roleOptions.find((item) => item.toLowerCase() === normalizedRole);
+  const matchedRole = roleChoices.find((item) => item.toLowerCase() === normalizedRole);
   return matchedRole || role;
 }
 
@@ -1635,6 +1760,19 @@ function normalizeMaxHours(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return parsed;
+}
+
+function normalizeMinInOfficeShifts(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.floor(parsed);
+}
+
+function normalizeMaxInOfficeShifts(value) {
+  if (value === '' || value === null || typeof value === 'undefined') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.floor(parsed);
 }
 
 function parseCurrencyAmount(value) {
@@ -1711,10 +1849,15 @@ function reconcileAgentEmailsWithAuthUsers() {
   return didChange;
 }
 
-function normalizeTemplates(templates) {
+function normalizeTemplates(templates, roleCatalog = roleOptions, locationCatalog = shiftLocationOptions) {
   const defaultTemplates = createDefaultState().templates;
+  const normalizedRoles = normalizeRoleCatalog(roleCatalog);
+  const normalizedLocations = normalizeLocationCatalog(locationCatalog);
   if (!Array.isArray(templates) || templates.length === 0) {
-    return defaultTemplates;
+    return defaultTemplates.map((template) => ({
+      ...template,
+      active: template?.active !== false
+    }));
   }
 
   const legacyTemplateNames = new Set(['Morning Support', 'Evening Support']);
@@ -1730,7 +1873,29 @@ function normalizeTemplates(templates) {
     .filter((template) => !existingNameSet.has(template.name))
     .map((template) => ({ ...template, id: createId() }));
 
-  return [...templates, ...missingDefaultTemplates];
+  return [...templates, ...missingDefaultTemplates].map((template) => {
+    const requestedLocation = String(template?.location || '').trim();
+    return {
+      ...template,
+      active: template?.active !== false,
+      role: template?.role ? normalizeRoleLabel(template.role, normalizedRoles) : '',
+      location: requestedLocation && normalizedLocations.includes(requestedLocation) ? requestedLocation : ''
+    };
+  });
+}
+
+function normalizePolicies(policies) {
+  if (!Array.isArray(policies)) return [];
+  return policies
+    .map((policy) => ({
+      id: Number(policy?.id) || createId(),
+      name: String(policy?.name || '').trim(),
+      mimeType: String(policy?.mimeType || 'application/octet-stream').trim(),
+      contentBase64: String(policy?.contentBase64 || '').trim(),
+      sizeBytes: Number(policy?.sizeBytes) || 0,
+      uploadedAt: String(policy?.uploadedAt || '').trim() || new Date().toISOString()
+    }))
+    .filter((policy) => policy.name && policy.contentBase64);
 }
 
 function loadState() {
@@ -1741,11 +1906,16 @@ function loadState() {
     }
     const parsed = JSON.parse(saved);
     const authUsersForLookup = loadAuthUsers();
+    const normalizedRoleCatalog = normalizeRoleCatalog(parsed.roleCatalog);
+    const normalizedLocationCatalog = normalizeLocationCatalog(parsed.locationCatalog);
     const normalizedAgents = Array.isArray(parsed.agents)
       ? parsed.agents.map((agent) => {
           const minHours = normalizeMinHours(agent.minHours);
           const maxHoursRaw = typeof agent.maxHours === 'undefined' ? 40 : agent.maxHours;
           const maxHours = normalizeMaxHours(maxHoursRaw);
+          const minInOfficeShifts = normalizeMinInOfficeShifts(agent.minInOfficeShifts);
+          const maxInOfficeShiftsRaw = typeof agent.maxInOfficeShifts === 'undefined' ? null : agent.maxInOfficeShifts;
+          const maxInOfficeShifts = normalizeMaxInOfficeShifts(maxInOfficeShiftsRaw);
           const linkedUserEmail = normalizeEmail(
             authUsersForLookup.find((user) => user.role === 'agent' && Number(user.agentId) === Number(agent.id))?.email || ''
           );
@@ -1753,9 +1923,11 @@ function loadState() {
             ...agent,
             email: normalizeEmail(agent.email || linkedUserEmail),
             team: normalizeTeamLabel(agent.team),
-            role: normalizeRoleLabel(agent.role),
+            role: normalizeRoleLabel(agent.role, normalizedRoleCatalog),
             minHours,
-            maxHours: Number.isFinite(maxHours) ? Math.max(maxHours, minHours) : maxHours
+            maxHours: Number.isFinite(maxHours) ? Math.max(maxHours, minHours) : maxHours,
+            minInOfficeShifts,
+            maxInOfficeShifts: Number.isFinite(maxInOfficeShifts) ? Math.max(maxInOfficeShifts, minInOfficeShifts) : maxInOfficeShifts
           };
         })
       : createDefaultState().agents;
@@ -1768,13 +1940,16 @@ function loadState() {
       ...createDefaultState(),
       ...parsed,
       agents: normalizedAgents,
-      templates: normalizeTemplates(parsed.templates),
+      templates: normalizeTemplates(parsed.templates, normalizedRoleCatalog, normalizedLocationCatalog),
+      policies: normalizePolicies(parsed.policies),
+      roleCatalog: normalizedRoleCatalog,
+      locationCatalog: normalizedLocationCatalog,
       shifts: Array.isArray(parsed.shifts)
         ? parsed.shifts.map((shift) => {
             const normalizedShift = {
               ...shift,
-              location: shiftLocationOptions.includes(String(shift.location || '').trim()) ? shift.location : '',
-              role: normalizeRoleLabel(shift.role || roleByAgentId[String(shift.agentId)] || roleOptions[0]),
+              location: normalizedLocationCatalog.includes(String(shift.location || '').trim()) ? shift.location : '',
+              role: normalizeRoleLabel(shift.role || roleByAgentId[String(shift.agentId)] || normalizedRoleCatalog[0], normalizedRoleCatalog),
               status: shift.status === shiftStatuses.draft || shift.status === shiftStatuses.published
                 ? shift.status
                 : shiftStatuses.published
@@ -1880,8 +2055,23 @@ function getShiftRoleColor(shift) {
   return getRoleColor(role);
 }
 
+function isShiftOfferedForPickup(shift) {
+  return Boolean(shift?.offeredForPickup) && isPublishedShift(shift);
+}
+
+function canAgentOfferShift(shift, agentId) {
+  return isPublishedShift(shift) && Number(shift?.agentId) === Number(agentId);
+}
+
+function canAgentPickUpOfferedShift(shift, agentId) {
+  return isShiftOfferedForPickup(shift)
+    && Number(shift?.agentId) !== Number(agentId)
+    && Number(agentId) > 0;
+}
+
 function getShiftStyle(shift) {
-  return `background:${getShiftRoleColor(shift)}; border-left:3px solid rgba(255,255,255,0.65);`;
+  const offerBorder = isShiftOfferedForPickup(shift) ? ' border:2px dashed rgba(255,255,255,0.8);' : '';
+  return `background:${getShiftRoleColor(shift)}; border-left:3px solid rgba(255,255,255,0.65);${offerBorder}`;
 }
 
 function cloneShift(shift, dayOverride) {
@@ -1894,7 +2084,7 @@ function cloneShift(shift, dayOverride) {
 }
 
 function getRoleLegendItems() {
-  const normalizedBaseRoles = roleOptions.map((role) => String(role).trim()).filter(Boolean);
+  const normalizedBaseRoles = getRoleCatalog();
   const assignedRoles = state.agents.map((agent) => String(agent.role || '').trim()).filter(Boolean);
   return Array.from(new Set([...normalizedBaseRoles, ...assignedRoles]));
 }
@@ -1915,6 +2105,42 @@ function getDurationHours(start, end) {
 function toMinutes(time) {
   const [hours, minutes] = time.split(':').map(Number);
   return hours * 60 + minutes;
+}
+
+function formatBytes(value) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Unable to read selected file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function triggerPolicyDownload(policy) {
+  const base64 = String(policy?.contentBase64 || '').trim();
+  if (!base64) return;
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let index = 0; index < binaryString.length; index += 1) {
+    bytes[index] = binaryString.charCodeAt(index);
+  }
+  const blob = new Blob([bytes], { type: policy?.mimeType || 'application/octet-stream' });
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = policy?.name || `policy-${policy?.id || createId()}`;
+  link.click();
+  URL.revokeObjectURL(blobUrl);
 }
 
 function getApprovedTimeOffConflicts(agentId, date, start, end) {
@@ -1951,6 +2177,7 @@ function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, opt
 
   const replacingShiftId = Number(options.replacingShiftId) || null;
   const durationHours = Number.isFinite(Number(options.durationHours)) ? Number(options.durationHours) : getDurationHours(start, end);
+  const requestedRole = String(options.role || '').trim();
 
   const targetAgent = getAgent(agentId);
   const maxHours = normalizeMaxHours(targetAgent?.maxHours);
@@ -1967,6 +2194,18 @@ function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, opt
     if (projectedHours > maxHours + 0.0001) {
       alert(`${targetAgent?.name || 'This agent'} would be scheduled for ${projectedHours.toFixed(2)} hours in that week, above the weekly max of ${maxHours.toFixed(2)} hours.`);
       return false;
+    }
+  }
+
+  const roleToEvaluate = requestedRole || targetAgent?.role || getPrimaryRole();
+  if (isInOfficeRole(roleToEvaluate)) {
+    const maxInOfficeShifts = normalizeMaxInOfficeShifts(targetAgent?.maxInOfficeShifts);
+    if (Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts >= 0) {
+      const projectedInOfficeCount = getAssignedInOfficeShiftCount(agentId, date, { excludingShiftId: replacingShiftId }) + 1;
+      if (projectedInOfficeCount > maxInOfficeShifts) {
+        alert(`${targetAgent?.name || 'This agent'} would be scheduled for ${projectedInOfficeCount} in-office shift${projectedInOfficeCount === 1 ? '' : 's'} in that week, above the in-office max of ${maxInOfficeShifts}.`);
+        return false;
+      }
     }
   }
 
@@ -1988,7 +2227,8 @@ function openShiftEditModal(shift, onSave) {
     existingOverlay.remove();
   }
 
-  const roleChoices = Array.from(new Set([...(getRoleLegendItems() || []), shift.role || roleOptions[0]])).filter(Boolean);
+  const roleChoices = Array.from(new Set([...(getRoleLegendItems() || []), shift.role || getPrimaryRole()])).filter(Boolean);
+  const locationChoices = getLocationCatalog();
   const safeStatus = shift.status === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
   const overlay = document.createElement('div');
   overlay.id = 'shift-edit-modal-overlay';
@@ -2033,7 +2273,7 @@ function openShiftEditModal(shift, onSave) {
             <span>Location</span>
             <select name="location">
               <option value="">No location</option>
-              ${shiftLocationOptions.map((location) => `<option value="${escapeHtml(location)}" ${String(shift.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
+              ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(shift.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
             </select>
           </label>
         </div>
@@ -2100,14 +2340,15 @@ function openShiftEditModal(shift, onSave) {
       return;
     }
 
-    const nextRole = normalizeRoleLabel(String(formData.get('role') || '').trim() || roleOptions[0]);
+    const nextRole = normalizeRoleLabel(String(formData.get('role') || '').trim() || getPrimaryRole(), getRoleCatalog());
     const requestedLocation = String(formData.get('location') || '').trim();
-    const nextLocation = requestedLocation && shiftLocationOptions.includes(requestedLocation) ? requestedLocation : '';
+    const nextLocation = requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
     const nextStatus = String(formData.get('status') || '').trim() === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
 
     if (!confirmShiftAssignmentWithTimeOffWarning(nextAgentId, nextDate, nextStart, nextEnd, {
       replacingShiftId: Number(shift.id),
-      durationHours: getDurationHours(nextStart, nextEnd)
+      durationHours: getDurationHours(nextStart, nextEnd),
+      role: nextRole
     })) {
       return;
     }
@@ -2347,6 +2588,27 @@ function getAssignedHours(agentId, referenceDateValue = '') {
     .reduce((sum, shift) => sum + shift.durationHours, 0);
 }
 
+function isInOfficeRole(role) {
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  return normalizedRole === 'in-person'
+    || normalizedRole === 'in person'
+    || normalizedRole.includes('in-person')
+    || normalizedRole.includes('in person')
+    || normalizedRole === 'office';
+}
+
+function getAssignedInOfficeShiftCount(agentId, referenceDateValue = '', options = {}) {
+  const normalizedAgentId = Number(agentId);
+  const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
+  const excludingShiftId = Number(options.excludingShiftId) || null;
+  return state.shifts
+    .filter((shift) => Number(shift.agentId) === normalizedAgentId)
+    .filter((shift) => shiftIsInWeek(shift, weekDates))
+    .filter((shift) => !excludingShiftId || Number(shift.id) !== excludingShiftId)
+    .filter((shift) => isInOfficeRole(shift.role || getAgent(shift.agentId)?.role))
+    .length;
+}
+
 function getApprovedPtoHours(agentId, referenceDateValue = '') {
   const normalizedAgentId = Number(agentId);
   const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
@@ -2430,6 +2692,13 @@ function getProjectedSwapHours(agentId, outgoingShift, incomingShift) {
   const outgoingHours = Number(outgoingShift?.durationHours || 0);
   const incomingHours = Number(incomingShift?.durationHours || 0);
   return currentHours - outgoingHours + incomingHours;
+}
+
+function getProjectedSwapInOfficeShiftCount(agentId, outgoingShift, incomingShift) {
+  const currentInOfficeCount = getAssignedInOfficeShiftCount(agentId, outgoingShift?.date || incomingShift?.date || '');
+  const outgoingInOfficeCount = isInOfficeRole(outgoingShift?.role) ? 1 : 0;
+  const incomingInOfficeCount = isInOfficeRole(incomingShift?.role) ? 1 : 0;
+  return currentInOfficeCount - outgoingInOfficeCount + incomingInOfficeCount;
 }
 
 function getSwapRequestFromShiftId(request) {
@@ -2520,14 +2789,14 @@ function getShiftSummary(shift, includeDay = true) {
   if (includeDay && shift.day) {
     segments.push(shift.day);
   }
-  segments.push(shift.role || roleOptions[0]);
+  segments.push(shift.role || getPrimaryRole());
   segments.push(formatTimeRange(shift.start, shift.end));
   segments.push(shift.location || 'No location');
   return segments.join(' | ');
 }
 
 function getAllLocations() {
-  return Array.from(new Set(state.shifts.map((shift) => shift.location).filter(Boolean))).sort();
+  return Array.from(new Set([...getLocationCatalog(), ...state.shifts.map((shift) => shift.location).filter(Boolean)])).sort();
 }
 
 function getCalendarWeekDates(referenceDateValue) {
@@ -2622,6 +2891,7 @@ function renderCalendarPage(currentUser) {
   const agentNameItems = state.agents.map((agent) => String(agent.name || '').trim()).filter(Boolean).sort((left, right) => left.localeCompare(right));
   const isAgentView = currentUser.role === 'agent';
   const viewAgent = getViewAgent();
+  const currentAgentId = Number(currentUser?.agentId) || Number(viewAgent?.id) || null;
   const baseCalendarShifts = getFilteredCalendarShifts();
   const scopedCalendarShifts = baseCalendarShifts.filter((shift) => shiftIsInWeek(shift, weekDates));
   const visibleCalendarShifts = isAgentView
@@ -2640,12 +2910,14 @@ function renderCalendarPage(currentUser) {
           <p class="muted">${isAgentView ? 'Review the full published team schedule and request swaps for your own shifts.' : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
         </div>
         <div class="row">
-          ${isAgentView ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>' : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>'}
+          ${isAgentView ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>' : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>'}
           ${!isAgentView ? '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a>' : ''}
           ${!isAgentView ? '<a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>' : ''}
           ${!isAgentView ? '<a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>' : ''}
           ${!isAgentView ? '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>' : ''}
           ${!isAgentView ? '<a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>' : ''}
+          ${!isAgentView ? '<a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>' : ''}
+          ${!isAgentView ? '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>' : ''}
           ${!isAgentView ? '<button id="export-data-btn" class="secondary">Export JSON</button>' : ''}
           <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
           <button id="logout-btn" class="secondary" type="button">Log out</button>
@@ -2701,6 +2973,10 @@ function renderCalendarPage(currentUser) {
           <h3>Create shift</h3>
           <form id="add-shift-form" class="stack">
             <div class="row">
+              <select name="templateId">
+                <option value="">Use template (optional)</option>
+                ${state.templates.filter((template) => isTemplateActive(template)).map((template) => `<option value="${template.id}">${escapeHtml(template.name)} (${escapeHtml(template.start)}-${escapeHtml(template.end)})</option>`).join('')}
+              </select>
               <select name="agentId" required>
                 <option value="">Assign agent</option>
                 ${state.agents.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
@@ -2714,7 +2990,7 @@ function renderCalendarPage(currentUser) {
               <input name="end" type="time" value="16:00" required />
               <select name="location">
                 <option value="">No location</option>
-                ${shiftLocationOptions.map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
+                ${getLocationCatalog().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
               </select>
               <input name="date" type="date" required />
             </div>
@@ -2752,7 +3028,7 @@ function renderCalendarPage(currentUser) {
             <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
           `).join('')}
         </div>
-        ${!isAgentView ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row"><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
+        ${!isAgentView ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
         <div class="day-row">
           ${days.map((day) => `
             <div class="day-card" data-day="${day}" data-date="${escapeHtml(weekDates[day]?.iso || '')}">
@@ -2766,8 +3042,15 @@ function renderCalendarPage(currentUser) {
               </div>
               ${visibleCalendarShifts.filter((shift) => shift.day === day).map((shift) => `
                 <div class="shift ${!isAgentView && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                  <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || roleOptions[0])}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
-                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row" style="margin-top:6px;"><button type="button" class="secondary" data-toggle-shift-select="${shift.id}">${selectedCalendarShiftIds.has(Number(shift.id)) ? 'Selected' : 'Select'}</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Duplicate</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
+                  <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
+                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row calendar-shift-actions" style="margin-top:6px;"><button type="button" class="secondary" data-toggle-shift-select="${shift.id}">${selectedCalendarShiftIds.has(Number(shift.id)) ? 'Selected' : 'Select'}</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Duplicate</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
+                  ${isAgentView ? `
+                    <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
+                    <div class="row" style="margin-top:6px;">
+                      ${canAgentOfferShift(shift, currentAgentId) ? `<button type="button" class="secondary" data-offer-shift="${shift.id}">${isShiftOfferedForPickup(shift) ? 'Cancel offer' : 'Offer shift'}</button>` : ''}
+                      ${canAgentPickUpOfferedShift(shift, currentAgentId) ? `<button type="button" class="success" data-pickup-offered-shift="${shift.id}">Pick up shift</button>` : ''}
+                    </div>
+                  ` : ''}
                 </div>
               `).join('')}
             </div>
@@ -2801,6 +3084,8 @@ function renderProfilePage(currentUser) {
             <a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>
             <a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>
             <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
+            <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
+            <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
             <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
             <button id="logout-btn" class="secondary" type="button">Log out</button>
           </div>
@@ -2982,7 +3267,15 @@ function renderProfilePage(currentUser) {
             phone
           }
         : user);
-      saveAuthUsers();
+      const didSaveAuthUsers = saveAuthUsers();
+      if (!didSaveAuthUsers) {
+        adminProfileNotice = {
+          type: 'error',
+          text: 'Unable to save admin profile changes right now. Please check browser storage settings and try again.'
+        };
+        render();
+        return;
+      }
       adminProfileNotice = {
         type: 'success',
         text: 'Admin profile updated successfully.'
@@ -3366,6 +3659,7 @@ function renderProfilePage(currentUser) {
           <a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>
           <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a>
           <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
+          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
           <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -3423,6 +3717,210 @@ function renderProfilePage(currentUser) {
   bindEvents();
 }
 
+function renderAdminOptionsPage(currentUser) {
+  const isAdminView = currentUser.role === 'admin';
+  if (!isAdminView) {
+    root.innerHTML = `
+      <div class="app">
+        <div class="panel">
+          <h1>Admin options</h1>
+          <p class="muted">This page is available for admin accounts only.</p>
+          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const roleChoices = getRoleCatalog();
+  const locationChoices = getLocationCatalog();
+
+  root.innerHTML = `
+    <div class="app">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div>
+          <h1>Admin options</h1>
+          <p class="muted">Manage shift templates, roles, locations, and role colors from one page.</p>
+        </div>
+        <div class="row">
+          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
+          <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a>
+          <a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>
+          <a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>
+          <a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>
+          <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
+          <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
+          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
+          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          <button id="logout-btn" class="secondary" type="button">Log out</button>
+        </div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:1fr; gap:12px;">
+        <div class="panel">
+          <h2>Shift templates</h2>
+          <form id="add-shift-template-form" class="stack" style="margin-bottom:12px;">
+            <div class="row" style="flex-wrap:wrap;">
+              <input name="name" placeholder="Template name" required />
+              <input name="start" type="time" required />
+              <input name="end" type="time" required />
+              <select name="role">
+                <option value="">No default role</option>
+                ${roleChoices.map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
+              </select>
+              <select name="location">
+                <option value="">No default location</option>
+                ${locationChoices.map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
+              </select>
+              <label class="row" style="gap:6px; align-items:center; white-space:nowrap;">
+                <input name="active" type="checkbox" checked />
+                <span>Active</span>
+              </label>
+              <button type="submit">Add template</button>
+            </div>
+          </form>
+          <div class="request-list">
+            ${state.templates.map((template) => `
+              <div class="card" style="padding:10px;">
+                <form class="stack" data-update-shift-template="${template.id}" style="gap:8px;">
+                  <div class="row" style="flex-wrap:wrap; align-items:flex-end;">
+                    <input name="name" value="${escapeHtml(template.name || '')}" required />
+                    <input name="start" type="time" value="${escapeHtml(template.start || '08:00')}" required />
+                    <input name="end" type="time" value="${escapeHtml(template.end || '16:00')}" required />
+                    <select name="role">
+                      <option value="">No default role</option>
+                      ${roleChoices.map((role) => `<option value="${escapeHtml(role)}" ${String(template.role || '') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
+                    </select>
+                    <select name="location">
+                      <option value="">No default location</option>
+                      ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(template.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
+                    </select>
+                    <label class="row" style="gap:6px; align-items:center; white-space:nowrap;">
+                      <input name="active" type="checkbox" ${isTemplateActive(template) ? 'checked' : ''} />
+                      <span>Active</span>
+                    </label>
+                    <button class="secondary" type="submit">Save</button>
+                    <button class="danger" type="button" data-remove-shift-template="${template.id}">Remove</button>
+                  </div>
+                </form>
+              </div>
+            `).join('') || '<div class="muted">No shift templates yet.</div>'}
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Locations</h2>
+          <form id="add-shift-location-form" class="row" style="margin-bottom:10px;">
+            <input name="location" placeholder="Add location" required />
+            <button type="submit">Add location</button>
+          </form>
+          <div class="row" style="gap:8px; flex-wrap:wrap;">
+            ${locationChoices.map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}<button type="button" class="danger" data-remove-shift-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Roles</h2>
+          <form id="add-shift-role-form" class="row" style="margin-bottom:10px;">
+            <input name="role" placeholder="Add role" required />
+            <button type="submit">Add role</button>
+          </form>
+          <div class="row" style="gap:8px; flex-wrap:wrap;">
+            ${roleChoices.map((role) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(role)}<button type="button" class="danger" data-remove-shift-role="${escapeHtml(role)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Policies</h2>
+          <p class="muted">Upload policy files that agents can view and download from the Policies page.</p>
+          <form id="upload-policy-form" class="row" style="margin-bottom:10px; flex-wrap:wrap;">
+            <input name="policyFile" type="file" required />
+            <button type="submit">Upload policy</button>
+          </form>
+          <div class="request-list">
+            ${(Array.isArray(state.policies) ? state.policies : []).map((policy) => `
+              <div class="card">
+                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+                  <div>
+                    <strong>${escapeHtml(policy.name || 'Policy')}</strong>
+                    <div class="muted">Uploaded: ${escapeHtml(policy.uploadedAt ? new Date(policy.uploadedAt).toLocaleString() : 'Unknown')}</div>
+                    <div class="muted">Size: ${escapeHtml(formatBytes(policy.sizeBytes))}</div>
+                  </div>
+                  <div class="row" style="gap:8px;">
+                    <button type="button" class="secondary" data-download-policy="${policy.id}">Download</button>
+                    <button type="button" class="danger" data-delete-policy="${policy.id}">Delete</button>
+                  </div>
+                </div>
+              </div>
+            `).join('') || '<div class="muted">No policy files uploaded yet.</div>'}
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h2 style="margin:0;">Role colors</h2>
+            <button id="reset-role-colors" class="secondary" type="button">Reset role colors</button>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(${getRoleLegendItems().length}, minmax(0, 1fr)); gap:10px; align-items:center; width:100%;">
+            ${getRoleLegendItems().map((role) => `
+              <label class="row" style="justify-content:space-between; gap:8px; width:100%; margin:0;">
+                <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
+                <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="width:56px; padding:4px;" />
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  bindEvents();
+}
+
+function renderPoliciesPage(currentUser) {
+  const isAdminView = currentUser.role === 'admin';
+  const policies = [...(Array.isArray(state.policies) ? state.policies : [])]
+    .sort((left, right) => String(right.uploadedAt || '').localeCompare(String(left.uploadedAt || '')));
+
+  root.innerHTML = `
+    <div class="app">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div>
+          <h1>Policies</h1>
+          <p class="muted">View and download policy files.${isAdminView ? ' Manage uploads in Admin Options.' : ''}</p>
+        </div>
+        <div class="row">
+          ${isAdminView
+            ? '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a><a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a><a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a><a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a><a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'
+            : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'}
+          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          <button id="logout-btn" class="secondary" type="button">Log out</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Policy documents</h2>
+        <div class="request-list" style="margin-top:12px;">
+          ${policies.map((policy) => `
+            <div class="card">
+              <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+                <div>
+                  <strong>${escapeHtml(policy.name || 'Policy')}</strong>
+                  <div class="muted">Uploaded: ${escapeHtml(policy.uploadedAt ? new Date(policy.uploadedAt).toLocaleString() : 'Unknown')}</div>
+                  <div class="muted">Size: ${escapeHtml(formatBytes(policy.sizeBytes))}</div>
+                </div>
+                <button type="button" class="secondary" data-download-policy="${policy.id}">Download</button>
+              </div>
+            </div>
+          `).join('') || '<div class="muted">No policy documents uploaded yet.</div>'}
+        </div>
+      </div>
+    </div>
+  `;
+
+  bindEvents();
+}
+
 function renderAgentRequestsPage(currentUser) {
   if (currentUser.role !== 'agent') {
     root.innerHTML = `
@@ -3456,6 +3954,7 @@ function renderAgentRequestsPage(currentUser) {
           <a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>
           <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>
+          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
           <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -3528,6 +4027,7 @@ function renderPendingRequestsPage(currentUser) {
           <a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>
           <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>
+          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
           <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -3621,6 +4121,8 @@ function renderEmailOutboxPage(currentUser) {
           <a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>
           <a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
+          <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
+          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
           <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -3694,6 +4196,8 @@ function renderAgentsPage(currentUser) {
           <a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>
           <a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
+          <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
+          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
           <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -3719,12 +4223,17 @@ function renderAgentsPage(currentUser) {
           <div class="row">
             <input name="name" placeholder="Name" required />
             <input name="email" type="email" placeholder="Email" required />
+            <select name="role" required>
+              ${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
+            </select>
             <select name="team" required>
               ${teamOptions.map((team) => `<option value="${team}">${escapeHtml(team)}</option>`).join('')}
             </select>
             <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
             <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Min hrs" />
             <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Max hrs" />
+            <input name="minInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Min in-office" />
+            <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" />
             <button type="submit">Add agent</button>
           </div>
         </form>
@@ -3738,23 +4247,37 @@ function renderAgentsPage(currentUser) {
                     <div class="muted">Assigned hours this week: ${getAssignedHours(agent.id)} hrs</div>
                     <div class="muted">Minimum-hours credit this week: ${getMinimumHoursCredit(agent.id)} hrs (shifts + approved PTO)</div>
                     <div class="muted">This agent's weekly hours target: min ${escapeHtml(agent.minHours ?? 0)} / max ${escapeHtml(agent.maxHours ?? 'Not set')}</div>
+                    <div class="muted">This agent's weekly in-office shifts: ${getAssignedInOfficeShiftCount(agent.id)} (target min ${escapeHtml(agent.minInOfficeShifts ?? 0)} / max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')})</div>
                     <div class="muted">Email: ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   </div>
-                  <button class="danger" data-remove-agent="${agent.id}" type="button">Remove</button>
                 </div>
-                <div class="row" style="gap:8px;">
-                  <input name="name" value="${escapeHtml(agent.name)}" required />
-                  <input name="email" type="email" value="${escapeHtml(getAgentAccountEmail(agent.id) || '')}" placeholder="Email" required />
-                  <select name="team" required>
-                    ${teamOptions.map((team) => `<option value="${team}" ${(agent.team || teamOptions[0]) === team ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
-                  </select>
-                  <input name="payRate" type="text" inputmode="decimal" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" />
-                  <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" value="${escapeHtml(agent.minHours ?? 0)}" />
-                  <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" value="${escapeHtml(agent.maxHours ?? '')}" />
+                <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px;">
+                  <div class="stack" style="gap:8px;">
+                    <input name="name" value="${escapeHtml(agent.name)}" placeholder="Name" required />
+                    <input name="email" type="email" value="${escapeHtml(getAgentAccountEmail(agent.id) || '')}" placeholder="Email" required />
+                    <select name="role" required>
+                      ${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}" ${String(agent.role || '') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
+                    </select>
+                    <select name="team" required>
+                      ${teamOptions.map((team) => `<option value="${team}" ${(agent.team || teamOptions[0]) === team ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div class="stack" style="gap:8px;">
+                    <input name="payRate" type="text" inputmode="decimal" placeholder="Pay rate" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" />
+                    <div class="row" style="gap:8px;">
+                      <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Min hrs" value="${escapeHtml(agent.minHours ?? 0)}" />
+                      <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Max hrs" value="${escapeHtml(agent.maxHours ?? '')}" />
+                    </div>
+                    <div class="row" style="gap:8px;">
+                      <input name="minInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Min in-office" value="${escapeHtml(agent.minInOfficeShifts ?? 0)}" />
+                      <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" />
+                    </div>
+                  </div>
                 </div>
                 <div class="row" style="gap:8px; justify-content:flex-end;">
                   <button class="secondary" type="submit">Save agent</button>
                   <button class="secondary" type="button" data-resend-agent-invite="${agent.id}">Resend invite</button>
+                  <button class="danger" data-remove-agent="${agent.id}" type="button">Remove</button>
                 </div>
               </form>
             </div>
@@ -3851,6 +4374,23 @@ function renderAvailabilityRequestsPage(currentUser) {
   const pendingSwapCount = visibleSwapRequests.filter((request) => request.status === 'pending').length;
   const selectedMonth = state.ui.availabilityCalendarMonth || new Date().toISOString().slice(0, 7);
   const calendarData = getAvailabilityCalendarCells(selectedMonth, visibleAvailabilityRequests);
+  const availabilityDebugAgentId = Number(state.ui.availabilityDebugAgentId || state.agents[0]?.id || 0);
+  const availabilityDebugAgent = getAgent(availabilityDebugAgentId) || state.agents[0] || null;
+  const availabilityDebugUser = availabilityDebugAgent ? getUserByAgentId(availabilityDebugAgent.id) : null;
+  const availabilityDebugRows = availabilityDebugUser
+    ? allAvailabilityRequests.map((request) => ({
+        id: request.id,
+        date: request.unavailableDate || String(request.requestedAt || '').slice(0, 10) || 'Not set',
+        type: request.unavailabilityType || 'Availability',
+        status: normalizeAvailabilityRequestStatus(request.status),
+        reason: getAvailabilityRequestVisibilityReason(request, availabilityDebugUser),
+        requestAgentName: getAgent(request.agentId)?.name || 'Unknown',
+        requesterEmail: request.requesterEmail || ''
+      })).filter((row) => Boolean(row.reason))
+    : [];
+  const availabilityDebugPendingCount = availabilityDebugRows.filter((row) => row.status === 'pending').length;
+  const availabilityDebugApprovedCount = availabilityDebugRows.filter((row) => row.status === 'approved').length;
+  const availabilityDebugRejectedCount = availabilityDebugRows.filter((row) => row.status === 'rejected').length;
 
   root.innerHTML = `
     <div class="app">
@@ -3865,7 +4405,9 @@ function renderAvailabilityRequestsPage(currentUser) {
           <a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>
           <a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>
           <a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>
+          <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
+          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
           <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -3881,6 +4423,37 @@ function renderAvailabilityRequestsPage(currentUser) {
         <div class="muted">Total requests loaded: ${allAvailabilityRequests.length}</div>
         <div class="muted">Visible requests: ${visibleAvailabilityRequests.length} (${pendingCount} pending)</div>
         <div class="muted">Swap requests: ${visibleSwapRequests.length} (${pendingSwapCount} pending)</div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px;">
+        <h2 style="margin:0 0 10px;">Agent request debug</h2>
+        <div class="row" style="margin-bottom:8px;">
+          <select id="availability-debug-agent-filter" style="max-width:320px;">
+            ${state.agents.map((agent) => `<option value="${agent.id}" ${Number(agent.id) === Number(availabilityDebugAgent?.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+          </select>
+        </div>
+        ${!availabilityDebugAgent ? '<div class="muted">No agents are available for debug.</div>' : ''}
+        ${availabilityDebugAgent && !availabilityDebugUser ? `<div class="muted">${escapeHtml(availabilityDebugAgent.name)} has no linked login account, so agent pending/approved pages cannot resolve request ownership.</div>` : ''}
+        ${availabilityDebugAgent && availabilityDebugUser ? `
+          <div class="muted">Debugging as agent: ${escapeHtml(availabilityDebugAgent.name)} (${escapeHtml(availabilityDebugUser.email || 'no email')})</div>
+          <div class="muted">Matched requests: ${availabilityDebugRows.length} | Pending: ${availabilityDebugPendingCount} | Approved: ${availabilityDebugApprovedCount} | Rejected: ${availabilityDebugRejectedCount}</div>
+          <div class="request-list" style="margin-top:10px; max-height:260px; overflow:auto;">
+            ${availabilityDebugRows.slice(0, 50).map((row) => `
+              <div class="card">
+                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+                  <div>
+                    <strong>${escapeHtml(String(row.type))}</strong>
+                    <div class="muted">Date: ${escapeHtml(String(row.date))}</div>
+                    <div class="muted">Status: ${escapeHtml(String(row.status))}</div>
+                    <div class="muted">Matched by: ${escapeHtml(String(row.reason))}</div>
+                    <div class="muted">Request agent: ${escapeHtml(String(row.requestAgentName))}</div>
+                  </div>
+                  <span class="chip">#${escapeHtml(String(row.id))}</span>
+                </div>
+              </div>
+            `).join('') || '<div class="muted">No requests match this agent under current ownership rules.</div>'}
+          </div>
+        ` : ''}
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
@@ -4037,6 +4610,16 @@ function render() {
     return;
   }
 
+  if (pageMode === 'admin-options') {
+    renderAdminOptionsPage(currentUser);
+    return;
+  }
+
+  if (pageMode === 'policies') {
+    renderPoliciesPage(currentUser);
+    return;
+  }
+
   if (pageMode === 'calendar') {
     renderCalendarPage(currentUser);
     return;
@@ -4094,8 +4677,8 @@ function render() {
         </div>
         <div class="row">
           ${isAgentView
-            ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>'
-            : '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a><a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a><a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a><a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>'}
+            ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'
+            : '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a><a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a><a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a><a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a><a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'}
           ${!isAgentView ? '<button id="export-data-btn" class="secondary">Export JSON</button>' : ''}
           ${!isAgentView ? `<label class="secondary" style="display:inline-flex; align-items:center; padding:10px 12px; border-radius:10px; cursor:pointer;">
             <input id="import-data-input" type="file" accept="application/json" hidden />
@@ -4134,6 +4717,52 @@ function render() {
                         <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
                         <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="width:56px; padding:4px;" />
                       </label>
+                    `).join('')}
+                  </div>
+                </div>
+
+                <div class="panel">
+                  <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <h2 style="margin:0;">Weekly planner</h2>
+                  </div>
+                  <div class="row" style="margin-bottom:8px;">
+                    <input id="shift-search" placeholder="Search shifts" value="${escapeHtml(state.ui.calendar?.search || '')}" />
+                    <select id="day-filter">
+                      <option value="All" ${(state.ui.calendar?.day || 'All') === 'All' ? 'selected' : ''}>All days</option>
+                      ${days.map((day) => `<option value="${day}" ${(state.ui.calendar?.day || 'All') === day ? 'selected' : ''}>${day}</option>`).join('')}
+                    </select>
+                    <button id="weekly-filters-apply" type="button">Apply filters</button>
+                    <button id="weekly-filters-reset" class="secondary" type="button">Reset filters</button>
+                  </div>
+                  <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+                    <div>
+                      <strong>Week of ${escapeHtml(plannerWeekLabel)}</strong>
+                      <div class="muted">Move between weeks without leaving the dashboard.</div>
+                    </div>
+                    <div class="row" style="gap:8px; flex-wrap:wrap;">
+                      <button id="weekly-previous-week" class="secondary" type="button">Previous week</button>
+                      <button id="weekly-current-week" class="secondary" type="button">Current week</button>
+                      <button id="weekly-next-week" class="secondary" type="button">Next week</button>
+                      <input id="weekly-week-reference" type="date" value="${escapeHtml(plannerWeekReference)}" />
+                    </div>
+                  </div>
+                  <div class="row" style="margin-bottom:8px;">
+                    ${getRoleLegendItems().map((role) => `
+                      <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
+                    `).join('')}
+                  </div>
+                  <div class="day-row">
+                    ${days.map((day) => `
+                      <div class="day-card" data-day="${day}">
+                        <h4>${day}</h4>
+                        <div class="muted">${escapeHtml(plannerWeekDates[day]?.label || '')}</div>
+                        ${getBlackoutDateMarker(plannerWeekDates[day]?.iso || '')}
+                        ${adminWeeklyShifts.filter((shift) => shift.day === day).map((shift) => `
+                          <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
+                            <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
+                          </div>
+                        `).join('')}
+                      </div>
                     `).join('')}
                   </div>
                 </div>
@@ -4187,7 +4816,7 @@ function render() {
                     ${getBlackoutDateMarker(weekDates[selectedAgentScheduleDay]?.iso || '')}
                     ${visibleShifts.filter((shift) => shift.day === selectedAgentScheduleDay).map((shift) => `
                       <div class="shift" draggable="true" data-shift-id="${shift.id}">
-                        <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || roleOptions[0])}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
+                        <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
                       </div>
                     `).join('') || '<div class="muted">No shifts for this day.</div>'}
                   </div>
@@ -4201,7 +4830,7 @@ function render() {
                       ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                       ${visibleShifts.filter((shift) => shift.day === day).map((shift) => `
                         <div class="shift" draggable="true" data-shift-id="${shift.id}">
-                          <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || roleOptions[0])}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
+                          <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
                         </div>
                       `).join('')}
                     </div>
@@ -4214,7 +4843,7 @@ function render() {
                     <div class="card">
                       <strong>${escapeHtml(shift.date || shift.day || 'Date not set')}</strong>
                       <div class="muted">${escapeHtml(shift.day || '')} • ${formatTimeRange(shift.start, shift.end)}</div>
-                      <div class="muted">${escapeHtml(shift.role || roleOptions[0])} • ${escapeHtml(shift.location || 'No location')}</div>
+                      <div class="muted">${escapeHtml(shift.role || getPrimaryRole())} • ${escapeHtml(shift.location || 'No location')}</div>
                     </div>
                   `).join('') || '<div class="muted">No shifts in this month.</div>'}
                 </div>
@@ -4275,51 +4904,6 @@ function render() {
                 <button type="submit">Request swap</button>
               </form>
             </div>`}
-
-          ${!isAgentView ? `<div class="panel">
-            <h2>Weekly planner</h2>
-            <div class="row" style="margin-bottom:8px;">
-              <input id="shift-search" placeholder="Search shifts" value="${escapeHtml(state.ui.calendar?.search || '')}" />
-              <select id="day-filter">
-                <option value="All" ${(state.ui.calendar?.day || 'All') === 'All' ? 'selected' : ''}>All days</option>
-                ${days.map((day) => `<option value="${day}" ${(state.ui.calendar?.day || 'All') === day ? 'selected' : ''}>${day}</option>`).join('')}
-              </select>
-              <button id="weekly-filters-apply" type="button">Apply filters</button>
-              <button id="weekly-filters-reset" class="secondary" type="button">Reset filters</button>
-            </div>
-            <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
-              <div>
-                <strong>Week of ${escapeHtml(plannerWeekLabel)}</strong>
-                <div class="muted">Move between weeks without leaving the dashboard.</div>
-              </div>
-              <div class="row" style="gap:8px; flex-wrap:wrap;">
-                <button id="weekly-previous-week" class="secondary" type="button">Previous week</button>
-                <button id="weekly-current-week" class="secondary" type="button">Current week</button>
-                <button id="weekly-next-week" class="secondary" type="button">Next week</button>
-                <input id="weekly-week-reference" type="date" value="${escapeHtml(plannerWeekReference)}" />
-              </div>
-            </div>
-            <div class="row" style="margin-bottom:8px;">
-              ${getRoleLegendItems().map((role) => `
-                <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
-              `).join('')}
-            </div>
-            <div class="day-row">
-              ${days.map((day) => `
-                <div class="day-card" data-day="${day}">
-                  <h4>${day}</h4>
-                  <div class="muted">${escapeHtml(plannerWeekDates[day]?.label || '')}</div>
-                  ${getBlackoutDateMarker(plannerWeekDates[day]?.iso || '')}
-                  ${adminWeeklyShifts.filter((shift) => shift.day === day).map((shift) => `
-                    <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                      <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || roleOptions[0])}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
-                    </div>
-                  `).join('')}
-                </div>
-              `).join('')}
-            </div>
-          </div>` : ''}
-
         </div>
       </div>
     </div>
@@ -4464,10 +5048,13 @@ function bindEvents() {
     const formData = new FormData(event.currentTarget);
     const name = formData.get('name')?.toString().trim();
     const email = normalizeEmail(formData.get('email'));
+    const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getPrimaryRole(), getRoleCatalog());
     const payRateRaw = formData.get('payRate')?.toString().trim() || '0';
     const payRate = parseCurrencyAmount(payRateRaw);
     const minHours = normalizeMinHours(formData.get('minHours'));
     const maxHours = normalizeMaxHours(formData.get('maxHours'));
+    const minInOfficeShifts = normalizeMinInOfficeShifts(formData.get('minInOfficeShifts'));
+    const maxInOfficeShifts = normalizeMaxInOfficeShifts(formData.get('maxInOfficeShifts'));
     if (!name || !email) {
       alert('Name and email are required to add an agent.');
       return;
@@ -4478,6 +5065,10 @@ function bindEvents() {
     }
     if (Number.isFinite(maxHours) && maxHours < minHours) {
       alert('Maximum hours must be greater than or equal to minimum hours.');
+      return;
+    }
+    if (Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts < minInOfficeShifts) {
+      alert('Maximum in-office shifts must be greater than or equal to minimum in-office shifts.');
       return;
     }
     const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email);
@@ -4491,9 +5082,12 @@ function bindEvents() {
       name,
       email,
       team: normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]),
+      role,
       payRate,
       minHours,
       maxHours,
+      minInOfficeShifts,
+      maxInOfficeShifts,
       availability: 'Available'
     });
 
@@ -4526,16 +5120,17 @@ function bindEvents() {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const agentId = formData.get('agentId') ? Number(formData.get('agentId')) : null;
-    const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getAgent(agentId)?.role || roleOptions[0]);
+    const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getAgent(agentId)?.role || getPrimaryRole(), getRoleCatalog());
     const start = formData.get('start')?.toString();
     const end = formData.get('end')?.toString();
     const requestedLocation = formData.get('location')?.toString().trim() || '';
-    const location = requestedLocation && shiftLocationOptions.includes(requestedLocation) ? requestedLocation : '';
+    const location = requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
     if (!day || !agentId || !role || !start || !end || !date) return;
     if (!confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, {
-      durationHours: getDurationHours(start, end)
+      durationHours: getDurationHours(start, end),
+      role
     })) return;
 
     state.shifts.push({ id: createId(), day, date, agentId, role, start, end, durationHours: getDurationHours(start, end), location, status: shiftStatuses.draft });
@@ -4543,10 +5138,257 @@ function bindEvents() {
     render();
   });
 
+  document.querySelector('#add-shift-form select[name="templateId"]')?.addEventListener('change', (event) => {
+    const select = event.currentTarget;
+    const form = select?.closest('form');
+    if (!(select instanceof HTMLSelectElement) || !(form instanceof HTMLFormElement)) return;
+    const templateId = Number(select.value);
+    if (!templateId) return;
+    const template = state.templates.find((item) => Number(item.id) === templateId);
+    if (!template) return;
+
+    const roleInput = form.querySelector('select[name="role"]');
+    const startInput = form.querySelector('input[name="start"]');
+    const endInput = form.querySelector('input[name="end"]');
+    const locationInput = form.querySelector('select[name="location"]');
+
+    if (roleInput instanceof HTMLSelectElement && template.role) {
+      roleInput.value = normalizeRoleLabel(template.role);
+    }
+    if (startInput instanceof HTMLInputElement && template.start) {
+      startInput.value = template.start;
+    }
+    if (endInput instanceof HTMLInputElement && template.end) {
+      endInput.value = template.end;
+    }
+    if (locationInput instanceof HTMLSelectElement) {
+      const requestedLocation = String(template.location || '').trim();
+      locationInput.value = getLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
+    }
+  });
+
+  document.getElementById('add-shift-template-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const name = String(formData.get('name') || '').trim();
+    const start = String(formData.get('start') || '').trim();
+    const end = String(formData.get('end') || '').trim();
+    const requestedRole = String(formData.get('role') || '').trim();
+    const requestedLocation = String(formData.get('location') || '').trim();
+    const active = formData.get('active') !== null;
+    if (!name || !start || !end || toMinutes(end) <= toMinutes(start)) {
+      alert('Template name, start, and end are required. End time must be later than start time.');
+      return;
+    }
+
+    state.templates.push({
+      id: createId(),
+      name,
+      start,
+      end,
+      durationHours: getDurationHours(start, end),
+      active,
+      role: requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '',
+      location: requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : ''
+    });
+    saveState();
+    render();
+  });
+
+  document.querySelectorAll('[data-update-shift-template]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const templateId = Number(form.getAttribute('data-update-shift-template'));
+      if (!templateId) return;
+      const formData = new FormData(form);
+      const name = String(formData.get('name') || '').trim();
+      const start = String(formData.get('start') || '').trim();
+      const end = String(formData.get('end') || '').trim();
+      const requestedRole = String(formData.get('role') || '').trim();
+      const requestedLocation = String(formData.get('location') || '').trim();
+      const active = formData.get('active') !== null;
+      if (!name || !start || !end || toMinutes(end) <= toMinutes(start)) {
+        alert('Template name, start, and end are required. End time must be later than start time.');
+        return;
+      }
+
+      state.templates = state.templates.map((template) => Number(template.id) === templateId
+        ? {
+            ...template,
+            name,
+            start,
+            end,
+            durationHours: getDurationHours(start, end),
+            active,
+            role: requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '',
+            location: requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : ''
+          }
+        : template);
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-remove-shift-template]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const templateId = Number(button.getAttribute('data-remove-shift-template'));
+      if (!templateId) return;
+      state.templates = state.templates.filter((template) => Number(template.id) !== templateId);
+      saveState();
+      render();
+    });
+  });
+
+  document.getElementById('upload-policy-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const currentUser = getCurrentUser();
+    if (currentUser?.role !== 'admin') return;
+    const formElement = event.currentTarget;
+    if (!(formElement instanceof HTMLFormElement)) return;
+    const fileInput = formElement.querySelector('input[name="policyFile"]');
+    if (!(fileInput instanceof HTMLInputElement)) return;
+    const selectedFile = fileInput.files?.[0];
+    if (!selectedFile) {
+      alert('Choose a file to upload.');
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(selectedFile);
+      const base64Content = String(dataUrl.split(',')[1] || '').trim();
+      if (!base64Content) {
+        alert('Unable to read the selected file.');
+        return;
+      }
+
+      const policyNameExists = (Array.isArray(state.policies) ? state.policies : [])
+        .some((policy) => String(policy.name || '').trim().toLowerCase() === selectedFile.name.trim().toLowerCase());
+      if (policyNameExists) {
+        const shouldReplace = confirm('A policy with this file name already exists. Upload anyway?');
+        if (!shouldReplace) return;
+      }
+
+      state.policies = [
+        ...(Array.isArray(state.policies) ? state.policies : []),
+        {
+          id: createId(),
+          name: selectedFile.name,
+          mimeType: selectedFile.type || 'application/octet-stream',
+          contentBase64: base64Content,
+          sizeBytes: Number(selectedFile.size) || 0,
+          uploadedAt: new Date().toISOString()
+        }
+      ];
+      saveState();
+      render();
+    } catch {
+      alert('Unable to upload this policy file right now.');
+    }
+  });
+
+  document.querySelectorAll('[data-delete-policy]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const currentUser = getCurrentUser();
+      if (currentUser?.role !== 'admin') return;
+      const policyId = Number(button.getAttribute('data-delete-policy'));
+      if (!policyId) return;
+      const policy = (Array.isArray(state.policies) ? state.policies : []).find((item) => Number(item.id) === policyId);
+      if (!policy) return;
+      const shouldDelete = confirm(`Delete policy ${policy.name || 'this file'}?`);
+      if (!shouldDelete) return;
+      state.policies = (Array.isArray(state.policies) ? state.policies : []).filter((item) => Number(item.id) !== policyId);
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-download-policy]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const policyId = Number(button.getAttribute('data-download-policy'));
+      if (!policyId) return;
+      const policy = (Array.isArray(state.policies) ? state.policies : []).find((item) => Number(item.id) === policyId);
+      if (!policy) return;
+      triggerPolicyDownload(policy);
+    });
+  });
+
+  document.getElementById('add-shift-location-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const location = String(formData.get('location') || '').trim();
+    if (!location) return;
+    if (getLocationCatalog().some((item) => item.toLowerCase() === location.toLowerCase())) {
+      alert('That location already exists.');
+      return;
+    }
+    state.locationCatalog = [...getLocationCatalog(), location];
+    saveState();
+    render();
+  });
+
+  document.querySelectorAll('[data-remove-shift-location]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const location = String(button.getAttribute('data-remove-shift-location') || '').trim();
+      if (!location) return;
+      const locationInUse = state.shifts.some((shift) => String(shift.location || '').trim() === location)
+        || state.templates.some((template) => String(template.location || '').trim() === location);
+      if (locationInUse) {
+        alert('That location is in use by shifts or templates and cannot be removed yet.');
+        return;
+      }
+      state.locationCatalog = getLocationCatalog().filter((item) => item !== location);
+      saveState();
+      render();
+    });
+  });
+
+  document.getElementById('add-shift-role-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const role = String(formData.get('role') || '').trim();
+    if (!role) return;
+    if (getRoleCatalog().some((item) => item.toLowerCase() === role.toLowerCase())) {
+      alert('That role already exists.');
+      return;
+    }
+    state.roleCatalog = [...getRoleCatalog(), role];
+    saveState();
+    render();
+  });
+
+  document.querySelectorAll('[data-remove-shift-role]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const role = String(button.getAttribute('data-remove-shift-role') || '').trim();
+      if (!role) return;
+      const roleInUse = state.agents.some((agent) => String(agent.role || '').trim() === role)
+        || state.shifts.some((shift) => String(shift.role || '').trim() === role)
+        || state.templates.some((template) => String(template.role || '').trim() === role);
+      if (roleInUse) {
+        alert('That role is in use by agents, shifts, or templates and cannot be removed yet.');
+        return;
+      }
+      const nextRoleCatalog = getRoleCatalog().filter((item) => item !== role);
+      if (nextRoleCatalog.length === 0) {
+        alert('At least one role is required.');
+        return;
+      }
+      state.roleCatalog = nextRoleCatalog;
+      if (state.roleColors && typeof state.roleColors === 'object') {
+        const colorKey = role.toLowerCase();
+        if (state.roleColors[colorKey]) {
+          delete state.roleColors[colorKey];
+        }
+      }
+      saveState();
+      render();
+    });
+  });
+
   document.getElementById('swap-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const fromAgentId = Number(state.ui.currentAgentId) || Number(getViewAgent()?.id);
+    const currentUser = getCurrentUser();
+    const fromAgentId = Number(currentUser?.agentId) || Number(state.ui.currentAgentId) || Number(getViewAgent()?.id);
     const fromShiftId = Number(formData.get('fromShiftId'));
     const toAgentId = Number(formData.get('toAgentId'));
     const toShiftId = Number(formData.get('toShiftId'));
@@ -4581,14 +5423,26 @@ function bindEvents() {
     const toAgent = getAgent(toAgentId);
     const projectedFromHours = getProjectedSwapHours(fromAgentId, fromShift, toShift);
     const projectedToHours = getProjectedSwapHours(toAgentId, toShift, fromShift);
+    const projectedFromInOffice = getProjectedSwapInOfficeShiftCount(fromAgentId, fromShift, toShift);
+    const projectedToInOffice = getProjectedSwapInOfficeShiftCount(toAgentId, toShift, fromShift);
     const fromMaxHours = Number(fromAgent?.maxHours || 0);
     const toMaxHours = Number(toAgent?.maxHours || 0);
+    const fromMaxInOffice = normalizeMaxInOfficeShifts(fromAgent?.maxInOfficeShifts);
+    const toMaxInOffice = normalizeMaxInOfficeShifts(toAgent?.maxInOfficeShifts);
     if (fromMaxHours > 0 && projectedFromHours > fromMaxHours) {
       alert(`${fromAgent?.name || 'This agent'} would exceed their weekly max hours with that swap.`);
       return;
     }
     if (toMaxHours > 0 && projectedToHours > toMaxHours) {
       alert(`${toAgent?.name || 'That agent'} would exceed their weekly max hours with that swap.`);
+      return;
+    }
+    if (Number.isFinite(fromMaxInOffice) && projectedFromInOffice > fromMaxInOffice) {
+      alert(`${fromAgent?.name || 'This agent'} would exceed their weekly max in-office shifts with that swap.`);
+      return;
+    }
+    if (Number.isFinite(toMaxInOffice) && projectedToInOffice > toMaxInOffice) {
+      alert(`${toAgent?.name || 'That agent'} would exceed their weekly max in-office shifts with that swap.`);
       return;
     }
     const newSwapRequest = {
@@ -4697,6 +5551,12 @@ function bindEvents() {
   document.getElementById('availability-filters-reset')?.addEventListener('click', () => {
     state.ui.availabilityFrom = '';
     state.ui.availabilityTo = '';
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('availability-debug-agent-filter')?.addEventListener('change', (event) => {
+    state.ui.availabilityDebugAgentId = event.target.value || '';
     saveUiState();
     render();
   });
@@ -4903,11 +5763,14 @@ function bindEvents() {
       const formData = new FormData(form);
       const name = formData.get('name')?.toString().trim();
       const email = normalizeEmail(formData.get('email'));
+      const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getPrimaryRole(), getRoleCatalog());
       const team = normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]);
       const payRateRaw = formData.get('payRate')?.toString().trim() || '0';
       const payRate = parseCurrencyAmount(payRateRaw);
       const minHours = normalizeMinHours(formData.get('minHours'));
       const maxHours = normalizeMaxHours(formData.get('maxHours'));
+      const minInOfficeShifts = normalizeMinInOfficeShifts(formData.get('minInOfficeShifts'));
+      const maxInOfficeShifts = normalizeMaxInOfficeShifts(formData.get('maxInOfficeShifts'));
       if (!name || !email) {
         alert('Name and email are required for each agent.');
         return;
@@ -4918,6 +5781,10 @@ function bindEvents() {
       }
       if (Number.isFinite(maxHours) && maxHours < minHours) {
         alert('Maximum hours must be greater than or equal to minimum hours.');
+        return;
+      }
+      if (Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts < minInOfficeShifts) {
+        alert('Maximum in-office shifts must be greater than or equal to minimum in-office shifts.');
         return;
       }
       const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email && Number(user.agentId) !== id);
@@ -4931,10 +5798,13 @@ function bindEvents() {
             id,
             name,
             email,
+            role,
             team,
             payRate,
             minHours,
-            maxHours
+            maxHours,
+            minInOfficeShifts,
+            maxInOfficeShifts
           }
         : agent);
 
@@ -5025,6 +5895,71 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll('[data-offer-shift]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const shiftId = Number(button.getAttribute('data-offer-shift'));
+      const currentUser = getCurrentUser();
+      const currentAgentId = Number(currentUser?.agentId);
+      if (!shiftId || !currentAgentId) return;
+
+      const shift = state.shifts.find((item) => Number(item.id) === shiftId);
+      if (!shift || !canAgentOfferShift(shift, currentAgentId)) return;
+
+      const shouldOffer = !isShiftOfferedForPickup(shift);
+      state.shifts = state.shifts.map((item) => Number(item.id) === shiftId
+        ? {
+            ...item,
+            offeredForPickup: shouldOffer,
+            offeredByAgentId: shouldOffer ? currentAgentId : null,
+            offeredAt: shouldOffer ? new Date().toISOString() : null
+          }
+        : item);
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-pickup-offered-shift]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const shiftId = Number(button.getAttribute('data-pickup-offered-shift'));
+      const currentUser = getCurrentUser();
+      const currentAgentId = Number(currentUser?.agentId);
+      if (!shiftId || !currentAgentId) return;
+
+      const shift = state.shifts.find((item) => Number(item.id) === shiftId);
+      if (!shift || !canAgentPickUpOfferedShift(shift, currentAgentId)) return;
+
+      const targetAgent = getAgent(currentAgentId);
+      const maxHours = normalizeMaxHours(targetAgent?.maxHours);
+      const projectedHours = getAssignedHours(currentAgentId, shift.date) + (Number(shift.durationHours) || 0);
+      if (Number.isFinite(maxHours) && projectedHours > maxHours + 0.0001) {
+        alert(`${targetAgent?.name || 'This agent'} would exceed their weekly max hours by picking up this shift.`);
+        return;
+      }
+      const maxInOfficeShifts = normalizeMaxInOfficeShifts(targetAgent?.maxInOfficeShifts);
+      if (isInOfficeRole(shift.role) && Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts >= 0) {
+        const projectedInOfficeCount = getAssignedInOfficeShiftCount(currentAgentId, shift.date) + 1;
+        if (projectedInOfficeCount > maxInOfficeShifts) {
+          alert(`${targetAgent?.name || 'This agent'} would exceed their weekly max in-office shifts by picking up this shift.`);
+          return;
+        }
+      }
+
+      state.shifts = state.shifts.map((item) => Number(item.id) === shiftId
+        ? {
+            ...item,
+            agentId: currentAgentId,
+            offeredForPickup: false,
+            offeredByAgentId: null,
+            offeredAt: null,
+            pickedUpAt: new Date().toISOString()
+          }
+        : item);
+      saveState();
+      render();
+    });
+  });
+
   document.querySelectorAll('[data-toggle-shift-select]').forEach((button) => {
     button.addEventListener('click', () => {
       const id = Number(button.getAttribute('data-toggle-shift-select'));
@@ -5053,14 +5988,17 @@ function bindEvents() {
     const shiftsToNotify = state.shifts
       .filter((shift) => selectedCalendarShiftIds.has(Number(shift.id)) && shift.status !== shiftStatuses.published)
       .map((shift) => ({ ...shift, status: shiftStatuses.published }));
+    const shouldSendEmails = shiftsToNotify.length > 0 ? shouldSendPublishedScheduleEmails(shiftsToNotify.length) : false;
 
     state.shifts = state.shifts.map((shift) => (selectedCalendarShiftIds.has(Number(shift.id))
       ? { ...shift, status: shiftStatuses.published }
       : shift));
 
-    shiftsToNotify.forEach((shift) => {
-      sendShiftPublishedEmail(shift);
-    });
+    if (shouldSendEmails) {
+      shiftsToNotify.forEach((shift) => {
+        sendShiftPublishedEmail(shift);
+      });
+    }
 
     saveState();
     render();
@@ -5092,7 +6030,7 @@ function bindEvents() {
       openShiftEditModal(shift, (updatedShift) => {
         const shouldNotify = shift.status !== shiftStatuses.published && updatedShift.status === shiftStatuses.published;
         state.shifts = state.shifts.map((item) => item.id === id ? updatedShift : item);
-        if (shouldNotify) {
+        if (shouldNotify && shouldSendPublishedScheduleEmails(1)) {
           sendShiftPublishedEmail(updatedShift);
         }
         saveState();
@@ -5106,9 +6044,12 @@ function bindEvents() {
       const id = Number(button.getAttribute('data-publish-shift'));
       const shiftToPublish = state.shifts.find((shift) => shift.id === id);
       if (!shiftToPublish) return;
+      const shouldSendEmails = shiftToPublish.status !== shiftStatuses.published
+        ? shouldSendPublishedScheduleEmails(1)
+        : false;
 
       state.shifts = state.shifts.map((shift) => shift.id === id ? { ...shift, status: shiftStatuses.published } : shift);
-      if (shiftToPublish.status !== shiftStatuses.published) {
+      if (shiftToPublish.status !== shiftStatuses.published && shouldSendEmails) {
         sendShiftPublishedEmail({ ...shiftToPublish, status: shiftStatuses.published });
       }
       saveState();
@@ -5212,6 +6153,38 @@ function bindEvents() {
       if (updatedRequest?.status === 'pending' && updatedRequest.fromApproved && updatedRequest.toApproved) {
         const fromShiftId = getSwapRequestFromShiftId(updatedRequest);
         const toShiftId = getSwapRequestToShiftId(updatedRequest);
+        const fromShift = getShiftById(fromShiftId);
+        const toShift = getShiftById(toShiftId);
+
+        const fromAgent = getAgent(updatedRequest.fromAgentId);
+        const toAgent = getAgent(updatedRequest.toAgentId);
+        const fromMaxInOffice = normalizeMaxInOfficeShifts(fromAgent?.maxInOfficeShifts);
+        const toMaxInOffice = normalizeMaxInOfficeShifts(toAgent?.maxInOfficeShifts);
+
+        if (fromShift && toShift && isInOfficeRole(toShift.role) && Number.isFinite(fromMaxInOffice)) {
+          const projectedFromInOffice = getAssignedInOfficeShiftCount(updatedRequest.fromAgentId, toShift.date || fromShift.date || '', {
+            excludingShiftId: Number(fromShift.id)
+          }) + 1;
+          if (projectedFromInOffice > fromMaxInOffice) {
+            alert(`${fromAgent?.name || 'This agent'} would exceed their weekly max in-office shifts with this swap.`);
+            saveState();
+            render();
+            return;
+          }
+        }
+
+        if (fromShift && toShift && isInOfficeRole(fromShift.role) && Number.isFinite(toMaxInOffice)) {
+          const projectedToInOffice = getAssignedInOfficeShiftCount(updatedRequest.toAgentId, fromShift.date || toShift.date || '', {
+            excludingShiftId: Number(toShift.id)
+          }) + 1;
+          if (projectedToInOffice > toMaxInOffice) {
+            alert(`${toAgent?.name || 'This agent'} would exceed their weekly max in-office shifts with this swap.`);
+            saveState();
+            render();
+            return;
+          }
+        }
+
         state.shifts = state.shifts.map((shift) => {
           if (Number(shift.id) === Number(fromShiftId)) {
             return { ...shift, agentId: updatedRequest.toAgentId };
@@ -5281,7 +6254,8 @@ function bindEvents() {
       if (!shift) return;
       const duplicatedShift = cloneShift(shift);
       if (!confirmShiftAssignmentWithTimeOffWarning(duplicatedShift.agentId, duplicatedShift.date, duplicatedShift.start, duplicatedShift.end, {
-        durationHours: duplicatedShift.durationHours
+        durationHours: duplicatedShift.durationHours,
+        role: duplicatedShift.role
       })) return;
       state.shifts.push(duplicatedShift);
       saveState();
@@ -5296,7 +6270,8 @@ function bindEvents() {
       if (!copiedShiftTemplate || !day) return;
       const pastedShift = cloneShift(copiedShiftTemplate, day);
       if (!confirmShiftAssignmentWithTimeOffWarning(pastedShift.agentId, pastedShift.date, pastedShift.start, pastedShift.end, {
-        durationHours: pastedShift.durationHours
+        durationHours: pastedShift.durationHours,
+        role: pastedShift.role
       })) return;
       state.shifts.push(pastedShift);
       saveState();
@@ -5338,7 +6313,8 @@ function bindEvents() {
 
       if (movedToNewDate && !confirmShiftAssignmentWithTimeOffWarning(shiftToMove.agentId, targetDate, shiftToMove.start, shiftToMove.end, {
         replacingShiftId: Number(shiftToMove.id),
-        durationHours: Number(shiftToMove.durationHours) || getDurationHours(shiftToMove.start, shiftToMove.end)
+        durationHours: Number(shiftToMove.durationHours) || getDurationHours(shiftToMove.start, shiftToMove.end),
+        role: shiftToMove.role
       })) {
         return;
       }
