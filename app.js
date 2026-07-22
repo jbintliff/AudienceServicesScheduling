@@ -2288,7 +2288,7 @@ function reconcileAgentEmailsWithAuthUsers() {
     if (agentEmail && linkedUser && !linkedUserEmail) {
       const profileUpdatedAt = getCurrentIsoTimestamp();
       authUsers = authUsers.map((user) => user.id === linkedUser.id
-        ? { ...user, email: agentEmail, profileUpdatedAt }
+        ? { ...user, email: agentEmail, updatedAt: profileUpdatedAt, profileUpdatedAt }
         : user);
       didChange = true;
       return { ...agent, email: agentEmail };
@@ -4156,6 +4156,7 @@ function renderProfilePage(currentUser) {
             jobTitle,
             email,
             phone,
+            updatedAt: getCurrentIsoTimestamp(),
             profileUpdatedAt: getCurrentIsoTimestamp()
           }
         : user);
@@ -4203,6 +4204,7 @@ function renderProfilePage(currentUser) {
         phone,
         password: createTemporaryPassword(),
         createdAt: getCurrentIsoTimestamp(),
+        updatedAt: getCurrentIsoTimestamp(),
         profileUpdatedAt: getCurrentIsoTimestamp(),
         role: 'admin'
       });
@@ -4266,6 +4268,7 @@ function renderProfilePage(currentUser) {
               jobTitle,
               email,
               phone,
+              updatedAt: getCurrentIsoTimestamp(),
               profileUpdatedAt: getCurrentIsoTimestamp()
             }
           : user);
@@ -6042,6 +6045,7 @@ function bindProfilePhotoHandlers() {
         ? {
             ...user,
             profilePhotoDataUrl: imageDataUrl,
+            updatedAt: getCurrentIsoTimestamp(),
             profileUpdatedAt: getCurrentIsoTimestamp()
           }
         : user);
@@ -6066,6 +6070,7 @@ function bindProfilePhotoHandlers() {
       ? {
           ...user,
           profilePhotoDataUrl: '',
+          updatedAt: getCurrentIsoTimestamp(),
           profileUpdatedAt: getCurrentIsoTimestamp()
         }
       : user);
