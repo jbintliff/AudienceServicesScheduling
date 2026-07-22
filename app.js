@@ -3747,6 +3747,34 @@ async function importData(file) {
   }
 }
 
+function renderAdminNavigationLinks(options = {}) {
+  const includeExport = options?.includeExport !== false;
+  const includeImport = options?.includeImport !== false;
+  return [
+    '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>',
+    '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>',
+    '<a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>',
+    '<a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>',
+    '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>',
+    '<a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>',
+    '<a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>',
+    '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>',
+    includeExport ? '<button id="export-data-btn" class="secondary">Export JSON</button>' : '',
+    includeImport ? '<label class="secondary" style="display:inline-flex; align-items:center; padding:10px 12px; border-radius:10px; cursor:pointer;"><input id="import-data-input" type="file" accept="application/json" hidden />Import JSON</label>' : ''
+  ].filter(Boolean).join('');
+}
+
+function renderAgentNavigationLinks() {
+  return [
+    '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>',
+    '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>',
+    '<a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>',
+    '<a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>',
+    '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>',
+    '<a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>'
+  ].join('');
+}
+
 function renderCalendarPage(currentUser) {
   const spendByDay = getSpendByDay();
   const calendarFilters = state.ui.calendar || {};
@@ -3778,15 +3806,7 @@ function renderCalendarPage(currentUser) {
           <p class="muted">${isAgentView ? 'Review the full published team schedule and request swaps for your own shifts.' : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
         </div>
         <div class="row">
-          ${isAgentView ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>' : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>'}
-          ${!isAgentView ? '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a>' : ''}
-          ${!isAgentView ? '<a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>' : ''}
-          ${!isAgentView ? '<a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>' : ''}
-          ${!isAgentView ? '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>' : ''}
-          ${!isAgentView ? '<a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>' : ''}
-          ${!isAgentView ? '<a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>' : ''}
-          ${!isAgentView ? '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>' : ''}
-          ${!isAgentView ? '<button id="export-data-btn" class="secondary">Export JSON</button>' : ''}
+          ${isAgentView ? renderAgentNavigationLinks() : renderAdminNavigationLinks({ includeExport: true })}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -3951,14 +3971,7 @@ function renderProfilePage(currentUser) {
             <p class="muted">Review your admin account details.</p>
           </div>
           <div class="row">
-            <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
-            <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a>
-            <a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>
-            <a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>
-            <a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>
-            <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
-            <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
-            <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
+            ${renderAdminNavigationLinks({ includeExport: true })}
             ${renderUserNavChip(currentUser)}
             <button id="logout-btn" class="secondary" type="button">Log out</button>
           </div>
@@ -4592,11 +4605,7 @@ function renderProfilePage(currentUser) {
           <p class="muted">Review your account details. You can update your phone number and password here; all other changes must be made by an admin.</p>
         </div>
         <div class="row">
-          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to scheduling</button></a>
-          <a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>
-          <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a>
-          <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
-          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
+          ${renderAgentNavigationLinks()}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -4693,14 +4702,7 @@ function renderAdminOptionsPage(currentUser) {
           <p class="muted">Manage shift templates, roles, locations, and role colors from one page.</p>
         </div>
         <div class="row">
-          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
-          <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a>
-          <a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>
-          <a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>
-          <a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>
-          <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
-          <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
-          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
+          ${renderAdminNavigationLinks({ includeExport: true })}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -4857,8 +4859,8 @@ function renderPoliciesPage(currentUser) {
         </div>
         <div class="row">
           ${isAdminView
-            ? '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a><a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a><a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a><a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a><a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'
-            : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'}
+            ? renderAdminNavigationLinks({ includeExport: true })
+            : renderAgentNavigationLinks()}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -4924,12 +4926,7 @@ function renderAgentRequestsPage(currentUser) {
           <p class="muted">Your approved unavailability and completed swap requests.</p>
         </div>
         <div class="row">
-          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>
-          <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a>
-          <a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>
-          <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
-          <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>
-          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
+          ${renderAgentNavigationLinks()}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -4997,12 +4994,7 @@ function renderPendingRequestsPage(currentUser) {
           <p class="muted">Your current unavailability and swap requests waiting on approval.</p>
         </div>
         <div class="row">
-          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>
-          <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a>
-          <a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>
-          <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
-          <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>
-          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
+          ${renderAgentNavigationLinks()}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -5090,14 +5082,7 @@ function renderEmailOutboxPage(currentUser) {
           <p class="muted">Review email notifications sent by the scheduler.</p>
         </div>
         <div class="row">
-          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
-          <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a>
-          <a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>
-          <a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>
-          <a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>
-          <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
-          <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
-          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
+          ${renderAdminNavigationLinks({ includeExport: true })}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -5163,14 +5148,7 @@ function renderAgentsPage(currentUser) {
           <p class="muted">Manage agent records, team assignments, and pay rates.</p>
         </div>
         <div class="row">
-          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
-          <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a>
-          <a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>
-          <a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>
-          <a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>
-          <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
-          <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
-          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
+          ${renderAdminNavigationLinks({ includeExport: true })}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -5360,14 +5338,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           <p class="muted">Review all submitted requests by date and manage approvals.</p>
         </div>
         <div class="row">
-          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
-          <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a>
-          <a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>
-          <a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a>
-          <a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>
-          <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
-          <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
-          <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
+          ${renderAdminNavigationLinks({ includeExport: true })}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -5668,13 +5639,8 @@ function render() {
         </div>
         <div class="row">
           ${isAgentView
-            ? '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'
-            : '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a><a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a><a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a><a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a><a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'}
-          ${!isAgentView ? '<button id="export-data-btn" class="secondary">Export JSON</button>' : ''}
-          ${!isAgentView ? `<label class="secondary" style="display:inline-flex; align-items:center; padding:10px 12px; border-radius:10px; cursor:pointer;">
-            <input id="import-data-input" type="file" accept="application/json" hidden />
-            Import JSON
-          </label>` : ''}
+            ? renderAgentNavigationLinks()
+            : renderAdminNavigationLinks({ includeExport: true })}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
