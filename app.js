@@ -220,6 +220,7 @@ const defaultState = {
     availabilitySwapAgentId: 'All',
     availabilitySwapStatus: 'All',
     availabilitySwapRequestsHidden: false,
+    availabilityDebugToolsVisible: false,
     availabilityDebugAgentId: '',
     swapRequestToAgentId: '',
     swapRequestToShiftId: '',
@@ -331,6 +332,7 @@ function getDefaultUiState() {
     availabilitySwapAgentId: 'All',
     availabilitySwapStatus: 'All',
     availabilitySwapRequestsHidden: false,
+    availabilityDebugToolsVisible: false,
     availabilityDebugAgentId: '',
     accessMode: 'admin',
     currentAgentId: defaultState.agents[0]?.id ?? null,
@@ -374,6 +376,7 @@ function normalizeUiState(source) {
     availabilitySwapAgentId: source?.availabilitySwapAgentId || defaults.availabilitySwapAgentId,
     availabilitySwapStatus: source?.availabilitySwapStatus || defaults.availabilitySwapStatus,
     availabilitySwapRequestsHidden: Boolean(source?.availabilitySwapRequestsHidden),
+    availabilityDebugToolsVisible: Boolean(source?.availabilityDebugToolsVisible),
     availabilityDebugAgentId: source?.availabilityDebugAgentId || defaults.availabilityDebugAgentId,
     swapRequestToAgentId: source?.swapRequestToAgentId || defaults.swapRequestToAgentId,
     swapRequestToShiftId: source?.swapRequestToShiftId || defaults.swapRequestToShiftId,
@@ -1968,9 +1971,15 @@ function reconcileAgentEmailsWithAuthUsers() {
     const agentEmail = normalizeEmail(agent.email || '');
     const linkedUserEmail = normalizeEmail(linkedUser?.email || '');
 
-    if (agentEmail && linkedUser && linkedUserEmail !== agentEmail) {
+    if (linkedUser && linkedUserEmail && linkedUserEmail !== agentEmail) {
+      didChange = true;
+      return { ...agent, email: linkedUserEmail };
+    }
+
+    if (agentEmail && linkedUser && !linkedUserEmail) {
+      const profileUpdatedAt = getCurrentIsoTimestamp();
       authUsers = authUsers.map((user) => user.id === linkedUser.id
-        ? { ...user, email: agentEmail }
+        ? { ...user, email: agentEmail, profileUpdatedAt }
         : user);
       didChange = true;
       return { ...agent, email: agentEmail };
@@ -2129,10 +2138,11 @@ function saveState() {
     ...sharedState,
     availabilityRequests: state.availabilityRequests
   };
-  safeSetLocalStorage(storageKey, JSON.stringify(persistableState));
-  safeSetLocalStorage(availabilityInboxKey, JSON.stringify(state.availabilityRequests));
-  safeSetLocalStorage(availabilityRequestsKey, JSON.stringify(state.availabilityRequests));
+  const didSaveState = safeSetLocalStorage(storageKey, JSON.stringify(persistableState));
+  const didSaveInbox = safeSetLocalStorage(availabilityInboxKey, JSON.stringify(state.availabilityRequests));
+  const didSaveRequests = safeSetLocalStorage(availabilityRequestsKey, JSON.stringify(state.availabilityRequests));
   saveUiState();
+  return didSaveState && didSaveInbox && didSaveRequests;
 }
 
 function getFilteredAvailabilityRequests(requests) {
@@ -2318,6 +2328,46 @@ function readFileAsDataUrl(file) {
     reader.onload = () => resolve(String(reader.result || ''));
     reader.onerror = () => reject(new Error('Unable to read selected file.'));
     reader.readAsDataURL(file);
+  });
+}
+
+function getDataUrlApproxBytes(dataUrl) {
+  const normalized = String(dataUrl || '');
+  const commaIndex = normalized.indexOf(',');
+  if (commaIndex < 0) return 0;
+  const base64 = normalized.slice(commaIndex + 1);
+  const padding = base64.endsWith('==') ? 2 : (base64.endsWith('=') ? 1 : 0);
+  return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+}
+
+function optimizeImageFileForProfilePhoto(file, maxDimension = 640, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const fileReader = new FileReader();
+    fileReader.onerror = () => reject(new Error('Unable to read selected image.'));
+    fileReader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('Unable to process selected image.'));
+      image.onload = () => {
+        const sourceWidth = Math.max(1, Number(image.width) || 1);
+        const sourceHeight = Math.max(1, Number(image.height) || 1);
+        const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
+        const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+        const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const context = canvas.getContext('2d');
+        if (!context) {
+          reject(new Error('Unable to process selected image.'));
+          return;
+        }
+        context.drawImage(image, 0, 0, targetWidth, targetHeight);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      image.src = String(fileReader.result || '');
+    };
+    fileReader.readAsDataURL(file);
   });
 }
 
@@ -3563,10 +3613,21 @@ function renderProfilePage(currentUser) {
         email,
         phone,
         password: createTemporaryPassword(),
+        createdAt: getCurrentIsoTimestamp(),
+        profileUpdatedAt: getCurrentIsoTimestamp(),
         role: 'admin'
       });
       authUsers.push(nextAdminUser);
-      saveAuthUsers();
+      const didSaveAuthUsers = saveAuthUsers();
+      if (!didSaveAuthUsers) {
+        adminManagerNotice = {
+          type: 'error',
+          text: 'Unable to save manager account right now. Please check browser storage settings and try again.',
+          resetLink: ''
+        };
+        render();
+        return;
+      }
       const inviteResult = sendAdminInviteEmail(nextAdminUser);
       const outboxCount = loadEmailOutbox().length;
       if (inviteResult?.deliveryStatus === 'local-only') {
@@ -3615,10 +3676,20 @@ function renderProfilePage(currentUser) {
               name,
               jobTitle,
               email,
-              phone
+              phone,
+              profileUpdatedAt: getCurrentIsoTimestamp()
             }
           : user);
-        saveAuthUsers();
+        const didSaveAuthUsers = saveAuthUsers();
+        if (!didSaveAuthUsers) {
+          adminManagerNotice = {
+            type: 'error',
+            text: 'Unable to save manager details right now. Please check browser storage settings and try again.',
+            resetLink: ''
+          };
+          render();
+          return;
+        }
         adminManagerNotice = {
           type: 'success',
           text: 'Manager details updated successfully.',
@@ -3778,7 +3849,17 @@ function renderProfilePage(currentUser) {
         authUsers = authUsers.map((user) => user.id === adminId
           ? { ...user, isActive: !isDeactivating }
           : user);
-        saveAuthUsers();
+        const didSaveAuthUsers = saveAuthUsers();
+        if (!didSaveAuthUsers) {
+          adminManagerNotice = {
+            type: 'error',
+            text: 'Unable to save manager status right now. Please check browser storage settings and try again.',
+            resetLink: ''
+          };
+          syncFromStorage();
+          render();
+          return;
+        }
         if (activeUser?.id === adminId && isDeactivating) {
           clearSession();
           alert('Your manager account was deactivated.');
@@ -3812,7 +3893,17 @@ function renderProfilePage(currentUser) {
         const shouldRemove = confirm(`Remove manager ${adminUser.name || adminUser.username || 'this account'}?`);
         if (!shouldRemove) return;
         authUsers = authUsers.filter((user) => Number(user.id) !== adminId);
-        saveAuthUsers();
+        const didSaveAuthUsers = saveAuthUsers();
+        if (!didSaveAuthUsers) {
+          adminManagerNotice = {
+            type: 'error',
+            text: 'Unable to remove manager right now. Please check browser storage settings and try again.',
+            resetLink: ''
+          };
+          syncFromStorage();
+          render();
+          return;
+        }
         adminManagerNotice = {
           type: 'success',
           text: 'Manager account removed.',
@@ -4667,23 +4758,6 @@ function renderAvailabilityRequestsPage(currentUser) {
   const monthBlackoutDates = allBlackoutDates
     .filter((dateValue) => String(dateValue || '').startsWith(`${selectedMonth}-`))
     .sort((left, right) => left.localeCompare(right));
-  const availabilityDebugAgentId = Number(state.ui.availabilityDebugAgentId || state.agents[0]?.id || 0);
-  const availabilityDebugAgent = getAgent(availabilityDebugAgentId) || state.agents[0] || null;
-  const availabilityDebugUser = availabilityDebugAgent ? getUserByAgentId(availabilityDebugAgent.id) : null;
-  const availabilityDebugRows = availabilityDebugUser
-    ? allAvailabilityRequests.map((request) => ({
-        id: request.id,
-        date: request.unavailableDate || String(request.requestedAt || '').slice(0, 10) || 'Not set',
-        type: request.unavailabilityType || 'Availability',
-        status: normalizeAvailabilityRequestStatus(request.status),
-        reason: getAvailabilityRequestVisibilityReason(request, availabilityDebugUser),
-        requestAgentName: getAgent(request.agentId)?.name || 'Unknown',
-        requesterEmail: request.requesterEmail || ''
-      })).filter((row) => Boolean(row.reason))
-    : [];
-  const availabilityDebugPendingCount = availabilityDebugRows.filter((row) => row.status === 'pending').length;
-  const availabilityDebugApprovedCount = availabilityDebugRows.filter((row) => row.status === 'approved').length;
-  const availabilityDebugRejectedCount = availabilityDebugRows.filter((row) => row.status === 'rejected').length;
 
   root.innerHTML = `
     <div class="app">
@@ -4726,37 +4800,6 @@ function renderAvailabilityRequestsPage(currentUser) {
             <span>Hide Swap requests</span>
           </label>
         </div>
-      </div>
-
-      <div class="panel" style="margin-bottom:16px;">
-        <h2 style="margin:0 0 10px;">Agent request debug</h2>
-        <div class="row" style="margin-bottom:8px;">
-          <select id="availability-debug-agent-filter" style="max-width:320px;">
-            ${state.agents.map((agent) => `<option value="${agent.id}" ${Number(agent.id) === Number(availabilityDebugAgent?.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
-          </select>
-        </div>
-        ${!availabilityDebugAgent ? '<div class="muted">No agents are available for debug.</div>' : ''}
-        ${availabilityDebugAgent && !availabilityDebugUser ? `<div class="muted">${escapeHtml(availabilityDebugAgent.name)} has no linked login account, so agent pending/approved pages cannot resolve request ownership.</div>` : ''}
-        ${availabilityDebugAgent && availabilityDebugUser ? `
-          <div class="muted">Debugging as agent: ${escapeHtml(availabilityDebugAgent.name)} (${escapeHtml(availabilityDebugUser.email || 'no email')})</div>
-          <div class="muted">Matched requests: ${availabilityDebugRows.length} | Pending: ${availabilityDebugPendingCount} | Approved: ${availabilityDebugApprovedCount} | Rejected: ${availabilityDebugRejectedCount}</div>
-          <div class="request-list" style="margin-top:10px; max-height:260px; overflow:auto;">
-            ${availabilityDebugRows.slice(0, 50).map((row) => `
-              <div class="card">
-                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
-                  <div>
-                    <strong>${escapeHtml(String(row.type))}</strong>
-                    <div class="muted">Date: ${escapeHtml(String(row.date))}</div>
-                    <div class="muted">Status: ${escapeHtml(String(row.status))}</div>
-                    <div class="muted">Matched by: ${escapeHtml(String(row.reason))}</div>
-                    <div class="muted">Request agent: ${escapeHtml(String(row.requestAgentName))}</div>
-                  </div>
-                  <span class="chip">#${escapeHtml(String(row.id))}</span>
-                </div>
-              </div>
-            `).join('') || '<div class="muted">No requests match this agent under current ownership rules.</div>'}
-          </div>
-        ` : ''}
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
@@ -5456,22 +5499,31 @@ function bindEvents() {
       availability: 'Available'
     });
 
+    const createdAt = getCurrentIsoTimestamp();
     const nextUser = withRequiredEmail({
       id: createId(),
       username: createUniqueAgentUsername(email),
       email,
       phone: '',
       password: createTemporaryPassword(),
+      createdAt,
+      profileUpdatedAt: createdAt,
       mustChangePassword: true,
       calendarFeedToken: createCalendarFeedToken(),
       role: 'agent',
       agentId
     });
     authUsers.push(nextUser);
-    saveAuthUsers();
+    const didSaveAuthUsers = saveAuthUsers();
+    const didSaveState = saveState();
+    if (!didSaveAuthUsers || !didSaveState) {
+      alert('Unable to save the new agent permanently. Please check browser storage settings and try again.');
+      syncFromStorage();
+      render();
+      return;
+    }
     const inviteResult = sendAgentInviteEmail(nextUser, name, nextUser.password);
 
-    saveState();
     const outboxCount = loadEmailOutbox().length;
     if (inviteResult?.deliveryStatus === 'local-only') {
       alert(`Agent added. Invite was queued in Email outbox (local-only) because webhook delivery is not enabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || '(not available)'}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}`);
@@ -5976,12 +6028,6 @@ function bindEvents() {
     render();
   });
 
-  document.getElementById('availability-debug-agent-filter')?.addEventListener('change', (event) => {
-    state.ui.availabilityDebugAgentId = event.target.value || '';
-    saveUiState();
-    render();
-  });
-
   document.getElementById('calendar-filters-apply')?.addEventListener('click', () => {
     const searchInput = document.getElementById('calendar-search');
     const daySelect = document.getElementById('calendar-day-filter');
@@ -6132,15 +6178,20 @@ function bindEvents() {
       alert('Profile photo must be an image file.');
       return;
     }
-    if (profilePhoto.size > (2 * 1024 * 1024)) {
-      alert('Profile photo must be 2 MB or smaller.');
+    if (profilePhoto.size > (8 * 1024 * 1024)) {
+      alert('Profile photo must be 8 MB or smaller.');
       return;
     }
 
     try {
-      const imageDataUrl = await readFileAsDataUrl(profilePhoto);
+      const imageDataUrl = await optimizeImageFileForProfilePhoto(profilePhoto);
       if (!String(imageDataUrl || '').startsWith('data:image/')) {
         alert('Unable to process the selected image. Please choose a different file.');
+        return;
+      }
+      const imageByteSize = getDataUrlApproxBytes(imageDataUrl);
+      if (imageByteSize > (700 * 1024)) {
+        alert(`Processed profile photo is still too large to save reliably (${formatBytes(imageByteSize)}). Please choose a smaller image.`);
         return;
       }
       authUsers = authUsers.map((user) => user.id === currentUser.id
@@ -6150,7 +6201,13 @@ function bindEvents() {
             profileUpdatedAt: getCurrentIsoTimestamp()
           }
         : user);
-      saveAuthUsers();
+      const didSavePhoto = saveAuthUsers();
+      if (!didSavePhoto) {
+        alert('Unable to save profile photo. Storage may be full on this device. Please try a smaller image.');
+        syncFromStorage();
+        render();
+        return;
+      }
       alert('Profile photo uploaded successfully.');
       render();
     } catch {
@@ -6168,7 +6225,13 @@ function bindEvents() {
           profileUpdatedAt: getCurrentIsoTimestamp()
         }
       : user);
-    saveAuthUsers();
+    const didSavePhotoRemoval = saveAuthUsers();
+    if (!didSavePhotoRemoval) {
+      alert('Unable to save profile photo changes. Storage may be full on this device.');
+      syncFromStorage();
+      render();
+      return;
+    }
     alert('Profile photo removed.');
     render();
   });
@@ -6287,27 +6350,38 @@ function bindEvents() {
 
       const existingAgentUser = getUserByAgentId(id);
       if (existingAgentUser) {
+        const profileUpdatedAt = getCurrentIsoTimestamp();
         authUsers = authUsers.map((user) => user.id === existingAgentUser.id
           ? {
               ...user,
-              email
+              email,
+              profileUpdatedAt
             }
           : user);
       } else {
+        const createdAt = getCurrentIsoTimestamp();
         authUsers.push(withRequiredEmail({
           id: createId(),
           username: createUniqueAgentUsername(email),
           email,
           phone: '',
           password: createTemporaryPassword(),
+          createdAt,
+          profileUpdatedAt: createdAt,
           mustChangePassword: true,
           calendarFeedToken: createCalendarFeedToken(),
           role: 'agent',
           agentId: id
         }));
       }
-      saveAuthUsers();
-      saveState();
+      const didSaveAuthUsers = saveAuthUsers();
+      const didSaveState = saveState();
+      if (!didSaveAuthUsers || !didSaveState) {
+        alert('Unable to save agent details permanently. Please check browser storage settings and try again.');
+        syncFromStorage();
+        render();
+        return;
+      }
       render();
     });
   });
