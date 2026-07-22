@@ -2872,6 +2872,39 @@ function getFilteredCalendarShifts() {
   });
 }
 
+function getCalendarShiftSortMinutes(timeValue) {
+  const [hoursPart, minutesPart] = String(timeValue || '').split(':');
+  const hours = Number(hoursPart);
+  const minutes = Number(minutesPart);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return Number.MAX_SAFE_INTEGER;
+  return (hours * 60) + minutes;
+}
+
+function getAgentTeamSortPriority(agentId) {
+  const normalizedTeam = normalizeTeamLabel(getAgent(agentId)?.team || '');
+  if (normalizedTeam === 'Audience Services Representative') return 0;
+  if (normalizedTeam === 'Audience Services Associate') return 1;
+  return 2;
+}
+
+function compareCalendarShiftDisplayOrder(leftShift, rightShift) {
+  const startDiff = getCalendarShiftSortMinutes(leftShift?.start) - getCalendarShiftSortMinutes(rightShift?.start);
+  if (startDiff !== 0) return startDiff;
+
+  const teamDiff = getAgentTeamSortPriority(leftShift?.agentId) - getAgentTeamSortPriority(rightShift?.agentId);
+  if (teamDiff !== 0) return teamDiff;
+
+  const locationDiff = String(leftShift?.location || '').localeCompare(String(rightShift?.location || ''), undefined, { sensitivity: 'base' });
+  if (locationDiff !== 0) return locationDiff;
+
+  const leftName = String(getAgent(leftShift?.agentId)?.name || '');
+  const rightName = String(getAgent(rightShift?.agentId)?.name || '');
+  const nameDiff = leftName.localeCompare(rightName, undefined, { sensitivity: 'base' });
+  if (nameDiff !== 0) return nameDiff;
+
+  return Number(leftShift?.id || 0) - Number(rightShift?.id || 0);
+}
+
 function formatTime12Hour(timeValue) {
   const [hoursPart, minutesPart] = String(timeValue || '').split(':');
   const hours = Number(hoursPart);
@@ -3018,8 +3051,9 @@ function renderCalendarPage(currentUser) {
   const visibleCalendarShifts = isAgentView
     ? scopedCalendarShifts.filter((shift) => isPublishedShift(shift))
     : scopedCalendarShifts;
+  const sortedVisibleCalendarShifts = [...visibleCalendarShifts].sort(compareCalendarShiftDisplayOrder);
   const agentViewShifts = getAgentViewShifts();
-  const visibleShiftIdSet = new Set(visibleCalendarShifts.map((shift) => Number(shift.id)));
+  const visibleShiftIdSet = new Set(sortedVisibleCalendarShifts.map((shift) => Number(shift.id)));
   selectedCalendarShiftIds = new Set(Array.from(selectedCalendarShiftIds).filter((id) => visibleShiftIdSet.has(Number(id))));
   const selectedShiftCount = selectedCalendarShiftIds.size;
 
@@ -3161,7 +3195,7 @@ function renderCalendarPage(currentUser) {
                 </div>
                 ${!isAgentView ? `<button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button>` : ''}
               </div>
-              ${visibleCalendarShifts.filter((shift) => shift.day === day).map((shift) => `
+              ${sortedVisibleCalendarShifts.filter((shift) => shift.day === day).map((shift) => `
                 <div class="shift ${!isAgentView && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
                   <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>${getAgent(shift.agentId)?.role ? `<span class="muted"> (${escapeHtml(getAgent(shift.agentId)?.role)})</span>` : ''}${!isAgentView && getAgent(shift.agentId)?.team ? `<div class="muted">${escapeHtml(normalizeTeamLabel(getAgent(shift.agentId)?.team))}</div>` : ''}<br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
                   ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row calendar-shift-actions" style="margin-top:6px;"><button type="button" class="secondary" data-toggle-shift-select="${shift.id}">${selectedCalendarShiftIds.has(Number(shift.id)) ? 'Selected' : 'Select'}</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Dup</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
