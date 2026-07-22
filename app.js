@@ -2466,30 +2466,50 @@ async function extractDocxXmlText(policy) {
   if (!bytes) return '';
 
   const targetFileName = 'word/document.xml';
-  let offset = 0;
-  while (offset + 30 <= bytes.length) {
-    const signature = new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0, true);
-    if (signature !== 0x04034b50) break;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let eocdOffset = -1;
+  for (let index = bytes.length - 22; index >= 0; index -= 1) {
+    if (view.getUint32(index, true) === 0x06054b50) {
+      eocdOffset = index;
+      break;
+    }
+  }
+  if (eocdOffset < 0) return '';
 
-    const method = new DataView(bytes.buffer, bytes.byteOffset + offset + 8, 2).getUint16(0, true);
-    const compressedSize = new DataView(bytes.buffer, bytes.byteOffset + offset + 18, 4).getUint32(0, true);
-    const fileNameLength = new DataView(bytes.buffer, bytes.byteOffset + offset + 26, 2).getUint16(0, true);
-    const extraLength = new DataView(bytes.buffer, bytes.byteOffset + offset + 28, 2).getUint16(0, true);
+  const centralDirectorySize = view.getUint32(eocdOffset + 12, true);
+  const centralDirectoryOffset = view.getUint32(eocdOffset + 16, true);
+  const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
+  let offset = centralDirectoryOffset;
 
-    const fileNameStart = offset + 30;
+  while (offset + 46 <= centralDirectoryEnd) {
+    if (view.getUint32(offset, true) !== 0x02014b50) {
+      break;
+    }
+
+    const compressionMethod = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const fileNameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+
+    const fileNameStart = offset + 46;
     const fileNameEnd = fileNameStart + fileNameLength;
     const fileName = new TextDecoder('utf-8').decode(bytes.slice(fileNameStart, fileNameEnd));
-    const dataStart = fileNameEnd + extraLength;
-    const dataEnd = dataStart + compressedSize;
-    const entryBytes = bytes.slice(dataStart, dataEnd);
 
     if (fileName === targetFileName) {
-      const inflatedBytes = await inflateZipEntry(entryBytes, method);
+      if (view.getUint32(localHeaderOffset, true) !== 0x04034b50) return '';
+      const localFileNameLength = view.getUint16(localHeaderOffset + 26, true);
+      const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
+      const dataStart = localHeaderOffset + 30 + localFileNameLength + localExtraLength;
+      const dataEnd = dataStart + compressedSize;
+      const entryBytes = bytes.slice(dataStart, dataEnd);
+      const inflatedBytes = await inflateZipEntry(entryBytes, compressionMethod);
       if (!inflatedBytes) return '';
       return new TextDecoder('utf-8', { fatal: false }).decode(inflatedBytes);
     }
 
-    offset = dataEnd;
+    offset = fileNameEnd + extraLength + commentLength;
   }
 
   return '';
