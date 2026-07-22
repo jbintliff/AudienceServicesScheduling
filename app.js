@@ -3057,7 +3057,7 @@ function renderCalendarPage(currentUser) {
               </div>
               ${visibleCalendarShifts.filter((shift) => shift.day === day).map((shift) => `
                 <div class="shift ${!isAgentView && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                  <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>${getAgent(shift.agentId)?.role ? `<span class="muted"> (${escapeHtml(getAgent(shift.agentId)?.role)})</span>` : ''}<br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
+                  <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>${getAgent(shift.agentId)?.role ? `<span class="muted"> (${escapeHtml(getAgent(shift.agentId)?.role)})</span>` : ''}${!isAgentView && getAgent(shift.agentId)?.team ? `<div class="muted">${escapeHtml(normalizeTeamLabel(getAgent(shift.agentId)?.team))}</div>` : ''}<br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
                   ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row calendar-shift-actions" style="margin-top:6px;"><button type="button" class="secondary" data-toggle-shift-select="${shift.id}">${selectedCalendarShiftIds.has(Number(shift.id)) ? 'Selected' : 'Select'}</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Dup</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
                   ${isAgentView ? `
                     <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
@@ -3663,8 +3663,19 @@ function renderProfilePage(currentUser) {
   const calendarSyncUrl = getAgentCalendarFeedUrl(activeAgentUser.calendarFeedToken);
 
   root.innerHTML = `
-    <div class="app">
-      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+    <div class="app agents-compact">
+      <style>
+        .agents-compact .panel { padding: 14px; }
+        .agents-compact .card { padding: 8px !important; }
+        .agents-compact .row { gap: 6px; }
+        .agents-compact input,
+        .agents-compact select,
+        .agents-compact button,
+        .agents-compact textarea { padding: 6px 8px; font-size: 0.84rem; border-radius: 8px; }
+        .agents-compact .chip { padding: 4px 8px; font-size: 0.78rem; }
+        .agents-compact .muted { font-size: 0.82rem; }
+      </style>
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
         <div>
           <h1>My profile</h1>
           <p class="muted">Review your account details. You can update your phone number and password here; all other changes must be made by an admin.</p>
@@ -4220,10 +4231,10 @@ function renderAgentsPage(currentUser) {
       </div>
 
       <div class="panel">
-        <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+        <div class="row" style="justify-content:space-between; margin-bottom:6px;">
           <h2 style="margin:0;">Agents</h2>
         </div>
-        <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+        <div class="row" style="justify-content:space-between; margin-bottom:6px; gap:6px; flex-wrap:wrap;">
           <input id="agent-search" placeholder="Search agents" value="${escapeHtml(state.ui.agentSearch)}" />
           <select id="agent-role-filter" style="max-width:220px;">
             <option value="All" ${selectedAgentRoleFilter === 'All' ? 'selected' : ''}>Filter: All roles</option>
@@ -4234,14 +4245,11 @@ function renderAgentsPage(currentUser) {
             <option value="team" ${agentSort === 'team' ? 'selected' : ''}>Sort: Team</option>
           </select>
         </div>
-        <div class="muted" style="margin-bottom:8px;">Add an agent with email to automatically send a password setup invite.</div>
+        <div class="muted" style="margin-bottom:6px;">Add an agent with email to automatically send a password setup invite.</div>
         <form id="add-agent-form" class="stack">
-          <div class="row">
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(112px, 1fr)); gap:5px; align-items:end;">
             <input name="name" placeholder="Name" required />
             <input name="email" type="email" placeholder="Email" required />
-            <select name="role" required>
-              ${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
-            </select>
             <select name="team" required>
               ${teamOptions.map((team) => `<option value="${team}">${escapeHtml(team)}</option>`).join('')}
             </select>
@@ -4250,25 +4258,22 @@ function renderAgentsPage(currentUser) {
             <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Max hrs" />
             <input name="minInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Min in-office" />
             <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" />
-            <button type="submit">Add agent</button>
+            <button type="submit" style="white-space:nowrap;">Add agent</button>
           </div>
         </form>
-        <div class="agent-list" style="margin-top:12px; display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:8px;">
+        <div class="agent-list" style="margin-top:8px; display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:6px;">
           ${sortedAgents.map((agent) => `
-            <div class="card" style="padding:10px;">
-              <form class="stack" data-update-agent="${agent.id}" style="gap:8px;">
+            <div class="card" style="padding:8px;">
+              <form class="stack" data-update-agent="${agent.id}" style="gap:6px;">
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
                     <strong>${escapeHtml(agent.name)}</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span>
-                    <div class="muted">Assigned hours this week: ${getAssignedHours(agent.id)} hrs</div>
-                    <div class="muted">Minimum-hours credit this week: ${getMinimumHoursCredit(agent.id)} hrs (shifts + approved PTO)</div>
-                    <div class="muted">This agent's weekly hours target: min ${escapeHtml(agent.minHours ?? 0)} / max ${escapeHtml(agent.maxHours ?? 'Not set')}</div>
-                    <div class="muted">This agent's weekly in-office shifts: ${getAssignedInOfficeShiftCount(agent.id)} (target min ${escapeHtml(agent.minInOfficeShifts ?? 0)} / max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')})</div>
+                    <div class="muted">Hours: ${getAssignedHours(agent.id)} | Credit: ${getMinimumHoursCredit(agent.id)} (incl. PTO)</div>
+                    <div class="muted">Targets: hrs ${escapeHtml(agent.minHours ?? 0)}-${escapeHtml(agent.maxHours ?? 'Not set')} | in-office ${escapeHtml(agent.minInOfficeShifts ?? 0)}-${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
                     <div class="muted">Email: ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   </div>
                 </div>
-                <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px;">
-                  <div class="stack" style="gap:8px;">
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:5px;">
                     <input name="name" value="${escapeHtml(agent.name)}" placeholder="Name" required />
                     <input name="email" type="email" value="${escapeHtml(getAgentAccountEmail(agent.id) || '')}" placeholder="Email" required />
                     <select name="role" required>
@@ -4277,23 +4282,16 @@ function renderAgentsPage(currentUser) {
                     <select name="team" required>
                       ${teamOptions.map((team) => `<option value="${team}" ${(agent.team || teamOptions[0]) === team ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
                     </select>
-                  </div>
-                  <div class="stack" style="gap:8px;">
                     <input name="payRate" type="text" inputmode="decimal" placeholder="Pay rate" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" />
-                    <div class="row" style="gap:8px;">
-                      <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Min hrs" value="${escapeHtml(agent.minHours ?? 0)}" />
-                      <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Max hrs" value="${escapeHtml(agent.maxHours ?? '')}" />
-                    </div>
-                    <div class="row" style="gap:8px;">
-                      <input name="minInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Min in-office" value="${escapeHtml(agent.minInOfficeShifts ?? 0)}" />
-                      <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" />
-                    </div>
-                  </div>
+                    <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Min hrs" value="${escapeHtml(agent.minHours ?? 0)}" />
+                    <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Max hrs" value="${escapeHtml(agent.maxHours ?? '')}" />
+                    <input name="minInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Min in-office" value="${escapeHtml(agent.minInOfficeShifts ?? 0)}" />
+                    <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" />
                 </div>
-                <div class="row" style="gap:8px; justify-content:flex-end;">
-                  <button class="secondary" type="submit">Save agent</button>
-                  <button class="secondary" type="button" data-resend-agent-invite="${agent.id}">Resend invite</button>
-                  <button class="danger" data-remove-agent="${agent.id}" type="button">Remove</button>
+                <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
+                  <button class="secondary" type="submit" style="padding:6px 9px;">Save</button>
+                  <button class="secondary" type="button" data-resend-agent-invite="${agent.id}" style="padding:6px 9px;">Resend</button>
+                  <button class="danger" data-remove-agent="${agent.id}" type="button" style="padding:6px 9px;">Remove</button>
                 </div>
               </form>
             </div>
