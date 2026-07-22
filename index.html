@@ -8,43 +8,43 @@
       :root {
         color-scheme: dark;
         font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: #2a2420;
-        color: #f8f2e9;
+        background: #8599b8;
+        color: #f8f4ef;
       }
-      body { margin:0; background:linear-gradient(160deg,#2c241f 0%,#3a2e27 45%,#2a211d 100%); min-height:100vh; }
+      body { margin:0; background:linear-gradient(165deg,#8599b8 0%, #92abd3 36%, #e49c95 68%, #fac098 100%); min-height:100vh; }
       * { box-sizing:border-box; }
       .app { width:100%; max-width:none; margin:0; padding:24px; }
-      .panel { background: rgba(30,23,19,0.84); border:1px solid rgba(229,194,167,0.36); border-radius:16px; padding:18px; backdrop-filter: blur(10px); }
+      .panel { background: rgba(45,58,82,0.58); border:1px solid rgba(250,192,152,0.52); border-radius:16px; padding:18px; backdrop-filter: blur(10px); }
       h1,h2,h3 { margin-top:0; }
       .grid { display:grid; gap:16px; grid-template-columns: 1.05fr 0.95fr; }
       .stack { display:grid; gap:12px; }
       .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-      input, select, button, textarea { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid #b99379; background:#342923; color:#f8f2e9; }
+      input, select, button, textarea { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid #fac098; background:rgba(58,72,98,0.9); color:#f8f4ef; }
       textarea { min-height:72px; resize:vertical; }
-      button { cursor:pointer; background:#d36a62; border:none; color:#ffffff; font-weight:600; transition: transform .15s ease, filter .15s ease; }
+      button { cursor:pointer; background:#e49c95; border:none; color:#2b3040; font-weight:600; transition: transform .15s ease, filter .15s ease; }
       button:hover { transform: translateY(-1px); }
       button:hover, button:focus-visible { filter: brightness(1.08); }
-      button.secondary { background:#6d5447; color:#f8f2e9; }
-      button.danger { background:#9d4c48; color:#fff4f2; }
-      button.success { background:#c9a68f; color:#2b1f18; }
+      button.secondary { background:#92abd3; color:#1f2d46; }
+      button.danger { background:#c97979; color:#fff4f2; }
+      button.success { background:#fac098; color:#3b2a1f; }
       button:disabled { opacity:0.58; cursor:not-allowed; filter:none; }
       .app.calendar-view button { padding:5px 8px; font-size:0.78rem; line-height:1.1; border-radius:7px; }
-      .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#e6c4af; color:#2f211a; font-size:0.9rem; }
-      .chip { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#c9aa93; color:#2f211a; font-size:0.85rem; }
+      .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#fac098; color:#3f2d22; font-size:0.9rem; }
+      .chip { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#e49c95; color:#3a2a34; font-size:0.85rem; }
       .agent-list, .shift-list, .template-list, .request-list { display:grid; gap:10px; }
-      .card { border:1px solid rgba(209,167,136,0.36); border-radius:12px; padding:12px; background:rgba(66,50,41,0.62); }
-      .muted { color:#e9d8c9; font-size:0.9rem; }
+      .card { border:1px solid rgba(250,192,152,0.48); border-radius:12px; padding:12px; background:rgba(64,78,106,0.62); }
+      .muted { color:#f4e6d9; font-size:0.9rem; }
       .stats { display:grid; gap:10px; grid-template-columns: repeat(4, minmax(0,1fr)); }
-      .stat { padding:12px; border-radius:12px; background:rgba(88,66,54,0.66); }
+      .stat { padding:12px; border-radius:12px; background:rgba(69,85,116,0.72); }
       .day-row { display:grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap:8px; }
-      .day-card { min-height:160px; padding:10px; border-radius:12px; background:rgba(52,40,33,0.9); border:1px solid rgba(190,151,124,0.42); }
+      .day-card { min-height:160px; padding:10px; border-radius:12px; background:rgba(57,72,99,0.88); border:1px solid rgba(250,192,152,0.45); }
       .day-card h4 { margin:0 0 8px; font-size:0.95rem; }
       .day-card .shift { margin-bottom:6px; padding:6px; border-radius:8px; background:#d36a62; font-size:0.85rem; cursor:grab; }
-      .day-card .shift.selected { box-shadow: 0 0 0 2px #f2c98f, 0 0 0 4px rgba(139,102,79,0.55); }
-      .day-card.drag-over { border-color:#f2c98f; box-shadow: inset 0 0 0 1px #f2c98f; }
-      .status-badge { display:inline-flex; padding:4px 8px; border-radius:999px; font-size:0.8rem; background:#6b4f42; color:#f7efe6; }
+      .day-card .shift.selected { box-shadow: 0 0 0 2px #fac098, 0 0 0 4px rgba(146,171,211,0.5); }
+      .day-card.drag-over { border-color:#fac098; box-shadow: inset 0 0 0 1px #fac098; }
+      .status-badge { display:inline-flex; padding:4px 8px; border-radius:999px; font-size:0.8rem; background:#8599b8; color:#f8f4ef; }
       .status-badge.pending { background:#FDD592; color:#4B3A1F; }
-      .status-badge.approved { background:#93b48f; color:#1f3520; }
+      .status-badge.approved { background:#9fc39a; color:#1f3520; }
       .status-badge.rejected { background:#AB5C57; color:#FFF1EF; }
       .app.calendar-view .calendar-admin-bulk-actions,
       .app.calendar-view .calendar-shift-actions {
@@ -68,7 +68,7 @@
     </style>
     <link rel="icon" type="image/svg+xml" href="./icons/icon-192.svg" />
     <link rel="manifest" href="./manifest.json" />
-    <meta name="theme-color" content="#6b4f42" />
+    <meta name="theme-color" content="#92abd3" />
   </head>
   <body>
     <div id="root"></div>
