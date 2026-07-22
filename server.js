@@ -17,6 +17,8 @@ const allowedKeys = new Set([
   'agent-scheduler-availability-inbox-v1',
   'agent-scheduler-availability-ledger-v1',
   'agent-scheduler-password-reset-requests-v1',
+  'agent-scheduler-app-login-url-v1',
+  'agent-scheduler-profile-photos-v1',
   'agent-scheduler-email-outbox-v1',
   'agent-scheduler-email-delivery-settings-v1'
 ]);

@@ -23,6 +23,7 @@ const uiStateKey = 'agent-scheduler-ui-state-v1';
 const fixedEmailSenderName = 'Audience Services Manager';
 const emailDeliveryProviders = ['generic', 'sendgrid', 'mailgun'];
 const agentPasswordMaxAgeDays = 90;
+const defaultPasswordUpdatedAt = '2026-01-01T00:00:00.000Z';
 const shiftStatuses = {
   draft: 'draft',
   published: 'published'
@@ -245,17 +246,26 @@ function getCurrentIsoTimestamp() {
   return new Date().toISOString();
 }
 
-function getAuthUserUpdatedAtScore(user) {
-  const candidateValues = [user?.profileUpdatedAt, user?.passwordUpdatedAt, user?.createdAt, user?.updatedAt];
+function getTimestampScore(value) {
+  const parsed = new Date(String(value || ''));
+  const timestamp = parsed.getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function getAuthUserPrimaryUpdatedAtScore(user) {
+  const candidateValues = [user?.profileUpdatedAt, user?.updatedAt, user?.createdAt];
   let best = 0;
   candidateValues.forEach((value) => {
-    const parsed = new Date(String(value || ''));
-    const timestamp = parsed.getTime();
-    if (!Number.isNaN(timestamp) && timestamp > best) {
+    const timestamp = getTimestampScore(value);
+    if (timestamp > best) {
       best = timestamp;
     }
   });
   return best;
+}
+
+function getAuthUserPasswordUpdatedAtScore(user) {
+  return getTimestampScore(user?.passwordUpdatedAt);
 }
 
 function parseAuthUsersForMerge(rawValue) {
@@ -286,8 +296,19 @@ function mergeAuthUsersSnapshotByRecency(localRawValue, remoteRawValue) {
       mergedById.set(id, localUser);
       return;
     }
-    const localScore = getAuthUserUpdatedAtScore(localUser);
-    const remoteScore = getAuthUserUpdatedAtScore(remoteUser);
+
+    // Prefer explicit profile/account update timestamps over password-only timestamps.
+    const localPrimaryScore = getAuthUserPrimaryUpdatedAtScore(localUser);
+    const remotePrimaryScore = getAuthUserPrimaryUpdatedAtScore(remoteUser);
+    if (localPrimaryScore > 0 || remotePrimaryScore > 0) {
+      if (localPrimaryScore >= remotePrimaryScore) {
+        mergedById.set(id, localUser);
+      }
+      return;
+    }
+
+    const localScore = getAuthUserPasswordUpdatedAtScore(localUser);
+    const remoteScore = getAuthUserPasswordUpdatedAtScore(remoteUser);
     if (localScore >= remoteScore) {
       mergedById.set(id, localUser);
     }
@@ -298,9 +319,9 @@ function mergeAuthUsersSnapshotByRecency(localRawValue, remoteRawValue) {
 
 function normalizePasswordUpdatedAt(value) {
   const normalized = String(value || '').trim();
-  if (!normalized) return getCurrentIsoTimestamp();
+  if (!normalized) return defaultPasswordUpdatedAt;
   const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) return getCurrentIsoTimestamp();
+  if (Number.isNaN(parsed.getTime())) return defaultPasswordUpdatedAt;
   return parsed.toISOString();
 }
 
@@ -443,10 +464,10 @@ const defaultState = {
 };
 
 const defaultAuthUsers = [
-  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', email: 'admin@scheduler.local', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: getCurrentIsoTimestamp(), role: 'admin' },
-  { id: 1002, username: 'maya', email: 'maya@scheduler.local', phone: '215-555-0101', password: 'Agent123!', passwordUpdatedAt: getCurrentIsoTimestamp(), role: 'agent', agentId: 1 },
-  { id: 1003, username: 'luis', email: 'luis@scheduler.local', phone: '215-555-0102', password: 'Agent123!', passwordUpdatedAt: getCurrentIsoTimestamp(), role: 'agent', agentId: 2 },
-  { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', passwordUpdatedAt: getCurrentIsoTimestamp(), role: 'agent', agentId: 3 }
+  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', email: 'admin@scheduler.local', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: 'admin' },
+  { id: 1002, username: 'maya', email: 'maya@scheduler.local', phone: '215-555-0101', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: 'agent', agentId: 1 },
+  { id: 1003, username: 'luis', email: 'luis@scheduler.local', phone: '215-555-0102', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: 'agent', agentId: 2 },
+  { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: 'agent', agentId: 3 }
 ];
 
 const state = loadState();
