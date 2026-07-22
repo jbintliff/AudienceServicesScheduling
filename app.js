@@ -4710,6 +4710,16 @@ function render() {
           <div class="stat"><strong>${stats.available}</strong><div class="muted">Available</div></div>
           <div class="stat"><strong>$${getWeeklySpend()}</strong><div class="muted">Weekly spend</div></div>
         </div>` : `
+        <div class="panel" style="margin-bottom:12px;">
+          <h2 style="margin:0 0 8px;">Employee Hotline</h2>
+          <div><strong>(215) 893-1832</strong></div>
+          <ul style="margin:8px 0 0 18px; padding:0;">
+            <li>Office Opening & Closing Updates, please press 1</li>
+            <li>Notify of Call Out or Lateness, please press 2</li>
+          </ul>
+          <div class="muted" style="margin-top:8px;">Remember to update your contact information, email, SMS/TXT notification or any other preferences by clicking "Account".</div>
+          <div class="muted" style="margin-top:6px;"><strong>If you have a picture for your account, you can upload that too.</strong></div>
+        </div>
         <div class="panel" style="margin-bottom:16px;">
           <strong>${escapeHtml(viewAgent?.name || 'Agent')}</strong>
           <div class="muted">You can review your assignments and request changes here.</div>
