@@ -4619,9 +4619,6 @@ function renderProfilePage(currentUser) {
               <div><strong>Name:</strong> ${escapeHtml(viewAgent?.name || 'Not set')}</div>
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
-              <div><strong>This agent's weekly minimum hours:</strong> ${escapeHtml(viewAgent?.minHours ?? 0)}</div>
-              <div><strong>This week's minimum-hours credit:</strong> ${escapeHtml(getMinimumHoursCredit(viewAgent?.id || 0))} hrs</div>
-              <div><strong>This agent's weekly maximum hours:</strong> ${escapeHtml(viewAgent?.maxHours ?? 'Not set')}</div>
               <div><strong>Email:</strong> ${escapeHtml(activeAgentUser?.email || 'Not set')}</div>
               <div><strong>Phone:</strong> ${escapeHtml(activeAgentUser?.phone || 'Not set')}</div>
             </div>
