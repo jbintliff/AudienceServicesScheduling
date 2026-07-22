@@ -150,6 +150,7 @@ const pageMode = (() => {
   const queryMode = new URLSearchParams(window.location.search).get('view');
   if (queryMode === 'calendar') return 'calendar';
   if (queryMode === 'agents') return 'agents';
+  if (queryMode === 'pending-requests') return 'pending-requests';
   if (queryMode === 'agent-requests') return 'agent-requests';
   if (queryMode === 'profile') return 'profile';
   if (queryMode === 'email-outbox') return 'email-outbox';
@@ -159,6 +160,7 @@ const pageMode = (() => {
   const mode = document.body?.dataset?.page;
   if (mode === 'calendar') return 'calendar';
   if (mode === 'agents') return 'agents';
+  if (mode === 'pending-requests') return 'pending-requests';
   if (mode === 'agent-requests') return 'agent-requests';
   if (mode === 'profile') return 'profile';
   if (mode === 'email-outbox') return 'email-outbox';
