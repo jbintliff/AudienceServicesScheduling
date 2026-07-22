@@ -1428,6 +1428,19 @@ function getResetLink(token) {
   }
 }
 
+function getCurrentPageResetLink(token) {
+  try {
+    const currentUrl = new URL(window.location.href);
+    currentUrl.search = '';
+    currentUrl.hash = '';
+    currentUrl.searchParams.set('resetToken', String(token || ''));
+    return currentUrl.toString();
+  } catch {
+    const base = String(window.location.pathname || 'index.html');
+    return `${base}?resetToken=${encodeURIComponent(token)}`;
+  }
+}
+
 function loadSession() {
   try {
     const saved = localStorage.getItem(sessionKey);
@@ -1504,6 +1517,17 @@ function getUserDisplayName(user) {
     return getAgent(Number(user.agentId))?.name || user.username;
   }
   return user.username;
+}
+
+function renderUserNavChip(user) {
+  const displayName = getUserDisplayName(user) || 'User';
+  const roleLabel = String(user?.role || '').trim() || 'account';
+  const photoDataUrl = String(user?.profilePhotoDataUrl || '').trim();
+  const fallbackInitial = String(displayName || 'U').trim().charAt(0).toUpperCase() || 'U';
+  const avatarMarkup = photoDataUrl
+    ? `<img src="${escapeHtml(photoDataUrl)}" alt="Profile" style="width:22px; height:22px; border-radius:999px; object-fit:cover; border:1px solid rgba(255,255,255,0.45);" />`
+    : `<span style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:999px; border:1px solid rgba(255,255,255,0.45); background:rgba(255,255,255,0.12); color:#fff; font-size:0.75rem; font-weight:700;">${escapeHtml(fallbackInitial)}</span>`;
+  return `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${avatarMarkup}<span>${escapeHtml(displayName)} (${escapeHtml(roleLabel)})</span></span>`;
 }
 
 function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
@@ -1693,6 +1717,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     const passwordResetRequests = loadPasswordResetRequests();
     const token = createResetToken();
     const resetLink = getResetLink(token);
+    const localResetLink = getCurrentPageResetLink(token);
     const expiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
     const updatedRequests = [
       ...passwordResetRequests,
@@ -1713,8 +1738,8 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       body: `We received a request to reset your password. Use this link within 1 hour: ${resetLink}`,
       type: 'password-reset'
     });
-    // In local mode, take the user directly to the reset form so the flow works even without email delivery.
-    window.location.assign(resetLink);
+    // Always navigate to a same-origin reset URL so the token saved in this browser storage can be resolved.
+    window.location.assign(localResetLink);
   });
 }
 
@@ -3133,7 +3158,7 @@ function renderCalendarPage(currentUser) {
           ${!isAgentView ? '<a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>' : ''}
           ${!isAgentView ? '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>' : ''}
           ${!isAgentView ? '<button id="export-data-btn" class="secondary">Export JSON</button>' : ''}
-          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
@@ -3256,8 +3281,13 @@ function renderCalendarPage(currentUser) {
               </div>
               ${sortedVisibleCalendarShifts.filter((shift) => shift.day === day).map((shift) => `
                 <div class="shift ${!isAgentView && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                  <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>${getAgent(shift.agentId)?.role ? `<span class="muted"> (${escapeHtml(getAgent(shift.agentId)?.role)})</span>` : ''}${!isAgentView && getAgent(shift.agentId)?.team ? `<div class="muted">${escapeHtml(normalizeTeamLabel(getAgent(shift.agentId)?.team))}</div>` : ''}<br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
-                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row calendar-shift-actions" style="margin-top:6px;"><button type="button" class="secondary" data-toggle-shift-select="${shift.id}">${selectedCalendarShiftIds.has(Number(shift.id)) ? 'Selected' : 'Select'}</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Dup</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
+                  <div class="row" style="justify-content:flex-start; align-items:center; gap:6px; margin-bottom:2px;">
+                    ${!isAgentView ? `<input type="checkbox" data-shift-select-checkbox="${shift.id}" ${selectedCalendarShiftIds.has(Number(shift.id)) ? 'checked' : ''} aria-label="Select shift for bulk actions" />` : ''}
+                    <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>${getAgent(shift.agentId)?.role ? `<span class="muted"> (${escapeHtml(getAgent(shift.agentId)?.role)})</span>` : ''}
+                  </div>
+                  ${!isAgentView && getAgent(shift.agentId)?.team ? `<div class="muted">${escapeHtml(normalizeTeamLabel(getAgent(shift.agentId)?.team))}</div>` : ''}
+                  ${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
+                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row calendar-shift-actions" style="margin-top:6px;"><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-duplicate-shift="${shift.id}">Dup</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
                   ${isAgentView ? `
                     <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
                     <div class="row" style="margin-top:6px;">
@@ -3300,7 +3330,7 @@ function renderProfilePage(currentUser) {
             <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
             <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
             <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
-            <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+            ${renderUserNavChip(currentUser)}
             <button id="logout-btn" class="secondary" type="button">Log out</button>
           </div>
         </div>
@@ -3450,14 +3480,6 @@ function renderProfilePage(currentUser) {
               </form>
             </div>
 
-            <div class="panel">
-              <h2>Blackout dates</h2>
-              <p class="muted">Agents cannot submit time-off requests for these dates. Enter one date per line.</p>
-              <form id="admin-blackout-dates-form" class="stack" style="margin-top:10px;">
-                <textarea name="blackoutDates" rows="6" placeholder="2026-12-24&#10;2026-12-25">${escapeHtml(normalizeBlackoutDates(state.blackoutDates).join('\n'))}</textarea>
-                <button type="submit">Save blackout dates</button>
-              </form>
-            </div>
           </div>
         </div>
       </div>
@@ -3849,10 +3871,14 @@ function renderProfilePage(currentUser) {
       const formData = new FormData(event.currentTarget);
       state.blackoutDates = normalizeBlackoutDates(formData.get('blackoutDates'));
       saveState();
-      adminProfileNotice = {
-        type: 'success',
-        text: 'Blackout dates saved. Agents cannot submit time-off requests for those dates.'
-      };
+      if (pageMode === 'profile') {
+        adminProfileNotice = {
+          type: 'success',
+          text: 'Blackout dates saved. Agents cannot submit time-off requests for those dates.'
+        };
+      } else {
+        alert('Blackout dates saved. Agents cannot submit time-off requests for those dates.');
+      }
       render();
     });
 
@@ -3899,7 +3925,7 @@ function renderProfilePage(currentUser) {
           <a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a>
           <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
           <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
-          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
@@ -4003,7 +4029,7 @@ function renderAdminOptionsPage(currentUser) {
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
           <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
           <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
-          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
@@ -4110,6 +4136,15 @@ function renderAdminOptionsPage(currentUser) {
         </div>
 
         <div class="panel">
+          <h2>Blackout dates</h2>
+          <p class="muted">Agents cannot submit time-off requests for these dates. Enter one date per line.</p>
+          <form id="admin-blackout-dates-form" class="stack" style="margin-top:10px;">
+            <textarea name="blackoutDates" rows="6" placeholder="2026-12-24&#10;2026-12-25">${escapeHtml(normalizeBlackoutDates(state.blackoutDates).join('\n'))}</textarea>
+            <button type="submit">Save blackout dates</button>
+          </form>
+        </div>
+
+        <div class="panel">
           <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
             <h2 style="margin:0;">Role colors</h2>
             <button id="reset-role-colors" class="secondary" type="button">Reset role colors</button>
@@ -4146,7 +4181,7 @@ function renderPoliciesPage(currentUser) {
           ${isAdminView
             ? '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open Calendar</button></a><a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a><a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability Requests</button></a><a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a><a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'
             : '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a><a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open my calendar</button></a><a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a><a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a><a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a><a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'}
-          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
@@ -4208,7 +4243,7 @@ function renderAgentRequestsPage(currentUser) {
           <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>
           <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
-          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
@@ -4281,7 +4316,7 @@ function renderPendingRequestsPage(currentUser) {
           <a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>
           <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
-          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
@@ -4376,7 +4411,7 @@ function renderEmailOutboxPage(currentUser) {
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
           <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
           <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
-          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
@@ -4449,7 +4484,7 @@ function renderAgentsPage(currentUser) {
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
           <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
           <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
-          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
@@ -4623,6 +4658,10 @@ function renderAvailabilityRequestsPage(currentUser) {
   const filteredPendingSwapCount = visibleSwapRequestsForList.filter((request) => getSwapRequestFilterStatus(request) === 'pending').length;
   const selectedMonth = state.ui.availabilityCalendarMonth || new Date().toISOString().slice(0, 7);
   const calendarData = getAvailabilityCalendarCells(selectedMonth, visibleAvailabilityRequests);
+  const allBlackoutDates = normalizeBlackoutDates(state.blackoutDates);
+  const monthBlackoutDates = allBlackoutDates
+    .filter((dateValue) => String(dateValue || '').startsWith(`${selectedMonth}-`))
+    .sort((left, right) => left.localeCompare(right));
   const availabilityDebugAgentId = Number(state.ui.availabilityDebugAgentId || state.agents[0]?.id || 0);
   const availabilityDebugAgent = getAgent(availabilityDebugAgentId) || state.agents[0] || null;
   const availabilityDebugUser = availabilityDebugAgent ? getUserByAgentId(availabilityDebugAgent.id) : null;
@@ -4657,7 +4696,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Options</button></a>
           <a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin Profile</button></a>
           <a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
-          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
@@ -4741,6 +4780,8 @@ function renderAvailabilityRequestsPage(currentUser) {
             `;
           }).join('')}
         </div>
+        <div class="muted" style="margin-top:10px;">Blackout date summary for ${escapeHtml(calendarData.label)}: ${monthBlackoutDates.length} date${monthBlackoutDates.length === 1 ? '' : 's'} (${allBlackoutDates.length} total)</div>
+        <div class="muted" style="margin-top:4px;">${monthBlackoutDates.length > 0 ? escapeHtml(monthBlackoutDates.join(', ')) : 'No blackout dates in this month.'}</div>
       </div>
 
       <div class="panel">
@@ -4970,7 +5011,7 @@ function render() {
             <input id="import-data-input" type="file" accept="application/json" hidden />
             Import JSON
           </label>` : ''}
-          <span class="chip">${escapeHtml(getUserDisplayName(currentUser))} (${escapeHtml(currentUser.role)})</span>
+          ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
@@ -6356,14 +6397,14 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll('[data-toggle-shift-select]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const id = Number(button.getAttribute('data-toggle-shift-select'));
+  document.querySelectorAll('[data-shift-select-checkbox]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      const id = Number(checkbox.getAttribute('data-shift-select-checkbox'));
       if (!id) return;
-      if (selectedCalendarShiftIds.has(id)) {
-        selectedCalendarShiftIds.delete(id);
-      } else {
+      if (checkbox.checked) {
         selectedCalendarShiftIds.add(id);
+      } else {
+        selectedCalendarShiftIds.delete(id);
       }
       render();
     });
