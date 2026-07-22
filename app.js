@@ -2388,6 +2388,42 @@ function triggerPolicyDownload(policy) {
   URL.revokeObjectURL(blobUrl);
 }
 
+function getPolicyDataUrl(policy) {
+  const base64 = String(policy?.contentBase64 || '').trim();
+  if (!base64) return '';
+  const mimeType = String(policy?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+  return `data:${mimeType};base64,${base64}`;
+}
+
+function canPreviewPolicyInline(policy) {
+  const mimeType = String(policy?.mimeType || '').trim().toLowerCase();
+  const policyName = String(policy?.name || '').trim().toLowerCase();
+  if (mimeType.startsWith('image/')) return true;
+  if (mimeType === 'application/pdf') return true;
+  if (mimeType.startsWith('text/')) return true;
+  if (mimeType.includes('json') || mimeType.includes('xml')) return true;
+  if (/\.(pdf|png|jpg|jpeg|gif|webp|svg|txt|md|json|csv|xml)$/i.test(policyName)) return true;
+  return false;
+}
+
+function renderInlinePolicyPreview(policy) {
+  if (!canPreviewPolicyInline(policy)) {
+    return '<div class="muted" style="margin-top:10px;">Preview is unavailable for this file type. Use Download to open it locally.</div>';
+  }
+  const previewSrc = getPolicyDataUrl(policy);
+  if (!previewSrc) {
+    return '<div class="muted" style="margin-top:10px;">Preview data is unavailable for this file.</div>';
+  }
+  return `
+    <details style="margin-top:10px;">
+      <summary class="muted" style="cursor:pointer; user-select:none;">Preview in app</summary>
+      <div class="card" style="margin-top:8px; padding:8px;">
+        <iframe src="${escapeHtml(previewSrc)}" title="${escapeHtml(policy?.name || 'Policy preview')}" style="width:100%; min-height:420px; border:0; border-radius:8px; background:#fff;"></iframe>
+      </div>
+    </details>
+  `;
+}
+
 function getApprovedTimeOffConflicts(agentId, date, start, end) {
   const normalizedAgentId = Number(agentId);
   if (!normalizedAgentId || !date || !start || !end) {
@@ -3407,7 +3443,7 @@ function renderProfilePage(currentUser) {
 
             <div class="panel">
               <h2>Profile photo</h2>
-              <p class="muted">Upload a JPG, PNG, GIF, or WEBP image up to 2 MB.</p>
+              <p class="muted">Upload a JPG, PNG, GIF, or WEBP image up to 8 MB.</p>
               <form id="upload-profile-photo-form" class="stack" style="margin-top:10px;">
                 <input name="profilePhoto" type="file" accept="image/*" required />
                 <div class="row" style="gap:8px;">
@@ -3976,6 +4012,8 @@ function renderProfilePage(currentUser) {
       render();
     });
 
+    bindProfilePhotoHandlers();
+
     document.getElementById('logout-btn')?.addEventListener('click', () => {
       clearSession();
       render();
@@ -4269,7 +4307,7 @@ function renderPoliciesPage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>Policies</h1>
-          <p class="muted">View and download policy files.${isAdminView ? ' Manage uploads in Admin Options.' : ''}</p>
+          <p class="muted">View, preview, and download policy files.${isAdminView ? ' Manage uploads in Admin Options.' : ''}</p>
         </div>
         <div class="row">
           ${isAdminView
@@ -4293,6 +4331,7 @@ function renderPoliciesPage(currentUser) {
                 </div>
                 <button type="button" class="secondary" data-download-policy="${policy.id}">Download</button>
               </div>
+              ${renderInlinePolicyPreview(policy)}
             </div>
           `).join('') || '<div class="muted">No policy documents uploaded yet.</div>'}
         </div>
@@ -5450,6 +5489,81 @@ function bindAvailabilitySubmitFallback() {
   availabilitySubmitFallbackBound = true;
 }
 
+function bindProfilePhotoHandlers() {
+  document.getElementById('upload-profile-photo-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+
+    const formData = new FormData(event.currentTarget);
+    const profilePhoto = formData.get('profilePhoto');
+    if (!(profilePhoto instanceof File) || profilePhoto.size <= 0) {
+      alert('Please choose an image file to upload.');
+      return;
+    }
+    if (!String(profilePhoto.type || '').toLowerCase().startsWith('image/')) {
+      alert('Profile photo must be an image file.');
+      return;
+    }
+    if (profilePhoto.size > (8 * 1024 * 1024)) {
+      alert('Profile photo must be 8 MB or smaller.');
+      return;
+    }
+
+    try {
+      const imageDataUrl = await optimizeImageFileForProfilePhoto(profilePhoto);
+      if (!String(imageDataUrl || '').startsWith('data:image/')) {
+        alert('Unable to process the selected image. Please choose a different file.');
+        return;
+      }
+      const imageByteSize = getDataUrlApproxBytes(imageDataUrl);
+      if (imageByteSize > (700 * 1024)) {
+        alert(`Processed profile photo is still too large to save reliably (${formatBytes(imageByteSize)}). Please choose a smaller image.`);
+        return;
+      }
+      authUsers = authUsers.map((user) => user.id === currentUser.id
+        ? {
+            ...user,
+            profilePhotoDataUrl: imageDataUrl,
+            profileUpdatedAt: getCurrentIsoTimestamp()
+          }
+        : user);
+      const didSavePhoto = saveAuthUsers();
+      if (!didSavePhoto) {
+        alert('Unable to save profile photo. Storage may be full on this device. Please try a smaller image.');
+        syncFromStorage();
+        render();
+        return;
+      }
+      alert('Profile photo uploaded successfully.');
+      render();
+    } catch {
+      alert('Unable to upload the selected profile photo. Please try again.');
+    }
+  });
+
+  document.getElementById('remove-profile-photo')?.addEventListener('click', () => {
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+    authUsers = authUsers.map((user) => user.id === currentUser.id
+      ? {
+          ...user,
+          profilePhotoDataUrl: '',
+          profileUpdatedAt: getCurrentIsoTimestamp()
+        }
+      : user);
+    const didSavePhotoRemoval = saveAuthUsers();
+    if (!didSavePhotoRemoval) {
+      alert('Unable to save profile photo changes. Storage may be full on this device.');
+      syncFromStorage();
+      render();
+      return;
+    }
+    alert('Profile photo removed.');
+    render();
+  });
+}
+
 function bindEvents() {
   document.getElementById('add-agent-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -6163,78 +6277,7 @@ function bindEvents() {
     render();
   });
 
-  document.getElementById('upload-profile-photo-form')?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const currentUser = getCurrentUser();
-    if (!currentUser) return;
-
-    const formData = new FormData(event.currentTarget);
-    const profilePhoto = formData.get('profilePhoto');
-    if (!(profilePhoto instanceof File) || profilePhoto.size <= 0) {
-      alert('Please choose an image file to upload.');
-      return;
-    }
-    if (!String(profilePhoto.type || '').toLowerCase().startsWith('image/')) {
-      alert('Profile photo must be an image file.');
-      return;
-    }
-    if (profilePhoto.size > (8 * 1024 * 1024)) {
-      alert('Profile photo must be 8 MB or smaller.');
-      return;
-    }
-
-    try {
-      const imageDataUrl = await optimizeImageFileForProfilePhoto(profilePhoto);
-      if (!String(imageDataUrl || '').startsWith('data:image/')) {
-        alert('Unable to process the selected image. Please choose a different file.');
-        return;
-      }
-      const imageByteSize = getDataUrlApproxBytes(imageDataUrl);
-      if (imageByteSize > (700 * 1024)) {
-        alert(`Processed profile photo is still too large to save reliably (${formatBytes(imageByteSize)}). Please choose a smaller image.`);
-        return;
-      }
-      authUsers = authUsers.map((user) => user.id === currentUser.id
-        ? {
-            ...user,
-            profilePhotoDataUrl: imageDataUrl,
-            profileUpdatedAt: getCurrentIsoTimestamp()
-          }
-        : user);
-      const didSavePhoto = saveAuthUsers();
-      if (!didSavePhoto) {
-        alert('Unable to save profile photo. Storage may be full on this device. Please try a smaller image.');
-        syncFromStorage();
-        render();
-        return;
-      }
-      alert('Profile photo uploaded successfully.');
-      render();
-    } catch {
-      alert('Unable to upload the selected profile photo. Please try again.');
-    }
-  });
-
-  document.getElementById('remove-profile-photo')?.addEventListener('click', () => {
-    const currentUser = getCurrentUser();
-    if (!currentUser) return;
-    authUsers = authUsers.map((user) => user.id === currentUser.id
-      ? {
-          ...user,
-          profilePhotoDataUrl: '',
-          profileUpdatedAt: getCurrentIsoTimestamp()
-        }
-      : user);
-    const didSavePhotoRemoval = saveAuthUsers();
-    if (!didSavePhotoRemoval) {
-      alert('Unable to save profile photo changes. Storage may be full on this device.');
-      syncFromStorage();
-      render();
-      return;
-    }
-    alert('Profile photo removed.');
-    render();
-  });
+  bindProfilePhotoHandlers();
 
   document.getElementById('copy-agent-calendar-sync-url')?.addEventListener('click', async () => {
     const input = document.getElementById('agent-calendar-sync-url');
