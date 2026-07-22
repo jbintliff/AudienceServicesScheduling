@@ -2406,22 +2406,57 @@ function canPreviewPolicyInline(policy) {
   return false;
 }
 
-function renderInlinePolicyPreview(policy) {
-  if (!canPreviewPolicyInline(policy)) {
-    return '<div class="muted" style="margin-top:10px;">Preview is unavailable for this file type. Use Download to open it locally.</div>';
+function renderPolicyPreviewModal() {
+  return `
+    <div id="policy-preview-modal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.58); padding:20px; align-items:center; justify-content:center;">
+      <div class="panel" style="width:min(1100px, 96vw); max-height:92vh; margin:0; display:flex; flex-direction:column; gap:10px;">
+        <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+          <strong id="policy-preview-title">Policy preview</strong>
+          <div class="row" style="gap:8px;">
+            <a id="policy-preview-open-tab" class="secondary" href="#" target="_blank" rel="noopener" style="text-decoration:none;"><button class="secondary" type="button">Open in new tab</button></a>
+            <button id="policy-preview-close" class="secondary" type="button">Close</button>
+          </div>
+        </div>
+        <div class="card" style="padding:8px; flex:1; min-height:64vh;">
+          <iframe id="policy-preview-frame" src="about:blank" title="Policy preview" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;"></iframe>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openPolicyPreviewModal(policy) {
+  const modal = document.getElementById('policy-preview-modal');
+  const frame = document.getElementById('policy-preview-frame');
+  const title = document.getElementById('policy-preview-title');
+  const openTabLink = document.getElementById('policy-preview-open-tab');
+  if (!(modal instanceof HTMLElement) || !(frame instanceof HTMLIFrameElement) || !(title instanceof HTMLElement) || !(openTabLink instanceof HTMLAnchorElement)) {
+    return;
   }
   const previewSrc = getPolicyDataUrl(policy);
   if (!previewSrc) {
-    return '<div class="muted" style="margin-top:10px;">Preview data is unavailable for this file.</div>';
+    alert('Preview data is unavailable for this file.');
+    return;
   }
-  return `
-    <details style="margin-top:10px;">
-      <summary class="muted" style="cursor:pointer; user-select:none;">Preview in app</summary>
-      <div class="card" style="margin-top:8px; padding:8px;">
-        <iframe src="${escapeHtml(previewSrc)}" title="${escapeHtml(policy?.name || 'Policy preview')}" style="width:100%; min-height:420px; border:0; border-radius:8px; background:#fff;"></iframe>
-      </div>
-    </details>
-  `;
+  title.textContent = policy?.name || 'Policy preview';
+  frame.src = previewSrc;
+  openTabLink.href = previewSrc;
+  modal.style.display = 'flex';
+}
+
+function closePolicyPreviewModal() {
+  const modal = document.getElementById('policy-preview-modal');
+  const frame = document.getElementById('policy-preview-frame');
+  const openTabLink = document.getElementById('policy-preview-open-tab');
+  if (frame instanceof HTMLIFrameElement) {
+    frame.src = 'about:blank';
+  }
+  if (openTabLink instanceof HTMLAnchorElement) {
+    openTabLink.href = '#';
+  }
+  if (modal instanceof HTMLElement) {
+    modal.style.display = 'none';
+  }
 }
 
 function getApprovedTimeOffConflicts(agentId, date, start, end) {
@@ -4258,6 +4293,7 @@ function renderAdminOptionsPage(currentUser) {
                     <div class="muted">Size: ${escapeHtml(formatBytes(policy.sizeBytes))}</div>
                   </div>
                   <div class="row" style="gap:8px;">
+                    ${canPreviewPolicyInline(policy) ? `<button type="button" class="secondary" data-preview-policy="${policy.id}">Preview</button>` : ''}
                     <button type="button" class="secondary" data-download-policy="${policy.id}">Download</button>
                     <button type="button" class="danger" data-delete-policy="${policy.id}">Delete</button>
                   </div>
@@ -4266,6 +4302,8 @@ function renderAdminOptionsPage(currentUser) {
             `).join('') || '<div class="muted">No policy files uploaded yet.</div>'}
           </div>
         </div>
+
+        ${renderPolicyPreviewModal()}
 
         <div class="panel">
           <h2>Blackout dates</h2>
@@ -4329,13 +4367,18 @@ function renderPoliciesPage(currentUser) {
                   <div class="muted">Uploaded: ${escapeHtml(policy.uploadedAt ? new Date(policy.uploadedAt).toLocaleString() : 'Unknown')}</div>
                   <div class="muted">Size: ${escapeHtml(formatBytes(policy.sizeBytes))}</div>
                 </div>
-                <button type="button" class="secondary" data-download-policy="${policy.id}">Download</button>
+                <div class="row" style="gap:8px;">
+                  ${canPreviewPolicyInline(policy) ? `<button type="button" class="secondary" data-preview-policy="${policy.id}">Preview</button>` : ''}
+                  <button type="button" class="secondary" data-download-policy="${policy.id}">Download</button>
+                </div>
               </div>
-              ${renderInlinePolicyPreview(policy)}
+              ${!canPreviewPolicyInline(policy) ? '<div class="muted" style="margin-top:8px;">Preview unavailable for this file type. Download to open locally.</div>' : ''}
             </div>
           `).join('') || '<div class="muted">No policy documents uploaded yet.</div>'}
         </div>
       </div>
+
+      ${renderPolicyPreviewModal()}
     </div>
   `;
 
@@ -5841,6 +5884,26 @@ function bindEvents() {
       if (!policy) return;
       triggerPolicyDownload(policy);
     });
+  });
+
+  document.querySelectorAll('[data-preview-policy]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const policyId = Number(button.getAttribute('data-preview-policy'));
+      if (!policyId) return;
+      const policy = (Array.isArray(state.policies) ? state.policies : []).find((item) => Number(item.id) === policyId);
+      if (!policy) return;
+      openPolicyPreviewModal(policy);
+    });
+  });
+
+  document.getElementById('policy-preview-close')?.addEventListener('click', () => {
+    closePolicyPreviewModal();
+  });
+
+  document.getElementById('policy-preview-modal')?.addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) {
+      closePolicyPreviewModal();
+    }
   });
 
   document.getElementById('add-shift-location-form')?.addEventListener('submit', (event) => {
