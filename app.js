@@ -3258,7 +3258,8 @@ function openShiftEditModal(shift, onSave) {
         <div class="row" style="flex-wrap:wrap;">
           <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
             <span>Agent</span>
-            <select name="agentId" required>
+            <select name="agentId">
+              <option value="" ${!shift.agentId ? 'selected' : ''}>Unassigned</option>
               ${[...state.agents].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}" ${Number(shift.agentId) === Number(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
             </select>
           </label>
@@ -3337,8 +3338,9 @@ function openShiftEditModal(shift, onSave) {
   overlay.querySelector('#shift-edit-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const nextAgentId = Number(formData.get('agentId'));
-    if (!Number.isFinite(nextAgentId) || !getAgent(nextAgentId)) {
+    const nextAgentIdRaw = String(formData.get('agentId') || '').trim();
+    const nextAgentId = nextAgentIdRaw ? Number(nextAgentIdRaw) : null;
+    if (nextAgentIdRaw && (!Number.isFinite(nextAgentId) || !getAgent(nextAgentId))) {
       alert('Select a valid agent.');
       return;
     }
@@ -4399,8 +4401,8 @@ function renderCalendarPage(currentUser) {
                 <option value="">Use template (optional)</option>
                 ${state.templates.filter((template) => isTemplateActive(template)).map((template) => `<option value="${template.id}">${escapeHtml(template.name)} (${escapeHtml(formatTimeRange(template.start, template.end))})</option>`).join('')}
               </select>
-              <select name="agentId" required>
-                <option value="">Assign agent</option>
+              <select name="agentId">
+                <option value="">Unassigned (optional)</option>
                 ${[...state.agents].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
               </select>
               <select name="role" required>
@@ -7092,7 +7094,7 @@ function bindEvents() {
     const location = requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
-    if (!day || !agentId || !role || !start || !end || !date) return;
+    if (!day || !role || !start || !end || !date) return;
     if (!await confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, {
       durationHours: getDurationHours(start, end),
       role
