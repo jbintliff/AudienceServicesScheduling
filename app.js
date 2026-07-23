@@ -32,7 +32,7 @@ const shiftAbsenceReasonOptions = ['sick', 'emergency', 'no reason', 'transporta
 const userRoles = {
   admin: 'admin',
   agent: 'agent',
-  absenceManager: 'absence-manager'
+  teamLead: 'team-lead'
 };
 const defaultBackendApiBase = 'https://scheduling-app-backend-l66q.onrender.com/api';
 const sharedStorageKeys = [
@@ -332,7 +332,7 @@ function normalizePasswordUpdatedAt(value) {
 }
 
 function isAgentPasswordExpired(user) {
-  if (!isAgentUser(user)) return false;
+  if (!isAgentLikeUser(user)) return false;
   const updatedAt = normalizePasswordUpdatedAt(user?.passwordUpdatedAt);
   const parsed = new Date(updatedAt);
   if (Number.isNaN(parsed.getTime())) return false;
@@ -526,7 +526,7 @@ function normalizeShiftAbsenceReason(value) {
 function normalizeUserRole(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === userRoles.admin) return userRoles.admin;
-  if (normalized === userRoles.absenceManager) return userRoles.absenceManager;
+  if (normalized === userRoles.teamLead || normalized === 'absence-manager') return userRoles.teamLead;
   return userRoles.agent;
 }
 
@@ -538,12 +538,20 @@ function isAgentUser(user) {
   return normalizeUserRole(user?.role) === userRoles.agent;
 }
 
+function isTeamLeadUser(user) {
+  return normalizeUserRole(user?.role) === userRoles.teamLead;
+}
+
+function isAgentLikeUser(user) {
+  return isAgentUser(user) || isTeamLeadUser(user);
+}
+
 function isAbsenceManagerUser(user) {
-  return normalizeUserRole(user?.role) === userRoles.absenceManager;
+  return isTeamLeadUser(user);
 }
 
 function canMarkShiftAbsences(user) {
-  return isAdminUser(user) || isAbsenceManagerUser(user);
+  return isAdminUser(user) || isTeamLeadUser(user);
 }
 
 function canManageSchedule(user) {
@@ -1101,14 +1109,14 @@ function getAllAvailabilityRequests() {
 }
 
 function isAvailabilityRequestVisibleToUser(request, user) {
-  if (!request || !user || user.role !== 'agent') {
+  if (!request || !user || !isAgentLikeUser(user)) {
     return false;
   }
   return Boolean(getAvailabilityRequestVisibilityReason(request, user));
 }
 
 function getAvailabilityRequestVisibilityReason(request, user) {
-  if (!request || !user || user.role !== 'agent') {
+  if (!request || !user || !isAgentLikeUser(user)) {
     return '';
   }
   const requestAgentId = Number(request.agentId);
@@ -1613,7 +1621,7 @@ function sendEmailNotification({ to, subject, body, type }) {
 
 function getUserByAgentId(agentId) {
   const normalizedId = Number(agentId);
-  return authUsers.find((user) => isAgentUser(user) && Number(user.agentId) === normalizedId) || null;
+  return authUsers.find((user) => isAgentLikeUser(user) && Number(user.agentId) === normalizedId) || null;
 }
 
 function sendAgentInviteEmail(agentUser, agentName, temporaryPassword = '') {
@@ -1865,8 +1873,9 @@ function applyAccessForUser(user) {
     }
     return;
   }
-  if (isAbsenceManagerUser(user)) {
-    state.ui.accessMode = 'absence-manager';
+  if (isAgentLikeUser(user)) {
+    state.ui.accessMode = 'agent';
+    state.ui.currentAgentId = Number(user.agentId);
     return;
   }
   state.ui.accessMode = 'agent';
@@ -1875,7 +1884,7 @@ function applyAccessForUser(user) {
 
 function getUserDisplayName(user) {
   if (!user) return '';
-  if (isAgentUser(user)) {
+  if (isAgentLikeUser(user)) {
     return getAgent(Number(user.agentId))?.name || user.username;
   }
   return user.name || user.username;
@@ -1895,7 +1904,7 @@ function renderUserNavChip(user) {
 function getUserRoleLabel(roleValue) {
   const role = normalizeUserRole(roleValue);
   if (role === userRoles.admin) return 'admin';
-  if (role === userRoles.absenceManager) return 'absence manager';
+  if (role === userRoles.teamLead) return 'team lead';
   return 'agent';
 }
 
@@ -2045,7 +2054,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       renderLoginPage('This manager account has been deactivated. Contact another admin for access.');
       return;
     }
-    if (foundUser.role === 'agent' && !state.agents.some((agent) => agent.id === Number(foundUser.agentId))) {
+    if (isAgentLikeUser(foundUser) && !state.agents.some((agent) => agent.id === Number(foundUser.agentId))) {
       renderLoginPage('This account is not linked to a valid agent record.');
       return;
     }
@@ -2079,7 +2088,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     }
 
     const linkedAgent = foundUser ? state.agents.find((agent) => Number(agent.id) === Number(foundUser.agentId)) : null;
-    const isAssociatedAgentEmail = Boolean(foundUser && foundUser.role === 'agent' && linkedAgent);
+    const isAssociatedAgentEmail = Boolean(foundUser && isAgentLikeUser(foundUser) && linkedAgent);
 
     if (!isAssociatedAgentEmail) {
       renderLoginPage('', 'If an agent account exists for that email, a reset link will appear here.');
@@ -2320,7 +2329,7 @@ function reconcileAgentEmailsWithAuthUsers() {
   let didChange = false;
   const linkedUsersByAgentId = new Map(
     authUsers
-      .filter((user) => user.role === 'agent' && Number.isFinite(Number(user.agentId)))
+      .filter((user) => isAgentLikeUser(user) && Number.isFinite(Number(user.agentId)))
       .map((user) => [String(user.agentId), user])
   );
 
@@ -2421,7 +2430,7 @@ function loadState() {
           const maxInOfficeShiftsRaw = typeof agent.maxInOfficeShifts === 'undefined' ? null : agent.maxInOfficeShifts;
           const maxInOfficeShifts = normalizeMaxInOfficeShifts(maxInOfficeShiftsRaw);
           const linkedUserEmail = normalizeEmail(
-            authUsersForLookup.find((user) => user.role === 'agent' && Number(user.agentId) === Number(agent.id))?.email || ''
+            authUsersForLookup.find((user) => isAgentLikeUser(user) && Number(user.agentId) === Number(agent.id))?.email || ''
           );
           return {
             ...agent,
@@ -3285,6 +3294,8 @@ function saveAgentDetails(agentId, values) {
   const id = Number(agentId);
   const name = String(values?.name || '').trim();
   const email = normalizeEmail(values?.email);
+  const requestedAccessRole = normalizeUserRole(values?.accessRole);
+  const accessRole = requestedAccessRole === userRoles.admin ? userRoles.agent : requestedAccessRole;
   const team = normalizeTeamLabel(String(values?.team || '').trim() || teamOptions[0]);
   const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
   const minHours = normalizeMinHours(values?.minHours);
@@ -3331,6 +3342,7 @@ function saveAgentDetails(agentId, values) {
       ? {
           ...user,
           email,
+          role: accessRole,
           profileUpdatedAt
         }
       : user);
@@ -3347,7 +3359,7 @@ function saveAgentDetails(agentId, values) {
       profileUpdatedAt: createdAt,
       mustChangePassword: true,
       calendarFeedToken: createCalendarFeedToken(),
-      role: userRoles.agent,
+      role: accessRole,
       agentId: id
     }));
   }
@@ -3368,6 +3380,8 @@ function openAgentEditModal(agent, onSave) {
     existingOverlay.remove();
   }
 
+  const linkedUser = getUserByAgentId(agent.id);
+  const accessRole = normalizeUserRole(linkedUser?.role || userRoles.agent);
   const overlay = document.createElement('div');
   overlay.id = 'agent-edit-modal-overlay';
   overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
@@ -3387,6 +3401,13 @@ function openAgentEditModal(agent, onSave) {
           </label>
         </div>
         <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Access level</span>
+            <select name="accessRole" required>
+              <option value="${userRoles.agent}" ${accessRole === userRoles.agent ? 'selected' : ''}>Agent</option>
+              <option value="${userRoles.teamLead}" ${accessRole === userRoles.teamLead ? 'selected' : ''}>Team lead</option>
+            </select>
+          </label>
           <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
             <span>Team</span>
             <select name="team" required>
@@ -3451,6 +3472,7 @@ function openAgentEditModal(agent, onSave) {
     const result = onSave({
       name: formData.get('name'),
       email: formData.get('email'),
+      accessRole: formData.get('accessRole'),
       team: formData.get('team'),
       payRate: formData.get('payRate'),
       minHours: formData.get('minHours'),
@@ -4081,10 +4103,7 @@ function renderAgentNavigationLinks() {
 }
 
 function renderAbsenceManagerNavigationLinks() {
-  return [
-    '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>',
-    '<a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>'
-  ].join('');
+  return renderAgentNavigationLinks();
 }
 
 function renderCalendarPage(currentUser) {
@@ -4096,8 +4115,8 @@ function renderCalendarPage(currentUser) {
   const locations = getAllLocations();
   const roleItems = getRoleLegendItems();
   const agentNameItems = state.agents.map((agent) => String(agent.name || '').trim()).filter(Boolean).sort((left, right) => left.localeCompare(right));
-  const isAgentView = isAgentUser(currentUser);
-  const isAbsenceManagerView = isAbsenceManagerUser(currentUser);
+  const isAgentView = isAgentLikeUser(currentUser);
+  const isTeamLeadView = isTeamLeadUser(currentUser);
   const canManageCalendar = canManageSchedule(currentUser);
   const canMarkAbsence = canMarkShiftAbsences(currentUser);
   const viewAgent = getViewAgent();
@@ -4118,10 +4137,10 @@ function renderCalendarPage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>${isAgentView ? 'My calendar' : 'Calendar view'}</h1>
-          <p class="muted">${isAgentView ? 'Review the full published team schedule and request swaps for your own shifts.' : isAbsenceManagerView ? 'Review team shifts and mark absences without full admin controls.' : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
+          <p class="muted">${isAgentView ? (isTeamLeadView ? 'Review the full published team schedule, request swaps, and mark absences.' : 'Review the full published team schedule and request swaps for your own shifts.') : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
         </div>
         <div class="row">
-          ${isAgentView ? renderAgentNavigationLinks() : isAbsenceManagerView ? renderAbsenceManagerNavigationLinks() : renderAdminNavigationLinks({ includeExport: true })}
+          ${isAgentView ? renderAgentNavigationLinks() : renderAdminNavigationLinks({ includeExport: true })}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -4255,8 +4274,9 @@ function renderCalendarPage(currentUser) {
                   ${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
                   ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}</div><div class="row calendar-shift-actions" style="margin-top:6px;">${canManageCalendar ? `<button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-dup-shift="${shift.id}">Copy/Dup</button>` : ''}${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}</div>` : ''}
                   ${isAgentView ? `
-                    <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
+                    <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
                     <div class="row" style="margin-top:6px;">
+                      ${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}
                       ${canAgentOfferShift(shift, currentAgentId) ? `<button type="button" class="secondary" data-offer-shift="${shift.id}">${isShiftOfferedForPickup(shift) ? 'Cancel offer' : 'Offer shift'}</button>` : ''}
                       ${canAgentPickUpOfferedShift(shift, currentAgentId) ? `<button type="button" class="success" data-pickup-offered-shift="${shift.id}">Pick up shift</button>` : ''}
                     </div>
@@ -4276,11 +4296,11 @@ function renderCalendarPage(currentUser) {
 
 function renderProfilePage(currentUser) {
   const isAdminView = isAdminUser(currentUser);
-  const isAgentView = isAgentUser(currentUser);
-  const isAbsenceManagerView = isAbsenceManagerUser(currentUser);
+  const isAgentView = isAgentLikeUser(currentUser);
+  const isAbsenceManagerView = isTeamLeadUser(currentUser);
   if (isAdminView) {
     const adminUsers = authUsers
-      .filter((user) => isAdminUser(user) || isAbsenceManagerUser(user))
+      .filter((user) => isAdminUser(user))
       .sort((left, right) => String(left.name || left.username || '').localeCompare(String(right.name || right.username || ''), undefined, { sensitivity: 'base' }));
 
     root.innerHTML = `
@@ -4352,7 +4372,6 @@ function renderProfilePage(currentUser) {
                 <input name="phone" type="tel" placeholder="Phone" required autocomplete="tel" />
                 <select name="accessRole" required>
                   <option value="${userRoles.admin}">Admin (full access)</option>
-                  <option value="${userRoles.absenceManager}">Absence manager (mark absent only)</option>
                 </select>
                 <button type="submit">Add manager</button>
               </form>
@@ -4375,7 +4394,6 @@ function renderProfilePage(currentUser) {
                       <div class="row" style="gap:8px; flex-wrap:wrap;">
                         <select name="accessRole" required>
                           <option value="${userRoles.admin}" ${isAdminUser(adminUser) ? 'selected' : ''}>Admin (full access)</option>
-                          <option value="${userRoles.absenceManager}" ${isAbsenceManagerUser(adminUser) ? 'selected' : ''}>Absence manager (mark absent only)</option>
                         </select>
                       </div>
                       <div class="row" style="gap:8px; flex-wrap:wrap; justify-content:flex-end;">
@@ -4572,7 +4590,7 @@ function renderProfilePage(currentUser) {
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         const adminId = Number(form.getAttribute('data-update-admin-form'));
-        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAbsenceManagerUser(user)) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => isAdminUser(user) && Number(user.id) === adminId);
         if (!adminUser) return;
 
         const formData = new FormData(form);
@@ -4598,7 +4616,7 @@ function renderProfilePage(currentUser) {
           && adminUser.isActive !== false
           && getActiveAdminCount() <= 1;
         if (demotingLastActiveAdmin) {
-          alert('You cannot change the last active admin to absence manager.');
+          alert('You cannot change the last active admin to team lead.');
           return;
         }
 
@@ -4742,7 +4760,7 @@ function renderProfilePage(currentUser) {
     document.querySelectorAll('[data-resend-admin-invite]').forEach((button) => {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-resend-admin-invite'));
-        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAbsenceManagerUser(user)) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => isAdminUser(user) && Number(user.id) === adminId);
         if (!adminUser?.email) {
           alert('This manager needs a valid email before sending an invite.');
           return;
@@ -4770,7 +4788,7 @@ function renderProfilePage(currentUser) {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-toggle-admin-active'));
         const activeUser = getCurrentUser();
-        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAbsenceManagerUser(user)) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => isAdminUser(user) && Number(user.id) === adminId);
         if (!adminUser) return;
         const isDeactivating = adminUser.isActive !== false;
         if (isDeactivating && isAdminUser(adminUser) && getActiveAdminCount() <= 1) {
@@ -4813,7 +4831,7 @@ function renderProfilePage(currentUser) {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-remove-admin'));
         const activeUser = getCurrentUser();
-        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAbsenceManagerUser(user)) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => isAdminUser(user) && Number(user.id) === adminId);
         if (!adminUser) return;
         if (activeUser?.id === adminId) {
           alert('You cannot remove the manager account you are currently signed in with.');
@@ -4919,7 +4937,7 @@ function renderProfilePage(currentUser) {
     return;
   }
 
-  if (isAbsenceManagerView) {
+  if (isAbsenceManagerView && !isAgentView) {
     root.innerHTML = `
       <div class="app">
         <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
@@ -4940,7 +4958,7 @@ function renderProfilePage(currentUser) {
               <div class="card" style="margin-bottom:10px;">
                 ${currentUser?.profilePhotoDataUrl ? `<div style="margin-bottom:10px;"><img src="${escapeHtml(currentUser.profilePhotoDataUrl)}" alt="Profile photo" style="width:84px; height:84px; border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,0.35);" /></div>` : ''}
                 <div><strong>Name:</strong> ${escapeHtml(currentUser?.name || currentUser?.username || 'Not set')}</div>
-                <div><strong>Job title:</strong> ${escapeHtml(currentUser?.jobTitle || 'Absence Manager')}</div>
+                <div><strong>Job title:</strong> ${escapeHtml(currentUser?.jobTitle || 'Team Lead')}</div>
                 <div><strong>Email:</strong> ${escapeHtml(currentUser?.email || 'Not set')}</div>
                 <div><strong>Phone:</strong> ${escapeHtml(currentUser?.phone || 'Not set')}</div>
               </div>
@@ -4962,7 +4980,7 @@ function renderProfilePage(currentUser) {
               <h2>Edit profile</h2>
               <form id="admin-update-profile-form" class="stack" style="margin-top:10px;">
                 <input name="name" placeholder="Name" value="${escapeHtml(currentUser?.name || currentUser?.username || '')}" required />
-                <input name="jobTitle" placeholder="Job title" value="${escapeHtml(currentUser?.jobTitle || 'Absence Manager')}" required />
+                <input name="jobTitle" placeholder="Job title" value="${escapeHtml(currentUser?.jobTitle || 'Team Lead')}" required />
                 <input name="email" type="email" placeholder="Email" value="${escapeHtml(currentUser?.email || '')}" required autocomplete="email" />
                 <input name="phone" type="tel" placeholder="Phone" value="${escapeHtml(currentUser?.phone || '')}" required autocomplete="tel" />
                 <button type="submit">Save profile</button>
@@ -5388,7 +5406,7 @@ function renderPoliciesPage(currentUser) {
 }
 
 function renderAgentRequestsPage(currentUser) {
-  if (currentUser.role !== 'agent') {
+  if (!isAgentLikeUser(currentUser)) {
     root.innerHTML = `
       <div class="app">
         <div class="panel">
@@ -5456,7 +5474,7 @@ function renderAgentRequestsPage(currentUser) {
 }
 
 function renderPendingRequestsPage(currentUser) {
-  if (currentUser.role !== 'agent') {
+  if (!isAgentLikeUser(currentUser)) {
     root.innerHTML = `
       <div class="app">
         <div class="panel">
@@ -5660,6 +5678,10 @@ function renderAgentsPage(currentUser) {
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(112px, 1fr)); gap:5px; align-items:end;">
             <input name="name" placeholder="Name" required />
             <input name="email" type="email" placeholder="Email" required />
+            <select name="accessRole" required>
+              <option value="${userRoles.agent}">Agent</option>
+              <option value="${userRoles.teamLead}">Team lead</option>
+            </select>
             <select name="team" required>
               ${teamOptions.map((team) => `<option value="${team}">${escapeHtml(team)}</option>`).join('')}
             </select>
@@ -5677,6 +5699,7 @@ function renderAgentsPage(currentUser) {
               <div class="stack" style="gap:6px;">
                 <div>
                   <div><strong>Name:</strong> ${escapeHtml(agent.name)}</div>
+                  <div><strong>Access level:</strong> ${escapeHtml(getUserRoleLabel(getUserByAgentId(agent.id)?.role || userRoles.agent))}</div>
                   <div><strong>Team:</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span></div>
                   <div><strong>Email:</strong> ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
@@ -6004,16 +6027,16 @@ function render() {
     renderLoginPage();
     return;
   }
-  if (isAgentUser(currentUser) && !state.agents.some((agent) => agent.id === Number(currentUser.agentId))) {
+  if (isAgentLikeUser(currentUser) && !state.agents.some((agent) => agent.id === Number(currentUser.agentId))) {
     clearSession();
     renderLoginPage('Your linked agent profile no longer exists. Contact an admin.');
     return;
   }
-  if (isAgentUser(currentUser) && currentUser.mustChangePassword) {
+  if (isAgentLikeUser(currentUser) && currentUser.mustChangePassword) {
     renderFirstLoginPasswordSetupPage(currentUser);
     return;
   }
-  if (isAgentUser(currentUser) && isAgentPasswordExpired(currentUser)) {
+  if (isAgentLikeUser(currentUser) && isAgentPasswordExpired(currentUser)) {
     renderFirstLoginPasswordSetupPage(currentUser, {
       title: 'Reset your password',
       description: `Your password has expired after ${agentPasswordMaxAgeDays} days. Create a new password to continue.`
@@ -6021,18 +6044,6 @@ function render() {
     return;
   }
   applyAccessForUser(currentUser);
-
-  if (isAbsenceManagerUser(currentUser)) {
-    const allowedViews = new Set(['dashboard', 'calendar', 'profile']);
-    if (!allowedViews.has(pageMode)) {
-      renderCalendarPage(currentUser);
-      return;
-    }
-    if (pageMode === 'dashboard') {
-      renderCalendarPage(currentUser);
-      return;
-    }
-  }
 
   if (pageMode === 'profile') {
     renderProfilePage(currentUser);
@@ -6082,7 +6093,7 @@ function render() {
   const spendByDay = getSpendByDay();
   const stats = getAvailabilityStats();
   const visibleAgents = getFilteredAgents();
-  const isAgentView = isAgentUser(currentUser);
+  const isAgentView = isAgentLikeUser(currentUser);
   if (!isAgentView) {
     state.ui.calendar = {
       ...(state.ui.calendar || {}),
@@ -6588,6 +6599,8 @@ function bindEvents() {
     const formData = new FormData(event.currentTarget);
     const name = formData.get('name')?.toString().trim();
     const email = normalizeEmail(formData.get('email'));
+    const requestedAccessRole = normalizeUserRole(formData.get('accessRole'));
+    const accessRole = requestedAccessRole === userRoles.admin ? userRoles.agent : requestedAccessRole;
     const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getPrimaryRole(), getRoleCatalog());
     const payRateRaw = formData.get('payRate')?.toString().trim() || '0';
     const payRate = parseCurrencyAmount(payRateRaw);
@@ -6643,7 +6656,7 @@ function bindEvents() {
       profileUpdatedAt: createdAt,
       mustChangePassword: true,
       calendarFeedToken: createCalendarFeedToken(),
-      role: userRoles.agent,
+      role: accessRole,
       agentId
     });
     authUsers.push(nextUser);
