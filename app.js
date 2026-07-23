@@ -2635,8 +2635,9 @@ function canAgentPickUpOfferedShift(shift, agentId) {
 }
 
 function getShiftStyle(shift) {
-  const offerBorder = isShiftOfferedForPickup(shift) ? ' border:2px dashed rgba(255,255,255,0.8);' : '';
-  return `background:${getShiftRoleColor(shift)}; border-left:3px solid rgba(255,255,255,0.65);${offerBorder}`;
+  const hasAttentionBorder = isShiftOfferedForPickup(shift) || Boolean(normalizeShiftAbsenceReason(shift?.absenceReason));
+  const attentionBorder = hasAttentionBorder ? ' border:2px dashed rgba(255,255,255,0.8);' : '';
+  return `background:${getShiftRoleColor(shift)}; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}`;
 }
 
 function cloneShift(shift, dayOverride) {
