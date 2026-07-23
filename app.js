@@ -139,8 +139,11 @@ async function savePolicyFileBytes(policyId, mimeType, bytes) {
   });
 
   if (!didSaveLocal) return false;
-  if (!isApplyingRemoteSnapshot) {
-    void uploadPolicyFileToBackend(normalizedId, normalizedMimeType, bytes);
+  if (!isApplyingRemoteSnapshot && backendApiBase) {
+    const didSyncRemote = await uploadPolicyFileToBackend(normalizedId, normalizedMimeType, bytes);
+    if (!didSyncRemote) {
+      return false;
+    }
   }
   return true;
 }
@@ -2897,6 +2900,10 @@ async function getPolicyBytes(policy) {
   if (!policyId) return null;
   const storedBytes = await loadPolicyFileBytes(policyId);
   if (storedBytes && storedBytes.length > 0) {
+    if (backendApiBase && !isApplyingRemoteSnapshot) {
+      const mimeType = String(policy?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+      void uploadPolicyFileToBackend(policyId, mimeType, storedBytes);
+    }
     return storedBytes;
   }
   const legacyBase64 = String(policy?.legacyContentBase64 || policy?.contentBase64 || '').trim();
@@ -7259,7 +7266,7 @@ function bindEvents() {
       const nextPolicyId = createId();
       const didSavePolicyFile = await savePolicyFileBytes(nextPolicyId, selectedFile.type || 'application/octet-stream', fileBytes);
       if (!didSavePolicyFile) {
-        alert('Unable to save this policy file in browser storage right now. Please try a smaller file or clear site data.');
+        alert('Unable to sync this policy file right now. Agent previews/downloads require successful backend file sync. Please try again.');
         return;
       }
 
