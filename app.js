@@ -330,6 +330,75 @@ function mergeAuthUsersSnapshotByRecency(localRawValue, remoteRawValue) {
   return JSON.stringify(Array.from(mergedById.values()));
 }
 
+function parseProfilePhotosForMerge(rawValue) {
+  try {
+    const parsed = JSON.parse(String(rawValue || '{}'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function mergeProfilePhotosSnapshotByRecency(localPhotosRawValue, remotePhotosRawValue, localAuthUsersRawValue, remoteAuthUsersRawValue) {
+  const localPhotos = parseProfilePhotosForMerge(localPhotosRawValue);
+  const remotePhotos = parseProfilePhotosForMerge(remotePhotosRawValue);
+  const localUsersById = new Map(parseAuthUsersForMerge(localAuthUsersRawValue).map((user) => [String(user?.id ?? ''), user]));
+  const remoteUsersById = new Map(parseAuthUsersForMerge(remoteAuthUsersRawValue).map((user) => [String(user?.id ?? ''), user]));
+
+  const mergedPhotos = { ...remotePhotos };
+  const allIds = new Set([...Object.keys(localPhotos), ...Object.keys(remotePhotos)]);
+
+  allIds.forEach((id) => {
+    if (!id) return;
+    const localPhoto = String(localPhotos[id] || '').trim();
+    const remotePhoto = String(remotePhotos[id] || '').trim();
+    if (localPhoto === remotePhoto) {
+      if (localPhoto) {
+        mergedPhotos[id] = localPhoto;
+      } else {
+        delete mergedPhotos[id];
+      }
+      return;
+    }
+
+    const localUser = localUsersById.get(id);
+    const remoteUser = remoteUsersById.get(id);
+    const localScore = getAuthUserPrimaryUpdatedAtScore(localUser);
+    const remoteScore = getAuthUserPrimaryUpdatedAtScore(remoteUser);
+
+    if (localScore > remoteScore) {
+      if (localPhoto) {
+        mergedPhotos[id] = localPhoto;
+      } else {
+        delete mergedPhotos[id];
+      }
+      return;
+    }
+    if (remoteScore > localScore) {
+      if (remotePhoto) {
+        mergedPhotos[id] = remotePhoto;
+      } else {
+        delete mergedPhotos[id];
+      }
+      return;
+    }
+
+    // Fallback when timestamps are equal or missing: prefer the side that still has photo data.
+    if (localPhoto && !remotePhoto) {
+      mergedPhotos[id] = localPhoto;
+    } else if (!localPhoto && remotePhoto) {
+      mergedPhotos[id] = remotePhoto;
+    } else if (localPhoto && remotePhoto) {
+      mergedPhotos[id] = localPhoto.length >= remotePhoto.length ? localPhoto : remotePhoto;
+    } else {
+      delete mergedPhotos[id];
+    }
+  });
+
+  return JSON.stringify(mergedPhotos);
+}
+
 function normalizePasswordUpdatedAt(value) {
   const normalized = String(value || '').trim();
   if (!normalized) return defaultPasswordUpdatedAt;
@@ -900,6 +969,20 @@ function mergeRemoteSnapshotWithPendingLocal(remoteStore) {
     mergedStore[authUsersKey] = mergeAuthUsersSnapshotByRecency(localAuthUsers, remoteAuthUsers);
   }
 
+  // Profile photos are stored separately from auth users; merge by account recency to avoid stale snapshot overwrites.
+  const localProfilePhotos = localStorage.getItem(profilePhotosKey);
+  const remoteProfilePhotos = typeof remoteStore[profilePhotosKey] === 'string' ? remoteStore[profilePhotosKey] : null;
+  const effectiveLocalAuthUsers = localAuthUsers;
+  const effectiveRemoteAuthUsers = remoteAuthUsers;
+  if (localProfilePhotos !== null && remoteProfilePhotos !== null && localProfilePhotos !== remoteProfilePhotos) {
+    mergedStore[profilePhotosKey] = mergeProfilePhotosSnapshotByRecency(
+      localProfilePhotos,
+      remoteProfilePhotos,
+      effectiveLocalAuthUsers,
+      effectiveRemoteAuthUsers
+    );
+  }
+
   pendingSharedWriteKeys.forEach((key) => {
     const localValue = localStorage.getItem(key);
     const remoteValue = typeof remoteStore[key] === 'string' ? remoteStore[key] : null;
@@ -1311,10 +1394,20 @@ function loadAuthUsers() {
   try {
     const saved = localStorage.getItem(authUsersKey);
     const storedProfilePhotos = loadProfilePhotos();
-    if (!saved) return defaultAuthUsers.map((user) => withRequiredEmail(user));
+    if (!saved) {
+      return defaultAuthUsers.map((user) => {
+        const normalizedUser = withRequiredEmail(user);
+        const userPhoto = storedProfilePhotos[String(normalizedUser?.id || '')] || '';
+        return userPhoto ? { ...normalizedUser, profilePhotoDataUrl: userPhoto } : normalizedUser;
+      });
+    }
     const parsed = JSON.parse(saved);
     if (!Array.isArray(parsed) || parsed.length === 0) {
-      return defaultAuthUsers.map((user) => withRequiredEmail(user));
+      return defaultAuthUsers.map((user) => {
+        const normalizedUser = withRequiredEmail(user);
+        const userPhoto = storedProfilePhotos[String(normalizedUser?.id || '')] || '';
+        return userPhoto ? { ...normalizedUser, profilePhotoDataUrl: userPhoto } : normalizedUser;
+      });
     }
     return parsed.map((user) => {
       const normalizedUser = withRequiredEmail(user);
@@ -1324,7 +1417,11 @@ function loadAuthUsers() {
         : normalizedUser;
     });
   } catch {
-    return defaultAuthUsers.map((user) => withRequiredEmail(user));
+    return defaultAuthUsers.map((user) => {
+      const normalizedUser = withRequiredEmail(user);
+      const userPhoto = storedProfilePhotos[String(normalizedUser?.id || '')] || '';
+      return userPhoto ? { ...normalizedUser, profilePhotoDataUrl: userPhoto } : normalizedUser;
+    });
   }
 }
 
