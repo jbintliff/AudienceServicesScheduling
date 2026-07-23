@@ -3284,7 +3284,6 @@ function saveAgentDetails(agentId, values) {
   const id = Number(agentId);
   const name = String(values?.name || '').trim();
   const email = normalizeEmail(values?.email);
-  const role = normalizeRoleLabel(String(values?.role || '').trim() || getPrimaryRole(), getRoleCatalog());
   const team = normalizeTeamLabel(String(values?.team || '').trim() || teamOptions[0]);
   const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
   const minHours = normalizeMinHours(values?.minHours);
@@ -3315,7 +3314,6 @@ function saveAgentDetails(agentId, values) {
         id,
         name,
         email,
-        role,
         team,
         payRate,
         minHours,
@@ -3375,7 +3373,7 @@ function openAgentEditModal(agent, onSave) {
   overlay.innerHTML = `
     <div style="width:min(720px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
       <h2 style="margin:0 0 12px;">Edit agent</h2>
-      <p class="muted" style="margin:0 0 14px;">Update agent details, hours, and role from one place.</p>
+      <p class="muted" style="margin:0 0 14px;">Update agent details and hours from one place.</p>
       <form id="agent-edit-form" class="stack">
         <div class="row" style="flex-wrap:wrap;">
           <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
@@ -3392,12 +3390,6 @@ function openAgentEditModal(agent, onSave) {
             <span>Team</span>
             <select name="team" required>
               ${teamOptions.map((team) => `<option value="${team}" ${(agent.team || teamOptions[0]) === team ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
-            </select>
-          </label>
-          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
-            <span>Role</span>
-            <select name="role" required>
-              ${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}" ${String(agent.role || '') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
             </select>
           </label>
         </div>
@@ -3458,7 +3450,6 @@ function openAgentEditModal(agent, onSave) {
     const result = onSave({
       name: formData.get('name'),
       email: formData.get('email'),
-      role: formData.get('role'),
       team: formData.get('team'),
       payRate: formData.get('payRate'),
       minHours: formData.get('minHours'),
@@ -5682,24 +5673,14 @@ function renderAgentsPage(currentUser) {
           ${sortedAgents.map((agent) => `
             <div class="card" style="padding:8px;">
               <div class="stack" style="gap:6px;">
-                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
-                  <div>
-                    <strong>${escapeHtml(agent.name)}</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span>
-                    <div class="muted">Hours: ${getAssignedHours(agent.id)} | Credit: ${getMinimumHoursCredit(agent.id)} (incl. PTO)</div>
-                    <div class="muted">Targets: hrs ${escapeHtml(agent.minHours ?? 0)}-${escapeHtml(agent.maxHours ?? 'Not set')} | in-office ${escapeHtml(agent.minInOfficeShifts ?? 0)}-${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
-                    <div class="muted">Email: ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
-                  </div>
-                </div>
-                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:5px;">
-                    <input value="${escapeHtml(agent.name)}" placeholder="Name" readonly aria-label="Agent name" />
-                    <input type="email" value="${escapeHtml(getAgentAccountEmail(agent.id) || '')}" placeholder="Email" readonly aria-label="Agent email" />
-                    <input value="${escapeHtml(agent.team || teamOptions[0])}" placeholder="Team" readonly aria-label="Agent team" />
-                    <input value="${escapeHtml(agent.role || getPrimaryRole())}" placeholder="Role" readonly aria-label="Agent role" />
-                    <input type="text" inputmode="decimal" placeholder="Pay rate" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" readonly aria-label="Agent pay rate" />
-                    <input type="number" inputmode="decimal" step="0.25" min="0" placeholder="Min hrs" value="${escapeHtml(agent.minHours ?? 0)}" readonly aria-label="Agent minimum hours" />
-                    <input type="number" inputmode="decimal" step="0.25" min="0" placeholder="Max hrs" value="${escapeHtml(agent.maxHours ?? '')}" readonly aria-label="Agent maximum hours" />
-                    <input type="number" inputmode="numeric" step="1" min="0" placeholder="Min in-office" value="${escapeHtml(agent.minInOfficeShifts ?? 0)}" readonly aria-label="Agent minimum in-office shifts" />
-                    <input type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" readonly aria-label="Agent maximum in-office shifts" />
+                <div>
+                  <div><strong>Name:</strong> ${escapeHtml(agent.name)}</div>
+                  <div><strong>Team:</strong> ${escapeHtml(agent.team || teamOptions[0])}</div>
+                  <div><strong>Email:</strong> ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
+                  <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
+                  <div><strong>Assigned hours:</strong> ${escapeHtml(getAssignedHours(agent.id))}</div>
+                  <div><strong>Credit (incl. PTO):</strong> ${escapeHtml(getMinimumHoursCredit(agent.id))}</div>
+                  <div><strong>Targets:</strong> hours ${escapeHtml(agent.minHours ?? 0)}-${escapeHtml(agent.maxHours ?? 'Not set')} | in-office ${escapeHtml(agent.minInOfficeShifts ?? 0)}-${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
                 </div>
                 <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
                   <button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:6px 9px;">Edit</button>
