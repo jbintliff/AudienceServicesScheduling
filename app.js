@@ -1,6 +1,13 @@
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['In-person', 'WFH', 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
 const teamOptions = ['Audience Services Representative', 'Audience Services Associate'];
+const agentSkillOptions = [
+  { value: 'single-tickets', label: 'Single tickets' },
+  { value: 'subscrptions', label: 'Subscrptions' },
+  { value: 'emails', label: 'Emails' },
+  { value: 'booth-duty', label: 'Booth duty' },
+  { value: 'groups', label: 'Groups' }
+];
 const shiftLocationOptions = ['Academy of Music', 'Kimmel Center', 'Miller Theater'];
 const storageKey = 'agent-scheduler-state-v4';
 const authUsersKey = 'agent-scheduler-users-v1';
@@ -2291,6 +2298,27 @@ function normalizeAttendancePoints(value) {
   return Math.floor(parsed);
 }
 
+function normalizeAgentSkills(value) {
+  const allowedSkills = new Set(agentSkillOptions.map((skill) => skill.value));
+  const source = Array.isArray(value) ? value : [];
+  const normalizedSkills = source
+    .map((skill) => String(skill || '').trim().toLowerCase())
+    .filter((skill) => allowedSkills.has(skill));
+  return Array.from(new Set(normalizedSkills));
+}
+
+function getAgentSkillLabels(skills) {
+  const selectedSkills = normalizeAgentSkills(skills);
+  return selectedSkills
+    .map((skillValue) => agentSkillOptions.find((skill) => skill.value === skillValue)?.label || '')
+    .filter(Boolean);
+}
+
+function getAgentSkillsSummary(skills) {
+  const labels = getAgentSkillLabels(skills);
+  return labels.length ? labels.join(', ') : 'None assigned';
+}
+
 function parseCurrencyAmount(value) {
   const normalized = String(value || '').trim().replace(/[$,\s]/g, '');
   if (!normalized) return 0;
@@ -2437,6 +2465,7 @@ function loadState() {
           const maxInOfficeShiftsRaw = typeof agent.maxInOfficeShifts === 'undefined' ? null : agent.maxInOfficeShifts;
           const maxInOfficeShifts = normalizeMaxInOfficeShifts(maxInOfficeShiftsRaw);
           const attendancePoints = normalizeAttendancePoints(agent.attendancePoints);
+          const skills = normalizeAgentSkills(agent.skills);
           const linkedUserEmail = normalizeEmail(
             authUsersForLookup.find((user) => isAgentLikeUser(user) && Number(user.agentId) === Number(agent.id))?.email || ''
           );
@@ -2446,6 +2475,7 @@ function loadState() {
             team: normalizeTeamLabel(agent.team),
             role: normalizeRoleLabel(agent.role, normalizedRoleCatalog),
             attendancePoints,
+            skills,
             minHours,
             maxHours: Number.isFinite(maxHours) ? Math.max(maxHours, minHours) : maxHours,
             maxInOfficeShifts
@@ -3371,6 +3401,7 @@ function saveAgentDetails(agentId, values) {
   const team = normalizeTeamLabel(String(values?.team || '').trim() || teamOptions[0]);
   const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
   const attendancePoints = normalizeAttendancePoints(values?.attendancePoints);
+  const skills = normalizeAgentSkills(values?.skills);
   const minHours = normalizeMinHours(values?.minHours);
   const maxHours = normalizeMaxHours(values?.maxHours);
   const maxInOfficeShifts = normalizeMaxInOfficeShifts(values?.maxInOfficeShifts);
@@ -3398,6 +3429,7 @@ function saveAgentDetails(agentId, values) {
         team,
         payRate,
         attendancePoints,
+        skills,
         minHours,
         maxHours,
         maxInOfficeShifts
@@ -3451,6 +3483,7 @@ function openAgentEditModal(agent, onSave) {
 
   const linkedUser = getUserByAgentId(agent.id);
   const accessRole = normalizeUserRole(linkedUser?.role || userRoles.agent);
+  const selectedSkills = normalizeAgentSkills(agent.skills);
   const overlay = document.createElement('div');
   overlay.id = 'agent-edit-modal-overlay';
   overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
@@ -3506,6 +3539,17 @@ function openAgentEditModal(agent, onSave) {
             <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" />
           </label>
         </div>
+        <div class="card" style="padding:10px; margin-top:2px;">
+          <div style="font-weight:600; margin-bottom:6px;">Skills</div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:8px;">
+            ${agentSkillOptions.map((skill) => `
+              <label style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" name="skills" value="${escapeHtml(skill.value)}" ${selectedSkills.includes(skill.value) ? 'checked' : ''} />
+                <span>${escapeHtml(skill.label)}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
         <div class="row" style="justify-content:flex-end; margin-top:8px;">
           <button type="button" id="agent-edit-cancel" class="secondary">Cancel</button>
           <button type="submit">Save changes</button>
@@ -3545,6 +3589,7 @@ function openAgentEditModal(agent, onSave) {
       team: formData.get('team'),
       payRate: formData.get('payRate'),
       attendancePoints: formData.get('attendancePoints'),
+      skills: formData.getAll('skills'),
       minHours: formData.get('minHours'),
       maxHours: formData.get('maxHours'),
       maxInOfficeShifts: formData.get('maxInOfficeShifts')
@@ -5227,6 +5272,7 @@ function renderProfilePage(currentUser) {
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
               <div><strong>Attendance points:</strong> ${escapeHtml(normalizeAttendancePoints(viewAgent?.attendancePoints))}</div>
+              <div><strong>Skills:</strong> ${escapeHtml(getAgentSkillsSummary(viewAgent?.skills))}</div>
               <div><strong>Email:</strong> ${escapeHtml(activeAgentUser?.email || 'Not set')}</div>
               <div><strong>Phone:</strong> ${escapeHtml(activeAgentUser?.phone || 'Not set')}</div>
             </div>
@@ -6924,6 +6970,7 @@ function bindEvents() {
       role,
       payRate,
       attendancePoints: 0,
+      skills: [],
       minHours,
       maxHours,
       maxInOfficeShifts,
