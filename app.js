@@ -6521,6 +6521,14 @@ function render() {
                       <span>End date</span>
                       <input name="repeatingEndDate" type="date" />
                     </label>
+                    <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                      <span>Start time</span>
+                      <input name="repeatingStartTime" type="time" />
+                    </label>
+                    <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                      <span>End time</span>
+                      <input name="repeatingEndTime" type="time" />
+                    </label>
                   </div>
                 </div>
 
@@ -6649,21 +6657,29 @@ function submitAvailabilityRequest(formElement) {
     const repeatingDay = String(formData.get('repeatingDay') || '').trim();
     const repeatingStartDate = String(formData.get('repeatingStartDate') || '').trim();
     const repeatingEndDate = String(formData.get('repeatingEndDate') || '').trim();
-    if (!repeatingDay || !repeatingStartDate || !repeatingEndDate) {
-      alert('Repeating availability requires a day of week and a start/end date range.');
+    const repeatingStartTime = String(formData.get('repeatingStartTime') || '').trim();
+    const repeatingEndTime = String(formData.get('repeatingEndTime') || '').trim();
+    if (!repeatingDay || !repeatingStartDate || !repeatingEndDate || !repeatingStartTime || !repeatingEndTime) {
+      alert('Repeating availability requires a day of week, start/end date range, and start/end time.');
       return false;
     }
     if (!days.includes(repeatingDay)) {
       alert('Select a valid day of the week for repeating availability.');
       return false;
     }
+    if (toMinutes(repeatingEndTime) <= toMinutes(repeatingStartTime)) {
+      alert('End time must be later than start time.');
+      return false;
+    }
     unavailabilityType = 'Availability';
+    unavailableStart = repeatingStartTime;
+    unavailableEnd = repeatingEndTime;
     recurrenceType = 'weekly';
     recurrenceDay = repeatingDay;
     recurrenceEndDate = repeatingEndDate;
     recurrencePlan = buildWeeklyRecurringDates(repeatingStartDate, repeatingDay, repeatingEndDate);
     recurrenceGroupId = `weekly-${currentId}-${Date.now()}-${createId()}`;
-    summaryLabel = `weekly every ${repeatingDay} from ${repeatingStartDate} through ${repeatingEndDate}`;
+    summaryLabel = `weekly every ${repeatingDay} from ${repeatingStartDate} through ${repeatingEndDate} (${formatTimeRange(repeatingStartTime, repeatingEndTime)})`;
   } else if (requestKind === 'vacation-time') {
     const vacationMode = String(formData.get('vacationMode') || 'single-date').trim();
     unavailabilityType = 'PTO';
@@ -6795,6 +6811,8 @@ function bindAgentAvailabilityFormConditionalFields() {
   const repeatingDay = form.querySelector('select[name="repeatingDay"]');
   const repeatingStartDate = form.querySelector('input[name="repeatingStartDate"]');
   const repeatingEndDate = form.querySelector('input[name="repeatingEndDate"]');
+  const repeatingStartTime = form.querySelector('input[name="repeatingStartTime"]');
+  const repeatingEndTime = form.querySelector('input[name="repeatingEndTime"]');
   const vacationSingleDate = form.querySelector('input[name="vacationSingleDate"]');
   const vacationSingleStart = form.querySelector('input[name="vacationSingleStart"]');
   const vacationSingleEnd = form.querySelector('input[name="vacationSingleEnd"]');
@@ -6835,6 +6853,8 @@ function bindAgentAvailabilityFormConditionalFields() {
     setRequired(repeatingDay, showRepeating);
     setRequired(repeatingStartDate, showRepeating);
     setRequired(repeatingEndDate, showRepeating);
+    setRequired(repeatingStartTime, showRepeating);
+    setRequired(repeatingEndTime, showRepeating);
 
     setRequired(vacationSingleDate, showVacationSingle);
     setRequired(vacationSingleStart, showVacationSingle);
