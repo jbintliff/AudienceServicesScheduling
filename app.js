@@ -2637,7 +2637,8 @@ function canAgentPickUpOfferedShift(shift, agentId) {
 function getShiftStyle(shift) {
   const hasAttentionBorder = isShiftOfferedForPickup(shift) || Boolean(normalizeShiftAbsenceReason(shift?.absenceReason));
   const attentionBorder = hasAttentionBorder ? ' border:2px dashed rgba(255,255,255,0.8);' : '';
-  return `background:${getShiftRoleColor(shift)}; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}`;
+  const absentFade = normalizeShiftAbsenceReason(shift?.absenceReason) ? ' opacity:0.72;' : '';
+  return `background:${getShiftRoleColor(shift)}; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}${absentFade}`;
 }
 
 function cloneShift(shift, dayOverride) {
@@ -5627,6 +5628,7 @@ function renderAgentsPage(currentUser) {
     }
     return String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' });
   });
+  const currentWeekReference = new Date().toISOString().slice(0, 10);
 
   root.innerHTML = `
     <div class="app">
@@ -5678,8 +5680,8 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Team:</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span></div>
                   <div><strong>Email:</strong> ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
-                  <div><strong>Assigned hours:</strong> ${escapeHtml(getAssignedHours(agent.id))}</div>
-                  <div><strong>Credit (incl. PTO):</strong> ${escapeHtml(getMinimumHoursCredit(agent.id))}</div>
+                  <div><strong>Assigned hours:</strong> ${escapeHtml(getAssignedHours(agent.id, currentWeekReference))}</div>
+                  <div><strong>Credit (incl. PTO):</strong> ${escapeHtml(getMinimumHoursCredit(agent.id, currentWeekReference))}</div>
                   <div><strong>Targets:</strong> hours ${escapeHtml(agent.minHours ?? 0)}-${escapeHtml(agent.maxHours ?? 'Not set')} | in-office ${escapeHtml(agent.minInOfficeShifts ?? 0)}-${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
                 </div>
                 <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
