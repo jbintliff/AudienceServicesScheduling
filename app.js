@@ -768,12 +768,20 @@ function syncSharedSnapshotToBackend() {
 async function requestBackend(path, options = {}) {
   if (!backendApiBase) return null;
   try {
+    const method = String(options.method || 'GET').trim().toUpperCase() || 'GET';
+    const nextHeaders = {
+      ...(options.headers || {})
+    };
+    const hasBody = options.body !== undefined && options.body !== null;
+    const hasContentTypeHeader = Object.keys(nextHeaders).some((headerName) => headerName.toLowerCase() === 'content-type');
+    if (hasBody && method !== 'GET' && method !== 'HEAD' && !hasContentTypeHeader) {
+      nextHeaders['Content-Type'] = 'application/json';
+    }
+
     const response = await fetch(`${backendApiBase}${path}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(options.headers || {})
-      }
+      method,
+      headers: nextHeaders
     });
     if (!response.ok) return null;
     return response;
