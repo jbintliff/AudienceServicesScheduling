@@ -3280,6 +3280,203 @@ function openShiftAbsenceModal(shift, onSave) {
   document.body.appendChild(overlay);
 }
 
+function saveAgentDetails(agentId, values) {
+  const id = Number(agentId);
+  const name = String(values?.name || '').trim();
+  const email = normalizeEmail(values?.email);
+  const role = normalizeRoleLabel(String(values?.role || '').trim() || getPrimaryRole(), getRoleCatalog());
+  const team = normalizeTeamLabel(String(values?.team || '').trim() || teamOptions[0]);
+  const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
+  const minHours = normalizeMinHours(values?.minHours);
+  const maxHours = normalizeMaxHours(values?.maxHours);
+  const minInOfficeShifts = normalizeMinInOfficeShifts(values?.minInOfficeShifts);
+  const maxInOfficeShifts = normalizeMaxInOfficeShifts(values?.maxInOfficeShifts);
+
+  if (!name || !email) {
+    return { ok: false, message: 'Name and email are required for each agent.' };
+  }
+  if (!Number.isFinite(payRate) || payRate < 0) {
+    return { ok: false, message: 'Pay rate must be a valid non-negative amount (example: $15.45).' };
+  }
+  if (Number.isFinite(maxHours) && maxHours < minHours) {
+    return { ok: false, message: 'Maximum hours must be greater than or equal to minimum hours.' };
+  }
+  if (Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts < minInOfficeShifts) {
+    return { ok: false, message: 'Maximum in-office shifts must be greater than or equal to minimum in-office shifts.' };
+  }
+  const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email && Number(user.agentId) !== id);
+  if (emailInUse) {
+    return { ok: false, message: 'That email is already in use by another account.' };
+  }
+
+  state.agents = state.agents.map((agent) => Number(agent.id) === id
+    ? {
+        ...agent,
+        id,
+        name,
+        email,
+        role,
+        team,
+        payRate,
+        minHours,
+        maxHours,
+        minInOfficeShifts,
+        maxInOfficeShifts
+      }
+    : agent);
+
+  const existingAgentUser = getUserByAgentId(id);
+  if (existingAgentUser) {
+    const profileUpdatedAt = getCurrentIsoTimestamp();
+    authUsers = authUsers.map((user) => user.id === existingAgentUser.id
+      ? {
+          ...user,
+          email,
+          profileUpdatedAt
+        }
+      : user);
+  } else {
+    const createdAt = getCurrentIsoTimestamp();
+    authUsers.push(withRequiredEmail({
+      id: createId(),
+      username: createUniqueAgentUsername(email),
+      email,
+      phone: '',
+      password: createTemporaryPassword(),
+      passwordUpdatedAt: createdAt,
+      createdAt,
+      profileUpdatedAt: createdAt,
+      mustChangePassword: true,
+      calendarFeedToken: createCalendarFeedToken(),
+      role: userRoles.agent,
+      agentId: id
+    }));
+  }
+
+  const didSaveAuthUsers = saveAuthUsers();
+  const didSaveState = saveState();
+  if (!didSaveAuthUsers || !didSaveState) {
+    syncFromStorage();
+    return { ok: false, message: 'Unable to save agent details permanently. Please check browser storage settings and try again.' };
+  }
+
+  return { ok: true };
+}
+
+function openAgentEditModal(agent, onSave) {
+  const existingOverlay = document.getElementById('agent-edit-modal-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'agent-edit-modal-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:min(720px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
+      <h2 style="margin:0 0 12px;">Edit agent</h2>
+      <p class="muted" style="margin:0 0 14px;">Update agent details, hours, and role from one place.</p>
+      <form id="agent-edit-form" class="stack">
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Name</span>
+            <input name="name" value="${escapeHtml(agent.name || '')}" required />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Email</span>
+            <input name="email" type="email" value="${escapeHtml(getAgentAccountEmail(agent.id) || '')}" required />
+          </label>
+        </div>
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Team</span>
+            <select name="team" required>
+              ${teamOptions.map((team) => `<option value="${team}" ${(agent.team || teamOptions[0]) === team ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Role</span>
+            <select name="role" required>
+              ${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}" ${String(agent.role || '') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px;">
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Pay rate</span>
+            <input name="payRate" type="text" inputmode="decimal" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Min hours</span>
+            <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" value="${escapeHtml(agent.minHours ?? 0)}" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Max hours</span>
+            <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" value="${escapeHtml(agent.maxHours ?? '')}" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Min in-office shifts</span>
+            <input name="minInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(agent.minInOfficeShifts ?? 0)}" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Max in-office shifts</span>
+            <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" />
+          </label>
+        </div>
+        <div class="row" style="justify-content:flex-end; margin-top:8px;">
+          <button type="button" id="agent-edit-cancel" class="secondary">Cancel</button>
+          <button type="submit">Save changes</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  const closeModal = () => {
+    document.removeEventListener('keydown', onEscape);
+    overlay.remove();
+  };
+
+  const onEscape = (event) => {
+    if (event.key === 'Escape') {
+      closeModal();
+    }
+  };
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeModal();
+    }
+  });
+
+  overlay.querySelector('#agent-edit-cancel')?.addEventListener('click', () => {
+    closeModal();
+  });
+
+  overlay.querySelector('#agent-edit-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const result = onSave({
+      name: formData.get('name'),
+      email: formData.get('email'),
+      role: formData.get('role'),
+      team: formData.get('team'),
+      payRate: formData.get('payRate'),
+      minHours: formData.get('minHours'),
+      maxHours: formData.get('maxHours'),
+      minInOfficeShifts: formData.get('minInOfficeShifts'),
+      maxInOfficeShifts: formData.get('maxInOfficeShifts')
+    });
+    if (!result?.ok) {
+      alert(result?.message || 'Unable to save agent details.');
+      return;
+    }
+    closeModal();
+  });
+
+  document.addEventListener('keydown', onEscape);
+  document.body.appendChild(overlay);
+}
+
 function openAvailabilityRequestEditModal(request, onSave) {
   const existingOverlay = document.getElementById('availability-request-edit-modal-overlay');
   if (existingOverlay) {
@@ -5484,7 +5681,7 @@ function renderAgentsPage(currentUser) {
         <div class="agent-list" style="margin-top:8px; display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:6px;">
           ${sortedAgents.map((agent) => `
             <div class="card" style="padding:8px;">
-              <form class="stack" data-update-agent="${agent.id}" style="gap:6px;">
+              <div class="stack" style="gap:6px;">
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
                     <strong>${escapeHtml(agent.name)}</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span>
@@ -5494,23 +5691,23 @@ function renderAgentsPage(currentUser) {
                   </div>
                 </div>
                 <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:5px;">
-                    <input name="name" value="${escapeHtml(agent.name)}" placeholder="Name" required />
-                    <input name="email" type="email" value="${escapeHtml(getAgentAccountEmail(agent.id) || '')}" placeholder="Email" required />
-                    <select name="team" required>
-                      ${teamOptions.map((team) => `<option value="${team}" ${(agent.team || teamOptions[0]) === team ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
-                    </select>
-                    <input name="payRate" type="text" inputmode="decimal" placeholder="Pay rate" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" />
-                    <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Min hrs" value="${escapeHtml(agent.minHours ?? 0)}" />
-                    <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Max hrs" value="${escapeHtml(agent.maxHours ?? '')}" />
-                    <input name="minInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Min in-office" value="${escapeHtml(agent.minInOfficeShifts ?? 0)}" />
-                    <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" />
+                    <input value="${escapeHtml(agent.name)}" placeholder="Name" readonly aria-label="Agent name" />
+                    <input type="email" value="${escapeHtml(getAgentAccountEmail(agent.id) || '')}" placeholder="Email" readonly aria-label="Agent email" />
+                    <input value="${escapeHtml(agent.team || teamOptions[0])}" placeholder="Team" readonly aria-label="Agent team" />
+                    <input value="${escapeHtml(agent.role || getPrimaryRole())}" placeholder="Role" readonly aria-label="Agent role" />
+                    <input type="text" inputmode="decimal" placeholder="Pay rate" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" readonly aria-label="Agent pay rate" />
+                    <input type="number" inputmode="decimal" step="0.25" min="0" placeholder="Min hrs" value="${escapeHtml(agent.minHours ?? 0)}" readonly aria-label="Agent minimum hours" />
+                    <input type="number" inputmode="decimal" step="0.25" min="0" placeholder="Max hrs" value="${escapeHtml(agent.maxHours ?? '')}" readonly aria-label="Agent maximum hours" />
+                    <input type="number" inputmode="numeric" step="1" min="0" placeholder="Min in-office" value="${escapeHtml(agent.minInOfficeShifts ?? 0)}" readonly aria-label="Agent minimum in-office shifts" />
+                    <input type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" readonly aria-label="Agent maximum in-office shifts" />
                 </div>
                 <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
-                  <button class="secondary" type="submit" style="padding:6px 9px;">Save</button>
+                  <button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:6px 9px;">Edit</button>
+                  <button class="secondary" type="button" disabled title="Use Edit to make changes" style="padding:6px 9px; opacity:0.6; cursor:not-allowed;">Save</button>
                   <button class="secondary" type="button" data-resend-agent-invite="${agent.id}" style="padding:6px 9px;">Resend</button>
                   <button class="danger" data-remove-agent="${agent.id}" type="button" style="padding:6px 9px;">Remove</button>
                 </div>
-              </form>
+              </div>
             </div>
           `).join('')}
         </div>
@@ -7242,94 +7439,18 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll('[data-update-agent]').forEach((form) => {
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const id = Number(form.getAttribute('data-update-agent'));
-      const formData = new FormData(form);
-      const name = formData.get('name')?.toString().trim();
-      const email = normalizeEmail(formData.get('email'));
-      const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getPrimaryRole(), getRoleCatalog());
-      const team = normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]);
-      const payRateRaw = formData.get('payRate')?.toString().trim() || '0';
-      const payRate = parseCurrencyAmount(payRateRaw);
-      const minHours = normalizeMinHours(formData.get('minHours'));
-      const maxHours = normalizeMaxHours(formData.get('maxHours'));
-      const minInOfficeShifts = normalizeMinInOfficeShifts(formData.get('minInOfficeShifts'));
-      const maxInOfficeShifts = normalizeMaxInOfficeShifts(formData.get('maxInOfficeShifts'));
-      if (!name || !email) {
-        alert('Name and email are required for each agent.');
-        return;
-      }
-      if (!Number.isFinite(payRate) || payRate < 0) {
-        alert('Pay rate must be a valid non-negative amount (example: $15.45).');
-        return;
-      }
-      if (Number.isFinite(maxHours) && maxHours < minHours) {
-        alert('Maximum hours must be greater than or equal to minimum hours.');
-        return;
-      }
-      if (Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts < minInOfficeShifts) {
-        alert('Maximum in-office shifts must be greater than or equal to minimum in-office shifts.');
-        return;
-      }
-      const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email && Number(user.agentId) !== id);
-      if (emailInUse) {
-        alert('That email is already in use by another account.');
-        return;
-      }
-      state.agents = state.agents.map((agent) => Number(agent.id) === id
-        ? {
-            ...agent,
-            id,
-            name,
-            email,
-            role,
-            team,
-            payRate,
-            minHours,
-            maxHours,
-            minInOfficeShifts,
-            maxInOfficeShifts
-          }
-        : agent);
-
-      const existingAgentUser = getUserByAgentId(id);
-      if (existingAgentUser) {
-        const profileUpdatedAt = getCurrentIsoTimestamp();
-        authUsers = authUsers.map((user) => user.id === existingAgentUser.id
-          ? {
-              ...user,
-              email,
-              profileUpdatedAt
-            }
-          : user);
-      } else {
-        const createdAt = getCurrentIsoTimestamp();
-        authUsers.push(withRequiredEmail({
-          id: createId(),
-          username: createUniqueAgentUsername(email),
-          email,
-          phone: '',
-          password: createTemporaryPassword(),
-          passwordUpdatedAt: createdAt,
-          createdAt,
-          profileUpdatedAt: createdAt,
-          mustChangePassword: true,
-          calendarFeedToken: createCalendarFeedToken(),
-          role: userRoles.agent,
-          agentId: id
-        }));
-      }
-      const didSaveAuthUsers = saveAuthUsers();
-      const didSaveState = saveState();
-      if (!didSaveAuthUsers || !didSaveState) {
-        alert('Unable to save agent details permanently. Please check browser storage settings and try again.');
-        syncFromStorage();
-        render();
-        return;
-      }
-      render();
+  document.querySelectorAll('[data-edit-agent]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = Number(button.getAttribute('data-edit-agent'));
+      const agent = getAgent(id);
+      if (!agent) return;
+      openAgentEditModal(agent, (updatedValues) => {
+        const result = saveAgentDetails(id, updatedValues);
+        if (result.ok) {
+          render();
+        }
+        return result;
+      });
     });
   });
 
