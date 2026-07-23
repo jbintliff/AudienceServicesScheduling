@@ -28,6 +28,12 @@ const shiftStatuses = {
   draft: 'draft',
   published: 'published'
 };
+const shiftAbsenceReasonOptions = ['sick', 'emergency', 'no reason', 'transportation issue'];
+const userRoles = {
+  admin: 'admin',
+  agent: 'agent',
+  absenceManager: 'absence-manager'
+};
 const defaultBackendApiBase = 'https://scheduling-app-backend-l66q.onrender.com/api';
 const sharedStorageKeys = [
   storageKey,
@@ -326,7 +332,7 @@ function normalizePasswordUpdatedAt(value) {
 }
 
 function isAgentPasswordExpired(user) {
-  if (user?.role !== 'agent') return false;
+  if (!isAgentUser(user)) return false;
   const updatedAt = normalizePasswordUpdatedAt(user?.passwordUpdatedAt);
   const parsed = new Date(updatedAt);
   if (Number.isNaN(parsed.getTime())) return false;
@@ -464,10 +470,10 @@ const defaultState = {
 };
 
 const defaultAuthUsers = [
-  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', email: 'admin@scheduler.local', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: 'admin' },
-  { id: 1002, username: 'maya', email: 'maya@scheduler.local', phone: '215-555-0101', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: 'agent', agentId: 1 },
-  { id: 1003, username: 'luis', email: 'luis@scheduler.local', phone: '215-555-0102', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: 'agent', agentId: 2 },
-  { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: 'agent', agentId: 3 }
+  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', email: 'admin@scheduler.local', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.admin },
+  { id: 1002, username: 'maya', email: 'maya@scheduler.local', phone: '215-555-0101', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 1 },
+  { id: 1003, username: 'luis', email: 'luis@scheduler.local', phone: '215-555-0102', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 2 },
+  { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 3 }
 ];
 
 const state = loadState();
@@ -510,6 +516,38 @@ function normalizeOptionCatalog(values, fallbackValues = []) {
 
 function normalizeRoleCatalog(values) {
   return normalizeOptionCatalog(values, roleOptions);
+}
+
+function normalizeShiftAbsenceReason(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return shiftAbsenceReasonOptions.includes(normalized) ? normalized : '';
+}
+
+function normalizeUserRole(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === userRoles.admin) return userRoles.admin;
+  if (normalized === userRoles.absenceManager) return userRoles.absenceManager;
+  return userRoles.agent;
+}
+
+function isAdminUser(user) {
+  return normalizeUserRole(user?.role) === userRoles.admin;
+}
+
+function isAgentUser(user) {
+  return normalizeUserRole(user?.role) === userRoles.agent;
+}
+
+function isAbsenceManagerUser(user) {
+  return normalizeUserRole(user?.role) === userRoles.absenceManager;
+}
+
+function canMarkShiftAbsences(user) {
+  return isAdminUser(user) || isAbsenceManagerUser(user);
+}
+
+function canManageSchedule(user) {
+  return isAdminUser(user);
 }
 
 function normalizeLocationCatalog(values) {
@@ -1575,7 +1613,7 @@ function sendEmailNotification({ to, subject, body, type }) {
 
 function getUserByAgentId(agentId) {
   const normalizedId = Number(agentId);
-  return authUsers.find((user) => user.role === 'agent' && Number(user.agentId) === normalizedId) || null;
+  return authUsers.find((user) => isAgentUser(user) && Number(user.agentId) === normalizedId) || null;
 }
 
 function sendAgentInviteEmail(agentUser, agentName, temporaryPassword = '') {
@@ -1789,11 +1827,11 @@ function getCurrentUser() {
 }
 
 function getActiveAdminCount() {
-  return authUsers.filter((user) => user.role === 'admin' && user.isActive !== false).length;
+  return authUsers.filter((user) => isAdminUser(user) && user.isActive !== false).length;
 }
 
 function applyAccessForUser(user) {
-  if (user.role === 'admin') {
+  if (isAdminUser(user)) {
     const switchedIntoAdmin = state.ui.accessMode !== 'admin';
     state.ui.accessMode = 'admin';
     if (switchedIntoAdmin) {
@@ -1827,27 +1865,38 @@ function applyAccessForUser(user) {
     }
     return;
   }
+  if (isAbsenceManagerUser(user)) {
+    state.ui.accessMode = 'absence-manager';
+    return;
+  }
   state.ui.accessMode = 'agent';
   state.ui.currentAgentId = Number(user.agentId);
 }
 
 function getUserDisplayName(user) {
   if (!user) return '';
-  if (user.role === 'agent') {
+  if (isAgentUser(user)) {
     return getAgent(Number(user.agentId))?.name || user.username;
   }
-  return user.username;
+  return user.name || user.username;
 }
 
 function renderUserNavChip(user) {
   const displayName = getUserDisplayName(user) || 'User';
-  const roleLabel = String(user?.role || '').trim() || 'account';
+  const roleLabel = getUserRoleLabel(user?.role);
   const photoDataUrl = String(user?.profilePhotoDataUrl || '').trim();
   const fallbackInitial = String(displayName || 'U').trim().charAt(0).toUpperCase() || 'U';
   const avatarMarkup = photoDataUrl
     ? `<img src="${escapeHtml(photoDataUrl)}" alt="Profile" style="width:22px; height:22px; border-radius:999px; object-fit:cover; border:1px solid rgba(255,255,255,0.45);" />`
     : `<span style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:999px; border:1px solid rgba(255,255,255,0.45); background:rgba(255,255,255,0.12); color:#fff; font-size:0.75rem; font-weight:700;">${escapeHtml(fallbackInitial)}</span>`;
   return `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${avatarMarkup}<span>${escapeHtml(displayName)} (${escapeHtml(roleLabel)})</span></span>`;
+}
+
+function getUserRoleLabel(roleValue) {
+  const role = normalizeUserRole(roleValue);
+  if (role === userRoles.admin) return 'admin';
+  if (role === userRoles.absenceManager) return 'absence manager';
+  return 'agent';
 }
 
 function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
@@ -3164,6 +3213,72 @@ function openShiftEditModal(shift, onSave) {
   document.body.appendChild(overlay);
 }
 
+function openShiftAbsenceModal(shift, onSave) {
+  const existingOverlay = document.getElementById('shift-absence-modal-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  const currentReason = normalizeShiftAbsenceReason(shift?.absenceReason) || shiftAbsenceReasonOptions[0];
+  const overlay = document.createElement('div');
+  overlay.id = 'shift-absence-modal-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:min(560px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
+      <h2 style="margin:0 0 12px;">Mark shift as absent</h2>
+      <p class="muted" style="margin:0 0 14px;">${escapeHtml(getAgent(shift?.agentId)?.name || 'Agent')} • ${escapeHtml(shift?.date || shift?.day || '')} • ${escapeHtml(formatTimeRange(shift?.start || '00:00', shift?.end || '00:00'))}</p>
+      <form id="shift-absence-form" class="stack">
+        <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+          <span>Reason</span>
+          <select name="absenceReason" required>
+            ${shiftAbsenceReasonOptions.map((reason) => `<option value="${escapeHtml(reason)}" ${reason === currentReason ? 'selected' : ''}>${escapeHtml(reason)}</option>`).join('')}
+          </select>
+        </label>
+        <div class="row" style="justify-content:flex-end; margin-top:8px;">
+          <button type="button" id="shift-absence-cancel" class="secondary">Cancel</button>
+          <button type="submit">Save absent reason</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  const closeModal = () => {
+    document.removeEventListener('keydown', onEscape);
+    overlay.remove();
+  };
+
+  const onEscape = (event) => {
+    if (event.key === 'Escape') {
+      closeModal();
+    }
+  };
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeModal();
+    }
+  });
+
+  overlay.querySelector('#shift-absence-cancel')?.addEventListener('click', () => {
+    closeModal();
+  });
+
+  overlay.querySelector('#shift-absence-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const absenceReason = normalizeShiftAbsenceReason(formData.get('absenceReason'));
+    if (!absenceReason) {
+      alert('Select an absence reason.');
+      return;
+    }
+    onSave(absenceReason);
+    closeModal();
+  });
+
+  document.addEventListener('keydown', onEscape);
+  document.body.appendChild(overlay);
+}
+
 function openAvailabilityRequestEditModal(request, onSave) {
   const existingOverlay = document.getElementById('availability-request-edit-modal-overlay');
   if (existingOverlay) {
@@ -3775,6 +3890,13 @@ function renderAgentNavigationLinks() {
   ].join('');
 }
 
+function renderAbsenceManagerNavigationLinks() {
+  return [
+    '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>',
+    '<a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>'
+  ].join('');
+}
+
 function renderCalendarPage(currentUser) {
   const spendByDay = getSpendByDay();
   const calendarFilters = state.ui.calendar || {};
@@ -3784,7 +3906,10 @@ function renderCalendarPage(currentUser) {
   const locations = getAllLocations();
   const roleItems = getRoleLegendItems();
   const agentNameItems = state.agents.map((agent) => String(agent.name || '').trim()).filter(Boolean).sort((left, right) => left.localeCompare(right));
-  const isAgentView = currentUser.role === 'agent';
+  const isAgentView = isAgentUser(currentUser);
+  const isAbsenceManagerView = isAbsenceManagerUser(currentUser);
+  const canManageCalendar = canManageSchedule(currentUser);
+  const canMarkAbsence = canMarkShiftAbsences(currentUser);
   const viewAgent = getViewAgent();
   const currentAgentId = Number(currentUser?.agentId) || Number(viewAgent?.id) || null;
   const baseCalendarShifts = getFilteredCalendarShifts();
@@ -3803,10 +3928,10 @@ function renderCalendarPage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>${isAgentView ? 'My calendar' : 'Calendar view'}</h1>
-          <p class="muted">${isAgentView ? 'Review the full published team schedule and request swaps for your own shifts.' : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
+          <p class="muted">${isAgentView ? 'Review the full published team schedule and request swaps for your own shifts.' : isAbsenceManagerView ? 'Review team shifts and mark absences without full admin controls.' : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
         </div>
         <div class="row">
-          ${isAgentView ? renderAgentNavigationLinks() : renderAdminNavigationLinks({ includeExport: true })}
+          ${isAgentView ? renderAgentNavigationLinks() : isAbsenceManagerView ? renderAbsenceManagerNavigationLinks() : renderAdminNavigationLinks({ includeExport: true })}
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
@@ -3856,7 +3981,7 @@ function renderCalendarPage(currentUser) {
         </div>
       </div>
 
-      ${!isAgentView ? `
+      ${canManageCalendar ? `
         <div class="panel" style="margin-bottom:16px;">
           <h3>Create shift</h3>
           <form id="add-shift-form" class="stack">
@@ -3910,13 +4035,13 @@ function renderCalendarPage(currentUser) {
         </div>` : ''}
 
       <div class="panel">
-        ${!isAgentView ? `<div class="muted" style="margin-bottom:10px;">${copiedShiftTemplate ? `Copied: ${escapeHtml(getShiftSummary(copiedShiftTemplate))}` : 'Copy a shift, then use Paste here on any day.'}</div>` : ''}
+        ${canManageCalendar ? `<div class="muted" style="margin-bottom:10px;">${copiedShiftTemplate ? `Copied: ${escapeHtml(getShiftSummary(copiedShiftTemplate))}` : 'Copy a shift, then use Paste here on any day.'}</div>` : ''}
         <div class="row" style="margin-bottom:10px;">
           ${getRoleLegendItems().map((role) => `
             <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
           `).join('')}
         </div>
-        ${!isAgentView ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
+        ${canManageCalendar ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
         <div class="day-row">
           ${days.map((day) => `
             <div class="day-card" data-day="${day}" data-date="${escapeHtml(weekDates[day]?.iso || '')}">
@@ -3926,17 +4051,19 @@ function renderCalendarPage(currentUser) {
                   <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                 </div>
-                ${!isAgentView ? `<button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button>` : ''}
+                ${canManageCalendar ? `<button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button>` : ''}
               </div>
-              ${sortedVisibleCalendarShifts.filter((shift) => shift.day === day).map((shift) => `
-                <div class="shift ${!isAgentView && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
+              ${sortedVisibleCalendarShifts.filter((shift) => shift.day === day).map((shift) => {
+                const absenceReason = normalizeShiftAbsenceReason(shift?.absenceReason);
+                return `
+                <div class="shift ${canManageCalendar && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="${canManageCalendar ? 'true' : 'false'}" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
                   <div class="row" style="justify-content:flex-start; align-items:center; gap:6px; margin-bottom:2px;">
-                    ${!isAgentView ? `<input type="checkbox" data-shift-select-checkbox="${shift.id}" ${selectedCalendarShiftIds.has(Number(shift.id)) ? 'checked' : ''} aria-label="Select shift for bulk actions" />` : ''}
+                    ${canManageCalendar ? `<input type="checkbox" data-shift-select-checkbox="${shift.id}" ${selectedCalendarShiftIds.has(Number(shift.id)) ? 'checked' : ''} aria-label="Select shift for bulk actions" />` : ''}
                     <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>${getAgent(shift.agentId)?.role ? `<span class="muted"> (${escapeHtml(getAgent(shift.agentId)?.role)})</span>` : ''}
                   </div>
                   ${!isAgentView && getAgent(shift.agentId)?.team ? `<div class="muted">${escapeHtml(normalizeTeamLabel(getAgent(shift.agentId)?.team))}</div>` : ''}
                   ${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
-                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}</div><div class="row calendar-shift-actions" style="margin-top:6px;"><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-dup-shift="${shift.id}">Copy/Dup</button>${shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button></div>` : ''}
+                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}</div><div class="row calendar-shift-actions" style="margin-top:6px;">${canManageCalendar ? `<button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-dup-shift="${shift.id}">Copy/Dup</button>` : ''}${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}${canManageCalendar ? `<button type="button" class="danger" data-remove-shift="${shift.id}">Remove</button>` : ''}</div>` : ''}
                   ${isAgentView ? `
                     <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
                     <div class="row" style="margin-top:6px;">
@@ -3945,7 +4072,8 @@ function renderCalendarPage(currentUser) {
                     </div>
                   ` : ''}
                 </div>
-              `).join('')}
+              `;
+              }).join('')}
             </div>
           `).join('')}
         </div>
@@ -3957,10 +4085,12 @@ function renderCalendarPage(currentUser) {
 }
 
 function renderProfilePage(currentUser) {
-  const isAgentView = currentUser.role === 'agent';
-  if (!isAgentView) {
+  const isAdminView = isAdminUser(currentUser);
+  const isAgentView = isAgentUser(currentUser);
+  const isAbsenceManagerView = isAbsenceManagerUser(currentUser);
+  if (isAdminView) {
     const adminUsers = authUsers
-      .filter((user) => user.role === 'admin')
+      .filter((user) => isAdminUser(user) || isAbsenceManagerUser(user))
       .sort((left, right) => String(left.name || left.username || '').localeCompare(String(right.name || right.username || ''), undefined, { sensitivity: 'base' }));
 
     root.innerHTML = `
@@ -4030,6 +4160,10 @@ function renderProfilePage(currentUser) {
                 <input name="jobTitle" placeholder="Job title" value="Scheduling Manager" required />
                 <input name="email" type="email" placeholder="Email" required autocomplete="email" />
                 <input name="phone" type="tel" placeholder="Phone" required autocomplete="tel" />
+                <select name="accessRole" required>
+                  <option value="${userRoles.admin}">Admin (full access)</option>
+                  <option value="${userRoles.absenceManager}">Absence manager (mark absent only)</option>
+                </select>
                 <button type="submit">Add manager</button>
               </form>
               <div class="request-list" style="margin-top:12px;">
@@ -4038,7 +4172,7 @@ function renderProfilePage(currentUser) {
                     <form class="stack" data-update-admin-form="${adminUser.id}">
                       <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                         <strong>${escapeHtml(adminUser.name || adminUser.username || 'Manager')}</strong>
-                        <div class="muted">Status: ${escapeHtml(adminUser.isActive === false ? 'Inactive' : 'Active')}</div>
+                        <div class="muted">Status: ${escapeHtml(adminUser.isActive === false ? 'Inactive' : 'Active')} • Access: ${escapeHtml(getUserRoleLabel(adminUser.role))}</div>
                       </div>
                       <div class="row" style="gap:8px; flex-wrap:wrap;">
                         <input name="name" value="${escapeHtml(adminUser.name || '')}" placeholder="Manager name" required />
@@ -4047,6 +4181,12 @@ function renderProfilePage(currentUser) {
                       <div class="row" style="gap:8px; flex-wrap:wrap;">
                         <input name="email" type="email" value="${escapeHtml(adminUser.email || '')}" placeholder="Email" required autocomplete="email" />
                         <input name="phone" type="tel" value="${escapeHtml(adminUser.phone || '')}" placeholder="Phone" required autocomplete="tel" />
+                      </div>
+                      <div class="row" style="gap:8px; flex-wrap:wrap;">
+                        <select name="accessRole" required>
+                          <option value="${userRoles.admin}" ${isAdminUser(adminUser) ? 'selected' : ''}>Admin (full access)</option>
+                          <option value="${userRoles.absenceManager}" ${isAbsenceManagerUser(adminUser) ? 'selected' : ''}>Absence manager (mark absent only)</option>
+                        </select>
                       </div>
                       <div class="row" style="gap:8px; flex-wrap:wrap; justify-content:flex-end;">
                         <button type="submit" class="secondary">Save manager</button>
@@ -4183,6 +4323,7 @@ function renderProfilePage(currentUser) {
       const jobTitle = formData.get('jobTitle')?.toString().trim() || '';
       const email = normalizeEmail(formData.get('email'));
       const phone = normalizePhone(formData.get('phone'));
+      const accessRole = normalizeUserRole(formData.get('accessRole'));
 
       if (!name || !jobTitle || !email || !phone) {
         alert('All manager fields are required.');
@@ -4206,7 +4347,7 @@ function renderProfilePage(currentUser) {
         createdAt: getCurrentIsoTimestamp(),
         updatedAt: getCurrentIsoTimestamp(),
         profileUpdatedAt: getCurrentIsoTimestamp(),
-        role: 'admin'
+        role: accessRole
       });
       authUsers.push(nextAdminUser);
       const didSaveAuthUsers = saveAuthUsers();
@@ -4241,7 +4382,7 @@ function renderProfilePage(currentUser) {
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         const adminId = Number(form.getAttribute('data-update-admin-form'));
-        const adminUser = authUsers.find((user) => user.role === 'admin' && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAbsenceManagerUser(user)) && Number(user.id) === adminId);
         if (!adminUser) return;
 
         const formData = new FormData(form);
@@ -4249,6 +4390,7 @@ function renderProfilePage(currentUser) {
         const jobTitle = formData.get('jobTitle')?.toString().trim() || '';
         const email = normalizeEmail(formData.get('email'));
         const phone = normalizePhone(formData.get('phone'));
+        const accessRole = normalizeUserRole(formData.get('accessRole'));
 
         if (!name || !jobTitle || !email || !phone) {
           alert('All manager fields are required.');
@@ -4261,6 +4403,15 @@ function renderProfilePage(currentUser) {
           return;
         }
 
+        const demotingLastActiveAdmin = isAdminUser(adminUser)
+          && accessRole !== userRoles.admin
+          && adminUser.isActive !== false
+          && getActiveAdminCount() <= 1;
+        if (demotingLastActiveAdmin) {
+          alert('You cannot change the last active admin to absence manager.');
+          return;
+        }
+
         authUsers = authUsers.map((user) => user.id === adminId
           ? {
               ...user,
@@ -4268,6 +4419,7 @@ function renderProfilePage(currentUser) {
               jobTitle,
               email,
               phone,
+              role: accessRole,
               updatedAt: getCurrentIsoTimestamp(),
               profileUpdatedAt: getCurrentIsoTimestamp()
             }
@@ -4400,7 +4552,7 @@ function renderProfilePage(currentUser) {
     document.querySelectorAll('[data-resend-admin-invite]').forEach((button) => {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-resend-admin-invite'));
-        const adminUser = authUsers.find((user) => user.role === 'admin' && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAbsenceManagerUser(user)) && Number(user.id) === adminId);
         if (!adminUser?.email) {
           alert('This manager needs a valid email before sending an invite.');
           return;
@@ -4428,10 +4580,10 @@ function renderProfilePage(currentUser) {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-toggle-admin-active'));
         const activeUser = getCurrentUser();
-        const adminUser = authUsers.find((user) => user.role === 'admin' && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAbsenceManagerUser(user)) && Number(user.id) === adminId);
         if (!adminUser) return;
         const isDeactivating = adminUser.isActive !== false;
-        if (isDeactivating && getActiveAdminCount() <= 1) {
+        if (isDeactivating && isAdminUser(adminUser) && getActiveAdminCount() <= 1) {
           alert('You cannot deactivate the last active admin account.');
           return;
         }
@@ -4471,14 +4623,14 @@ function renderProfilePage(currentUser) {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-remove-admin'));
         const activeUser = getCurrentUser();
-        const adminUser = authUsers.find((user) => user.role === 'admin' && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAbsenceManagerUser(user)) && Number(user.id) === adminId);
         if (!adminUser) return;
         if (activeUser?.id === adminId) {
           alert('You cannot remove the manager account you are currently signed in with.');
           return;
         }
         const activeAdminCount = getActiveAdminCount();
-        if (adminUser.isActive !== false && activeAdminCount <= 1) {
+        if (isAdminUser(adminUser) && adminUser.isActive !== false && activeAdminCount <= 1) {
           alert('You cannot remove the last active admin account.');
           return;
         }
@@ -4565,6 +4717,153 @@ function renderProfilePage(currentUser) {
       } else {
         alert('Blackout dates saved. Agents cannot submit time-off requests for those dates.');
       }
+      render();
+    });
+
+    bindProfilePhotoHandlers();
+
+    document.getElementById('logout-btn')?.addEventListener('click', () => {
+      clearSession();
+      render();
+    });
+    return;
+  }
+
+  if (isAbsenceManagerView) {
+    root.innerHTML = `
+      <div class="app">
+        <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+          <div>
+            <h1>My profile</h1>
+            <p class="muted">Update your account details and password.</p>
+          </div>
+          <div class="row">
+            ${renderAbsenceManagerNavigationLinks()}
+            ${renderUserNavChip(currentUser)}
+            <button id="logout-btn" class="secondary" type="button">Log out</button>
+          </div>
+        </div>
+
+        <div class="grid" style="margin-top:16px; grid-template-columns:1fr;">
+          <div class="stack">
+            <div class="panel">
+              <div class="card" style="margin-bottom:10px;">
+                ${currentUser?.profilePhotoDataUrl ? `<div style="margin-bottom:10px;"><img src="${escapeHtml(currentUser.profilePhotoDataUrl)}" alt="Profile photo" style="width:84px; height:84px; border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,0.35);" /></div>` : ''}
+                <div><strong>Name:</strong> ${escapeHtml(currentUser?.name || currentUser?.username || 'Not set')}</div>
+                <div><strong>Job title:</strong> ${escapeHtml(currentUser?.jobTitle || 'Absence Manager')}</div>
+                <div><strong>Email:</strong> ${escapeHtml(currentUser?.email || 'Not set')}</div>
+                <div><strong>Phone:</strong> ${escapeHtml(currentUser?.phone || 'Not set')}</div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h2>Profile photo</h2>
+              <p class="muted">Upload a JPG, PNG, GIF, or WEBP image up to 8 MB.</p>
+              <form id="upload-profile-photo-form" class="stack" style="margin-top:10px;">
+                <input name="profilePhoto" type="file" accept="image/*" required />
+                <div class="row" style="gap:8px;">
+                  <button type="submit">Upload photo</button>
+                  ${currentUser?.profilePhotoDataUrl ? '<button id="remove-profile-photo" type="button" class="danger">Remove photo</button>' : ''}
+                </div>
+              </form>
+            </div>
+
+            <div class="panel">
+              <h2>Edit profile</h2>
+              <form id="admin-update-profile-form" class="stack" style="margin-top:10px;">
+                <input name="name" placeholder="Name" value="${escapeHtml(currentUser?.name || currentUser?.username || '')}" required />
+                <input name="jobTitle" placeholder="Job title" value="${escapeHtml(currentUser?.jobTitle || 'Absence Manager')}" required />
+                <input name="email" type="email" placeholder="Email" value="${escapeHtml(currentUser?.email || '')}" required autocomplete="email" />
+                <input name="phone" type="tel" placeholder="Phone" value="${escapeHtml(currentUser?.phone || '')}" required autocomplete="tel" />
+                <button type="submit">Save profile</button>
+              </form>
+            </div>
+
+            <div class="panel">
+              <h2>Reset password</h2>
+              <form id="admin-reset-password-form" class="stack" style="margin-top:10px;">
+                <input name="currentPassword" type="password" placeholder="Current password" required autocomplete="current-password" />
+                <input name="newPassword" type="password" placeholder="New password" required autocomplete="new-password" />
+                <input name="confirmPassword" type="password" placeholder="Confirm new password" required autocomplete="new-password" />
+                <button type="submit">Update password</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('admin-update-profile-form')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const activeUser = getCurrentUser();
+      if (!activeUser) return;
+
+      const formData = new FormData(event.currentTarget);
+      const name = formData.get('name')?.toString().trim() || '';
+      const jobTitle = formData.get('jobTitle')?.toString().trim() || '';
+      const email = normalizeEmail(formData.get('email'));
+      const phone = normalizePhone(formData.get('phone'));
+
+      if (!name || !jobTitle || !email || !phone) {
+        alert('All profile fields are required.');
+        return;
+      }
+
+      const emailInUse = authUsers.some((user) => user.id !== activeUser.id && normalizeEmail(user.email) === email);
+      if (emailInUse) {
+        alert('That email address is already in use by another account.');
+        return;
+      }
+
+      authUsers = authUsers.map((user) => user.id === activeUser.id
+        ? {
+            ...user,
+            name,
+            jobTitle,
+            email,
+            phone,
+            updatedAt: getCurrentIsoTimestamp(),
+            profileUpdatedAt: getCurrentIsoTimestamp()
+          }
+        : user);
+      const didSaveAuthUsers = saveAuthUsers();
+      if (!didSaveAuthUsers) {
+        alert('Unable to save profile changes right now. Please check browser storage settings and try again.');
+        render();
+        return;
+      }
+      alert('Profile updated successfully.');
+      render();
+    });
+
+    document.getElementById('admin-reset-password-form')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const activeUser = getCurrentUser();
+      if (!activeUser) return;
+
+      const formData = new FormData(event.currentTarget);
+      const currentPassword = formData.get('currentPassword')?.toString() || '';
+      const newPassword = formData.get('newPassword')?.toString() || '';
+      const confirmPassword = formData.get('confirmPassword')?.toString() || '';
+
+      if (currentPassword !== activeUser.password) {
+        alert('Current password is incorrect.');
+        return;
+      }
+      if (newPassword.length < 8) {
+        alert('New password must be at least 8 characters.');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        alert('New password and confirmation do not match.');
+        return;
+      }
+
+      authUsers = authUsers.map((user) => user.id === activeUser.id
+        ? { ...user, password: newPassword, passwordUpdatedAt: getCurrentIsoTimestamp() }
+        : user);
+      saveAuthUsers();
+      alert('Password updated successfully.');
       render();
     });
 
@@ -5524,16 +5823,16 @@ function render() {
     renderLoginPage();
     return;
   }
-  if (currentUser.role === 'agent' && !state.agents.some((agent) => agent.id === Number(currentUser.agentId))) {
+  if (isAgentUser(currentUser) && !state.agents.some((agent) => agent.id === Number(currentUser.agentId))) {
     clearSession();
     renderLoginPage('Your linked agent profile no longer exists. Contact an admin.');
     return;
   }
-  if (currentUser.role === 'agent' && currentUser.mustChangePassword) {
+  if (isAgentUser(currentUser) && currentUser.mustChangePassword) {
     renderFirstLoginPasswordSetupPage(currentUser);
     return;
   }
-  if (currentUser.role === 'agent' && isAgentPasswordExpired(currentUser)) {
+  if (isAgentUser(currentUser) && isAgentPasswordExpired(currentUser)) {
     renderFirstLoginPasswordSetupPage(currentUser, {
       title: 'Reset your password',
       description: `Your password has expired after ${agentPasswordMaxAgeDays} days. Create a new password to continue.`
@@ -5541,6 +5840,18 @@ function render() {
     return;
   }
   applyAccessForUser(currentUser);
+
+  if (isAbsenceManagerUser(currentUser)) {
+    const allowedViews = new Set(['dashboard', 'calendar', 'profile']);
+    if (!allowedViews.has(pageMode)) {
+      renderCalendarPage(currentUser);
+      return;
+    }
+    if (pageMode === 'dashboard') {
+      renderCalendarPage(currentUser);
+      return;
+    }
+  }
 
   if (pageMode === 'profile') {
     renderProfilePage(currentUser);
@@ -5590,7 +5901,7 @@ function render() {
   const spendByDay = getSpendByDay();
   const stats = getAvailabilityStats();
   const visibleAgents = getFilteredAgents();
-  const isAgentView = currentUser.role === 'agent';
+  const isAgentView = isAgentUser(currentUser);
   if (!isAgentView) {
     state.ui.calendar = {
       ...(state.ui.calendar || {}),
@@ -6087,6 +6398,10 @@ function bindProfilePhotoHandlers() {
 }
 
 function bindEvents() {
+  const activeUser = getCurrentUser();
+  const canManageCalendar = canManageSchedule(activeUser);
+  const canMarkAbsence = canMarkShiftAbsences(activeUser);
+
   document.getElementById('add-agent-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -6147,7 +6462,7 @@ function bindEvents() {
       profileUpdatedAt: createdAt,
       mustChangePassword: true,
       calendarFeedToken: createCalendarFeedToken(),
-      role: 'agent',
+      role: userRoles.agent,
       agentId
     });
     authUsers.push(nextUser);
@@ -6172,6 +6487,7 @@ function bindEvents() {
 
   document.getElementById('add-shift-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
+    if (!canManageCalendar) return;
     const formData = new FormData(event.currentTarget);
     const agentId = formData.get('agentId') ? Number(formData.get('agentId')) : null;
     const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getAgent(agentId)?.role || getPrimaryRole(), getRoleCatalog());
@@ -6193,6 +6509,7 @@ function bindEvents() {
   });
 
   document.querySelector('#add-shift-form select[name="templateId"]')?.addEventListener('change', (event) => {
+    if (!canManageCalendar) return;
     const select = event.currentTarget;
     const form = select?.closest('form');
     if (!(select instanceof HTMLSelectElement) || !(form instanceof HTMLFormElement)) return;
@@ -6999,7 +7316,7 @@ function bindEvents() {
           profileUpdatedAt: createdAt,
           mustChangePassword: true,
           calendarFeedToken: createCalendarFeedToken(),
-          role: 'agent',
+          role: userRoles.agent,
           agentId: id
         }));
       }
@@ -7057,6 +7374,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-remove-shift]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (!canManageCalendar) return;
       const id = Number(button.getAttribute('data-remove-shift'));
       const shift = state.shifts.find((item) => Number(item.id) === id);
       if (!shift) return;
@@ -7144,6 +7462,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-shift-select-checkbox]').forEach((checkbox) => {
     checkbox.addEventListener('change', () => {
+      if (!canManageCalendar) return;
       const id = Number(checkbox.getAttribute('data-shift-select-checkbox'));
       if (!id) return;
       if (checkbox.checked) {
@@ -7156,16 +7475,19 @@ function bindEvents() {
   });
 
   document.querySelector('[data-select-visible-shifts]')?.addEventListener('click', () => {
+    if (!canManageCalendar) return;
     selectedCalendarShiftIds = new Set(getFilteredCalendarShifts().map((shift) => Number(shift.id)));
     render();
   });
 
   document.querySelector('[data-clear-selected-shifts]')?.addEventListener('click', () => {
+    if (!canManageCalendar) return;
     selectedCalendarShiftIds.clear();
     render();
   });
 
   document.querySelector('[data-publish-selected-shifts]')?.addEventListener('click', () => {
+    if (!canManageCalendar) return;
     if (selectedCalendarShiftIds.size === 0) return;
     const shiftsToNotify = state.shifts
       .filter((shift) => selectedCalendarShiftIds.has(Number(shift.id)) && shift.status !== shiftStatuses.published)
@@ -7187,6 +7509,7 @@ function bindEvents() {
   });
 
   document.querySelector('[data-remove-selected-shifts]')?.addEventListener('click', () => {
+    if (!canManageCalendar) return;
     if (selectedCalendarShiftIds.size === 0) return;
     const selectedCount = selectedCalendarShiftIds.size;
     const shouldDelete = confirm(`Delete ${selectedCount} selected shift${selectedCount === 1 ? '' : 's'}?`);
@@ -7206,6 +7529,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-edit-shift]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (!canManageCalendar) return;
       const id = Number(button.getAttribute('data-edit-shift'));
       const shift = state.shifts.find((item) => item.id === id);
       if (!shift) return;
@@ -7223,6 +7547,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-publish-shift]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (!canManageCalendar) return;
       const id = Number(button.getAttribute('data-publish-shift'));
       const shiftToPublish = state.shifts.find((shift) => shift.id === id);
       if (!shiftToPublish) return;
@@ -7234,6 +7559,46 @@ function bindEvents() {
       if (shiftToPublish.status !== shiftStatuses.published && shouldSendEmails) {
         sendShiftPublishedEmail({ ...shiftToPublish, status: shiftStatuses.published });
       }
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-mark-shift-absent]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!canMarkAbsence) return;
+      const id = Number(button.getAttribute('data-mark-shift-absent'));
+      const shift = state.shifts.find((item) => Number(item.id) === id);
+      if (!shift) return;
+      openShiftAbsenceModal(shift, (absenceReason) => {
+        state.shifts = state.shifts.map((item) => Number(item.id) === id
+          ? {
+              ...item,
+              absenceReason,
+              absentMarkedAt: getCurrentIsoTimestamp()
+            }
+          : item);
+        saveState();
+        render();
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-clear-shift-absent]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!canMarkAbsence) return;
+      const id = Number(button.getAttribute('data-clear-shift-absent'));
+      const shift = state.shifts.find((item) => Number(item.id) === id);
+      if (!shift) return;
+      const shouldClear = confirm('Clear this shift absence flag?');
+      if (!shouldClear) return;
+      state.shifts = state.shifts.map((item) => Number(item.id) === id
+        ? {
+            ...item,
+            absenceReason: '',
+            absentMarkedAt: ''
+          }
+        : item);
       saveState();
       render();
     });
@@ -7420,6 +7785,7 @@ function bindEvents() {
   document.querySelectorAll('[data-copy-dup-shift]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.preventDefault();
+      if (!canManageCalendar) return;
       const id = Number(button.getAttribute('data-copy-dup-shift'));
       const shift = state.shifts.find((item) => item.id === id);
       if (!shift) return;
@@ -7447,6 +7813,7 @@ function bindEvents() {
   document.querySelectorAll('[data-paste-shift-day]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.preventDefault();
+      if (!canManageCalendar) return;
       const day = button.getAttribute('data-paste-shift-day');
       if (!copiedShiftTemplate || !day) return;
       const pastedShift = cloneShift(copiedShiftTemplate, day);
@@ -7462,10 +7829,12 @@ function bindEvents() {
 
   document.querySelectorAll('.shift').forEach((shiftElement) => {
     shiftElement.addEventListener('dragstart', (event) => {
+      if (!canManageCalendar) return;
       draggedShiftId = Number(shiftElement.getAttribute('data-shift-id'));
       event.dataTransfer?.setData('text/plain', String(draggedShiftId));
     });
     shiftElement.addEventListener('dragend', () => {
+      if (!canManageCalendar) return;
       draggedShiftId = null;
       document.querySelectorAll('.day-card').forEach((card) => card.classList.remove('drag-over'));
     });
@@ -7473,13 +7842,16 @@ function bindEvents() {
 
   document.querySelectorAll('.day-card').forEach((card) => {
     card.addEventListener('dragover', (event) => {
+      if (!canManageCalendar) return;
       event.preventDefault();
       card.classList.add('drag-over');
     });
     card.addEventListener('dragleave', () => {
+      if (!canManageCalendar) return;
       card.classList.remove('drag-over');
     });
     card.addEventListener('drop', (event) => {
+      if (!canManageCalendar) return;
       event.preventDefault();
       card.classList.remove('drag-over');
       const shiftId = draggedShiftId ?? Number(event.dataTransfer?.getData('text/plain'));
