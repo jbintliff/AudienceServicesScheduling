@@ -817,7 +817,7 @@ function safeSetLocalStorage(key, value) {
   }
 }
 
-function syncSharedSnapshotToBackend() {
+async function syncSharedSnapshotToBackend() {
   if (!backendApiBase) return false;
   try {
     const store = {};
@@ -827,13 +827,14 @@ function syncSharedSnapshotToBackend() {
         store[key] = value;
       }
     });
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', `${backendApiBase}/snapshot`, false);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.send(JSON.stringify({ store }));
-    const didSync = xhr.status >= 200 && xhr.status < 300;
+    const response = await requestBackend('/snapshot', {
+      method: 'PUT',
+      body: JSON.stringify({ store })
+    });
+    const didSync = Boolean(response);
     if (didSync) {
       pendingSharedWriteKeys.clear();
+      markSyncSuccess();
     }
     return didSync;
   } catch {
@@ -914,11 +915,11 @@ async function deletePolicyFileFromBackend(policyId) {
 async function pushSharedKeyToBackend(key, rawValue) {
   if (!backendApiBase) return false;
   try {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', `${backendApiBase}/store/${encodeURIComponent(key)}`, false);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.send(JSON.stringify({ value: rawValue }));
-    const ok = xhr.status >= 200 && xhr.status < 300;
+    const response = await requestBackend(`/store/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value: rawValue })
+    });
+    const ok = Boolean(response);
     if (ok) {
       markSyncSuccess();
     }
