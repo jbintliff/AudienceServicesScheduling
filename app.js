@@ -3751,6 +3751,17 @@ function getTeamBadgeStyle(team) {
   return 'background:#C49583; color:#2E2422; border:1px solid rgba(46,36,34,0.2);';
 }
 
+function getTeamCardStyle(team) {
+  const normalizedTeam = normalizeTeamLabel(team);
+  if (normalizedTeam === 'Audience Services Representative') {
+    return 'border-left:4px solid #7AACAF; background:linear-gradient(90deg, rgba(122,172,175,0.2), rgba(122,172,175,0.08));';
+  }
+  if (normalizedTeam === 'Audience Services Associate') {
+    return 'border-left:4px solid #F4A997; background:linear-gradient(90deg, rgba(244,169,151,0.2), rgba(244,169,151,0.08));';
+  }
+  return 'border-left:4px solid #C49583; background:linear-gradient(90deg, rgba(196,149,131,0.2), rgba(196,149,131,0.08));';
+}
+
 function getCurrentAgentId() {
   const currentId = Number(state.ui.currentAgentId);
   if (currentId && state.agents.some((agent) => Number(agent.id) === currentId)) {
@@ -5671,7 +5682,7 @@ function renderAgentsPage(currentUser) {
         </form>
         <div class="agent-list" style="margin-top:8px; display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:6px;">
           ${sortedAgents.map((agent) => `
-            <div class="card" style="padding:8px;">
+            <div class="card" style="padding:8px; ${getTeamCardStyle(agent.team)}">
               <div class="stack" style="gap:6px;">
                 <div>
                   <div><strong>Name:</strong> ${escapeHtml(agent.name)}</div>
