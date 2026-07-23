@@ -476,9 +476,9 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, attendancePoints: 0, minHours: 0, maxHours: 40, maxInOfficeShifts: null, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, attendancePoints: 0, minHours: 0, maxHours: 40, maxInOfficeShifts: null, availability: 'Available' },
-    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, attendancePoints: 0, minHours: 0, maxHours: 40, maxInOfficeShifts: null, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, attendancePoints: 0, maxInOfficeShifts: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, attendancePoints: 0, maxInOfficeShifts: null, availability: 'Available' },
+    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, attendancePoints: 0, maxInOfficeShifts: null, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -2370,19 +2370,6 @@ function normalizeTeamLabel(team) {
   return matchedTeam || teamOptions[0];
 }
 
-function normalizeMinHours(value) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) return 0;
-  return parsed;
-}
-
-function normalizeMaxHours(value) {
-  if (value === '' || value === null || typeof value === 'undefined') return null;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) return null;
-  return parsed;
-}
-
 function normalizeMaxInOfficeShifts(value) {
   if (value === '' || value === null || typeof value === 'undefined') return null;
   const parsed = Number(value);
@@ -2557,9 +2544,6 @@ function loadState() {
     const normalizedLocationCatalog = normalizeLocationCatalog(parsed.locationCatalog);
     const normalizedAgents = Array.isArray(parsed.agents)
       ? parsed.agents.map((agent) => {
-          const minHours = normalizeMinHours(agent.minHours);
-          const maxHoursRaw = typeof agent.maxHours === 'undefined' ? 40 : agent.maxHours;
-          const maxHours = normalizeMaxHours(maxHoursRaw);
           const maxInOfficeShiftsRaw = typeof agent.maxInOfficeShifts === 'undefined' ? null : agent.maxInOfficeShifts;
           const maxInOfficeShifts = normalizeMaxInOfficeShifts(maxInOfficeShiftsRaw);
           const attendancePoints = normalizeAttendancePoints(agent.attendancePoints);
@@ -2574,8 +2558,6 @@ function loadState() {
             role: normalizeRoleLabel(agent.role, normalizedRoleCatalog),
             attendancePoints,
             skills,
-            minHours,
-            maxHours: Number.isFinite(maxHours) ? Math.max(maxHours, minHours) : maxHours,
             maxInOfficeShifts
           };
         })
@@ -3229,26 +3211,9 @@ async function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, en
   }
 
   const replacingShiftId = Number(options.replacingShiftId) || null;
-  const durationHours = Number.isFinite(Number(options.durationHours)) ? Number(options.durationHours) : getDurationHours(start, end);
   const requestedRole = String(options.role || '').trim();
 
   const targetAgent = getAgent(agentId);
-  const maxHours = normalizeMaxHours(targetAgent?.maxHours);
-  if (Number.isFinite(maxHours) && maxHours >= 0) {
-    const targetWeekDates = getCalendarWeekDates(date);
-    let assignedHours = getAssignedHours(agentId, date);
-    if (replacingShiftId) {
-      const existingShift = state.shifts.find((shift) => Number(shift.id) === replacingShiftId);
-      if (existingShift && Number(existingShift.agentId) === Number(agentId) && shiftIsInWeek(existingShift, targetWeekDates)) {
-        assignedHours -= Number(existingShift.durationHours) || 0;
-      }
-    }
-    const projectedHours = assignedHours + (Number(durationHours) || 0);
-    if (projectedHours > maxHours + 0.0001) {
-      alert(`${targetAgent?.name || 'This agent'} would be scheduled for ${projectedHours.toFixed(2)} hours in that week, above the weekly max of ${maxHours.toFixed(2)} hours.`);
-      return false;
-    }
-  }
 
   const roleToEvaluate = requestedRole || targetAgent?.role || getPrimaryRole();
   if (isInOfficeRole(roleToEvaluate)) {
@@ -3500,8 +3465,6 @@ function saveAgentDetails(agentId, values) {
   const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
   const attendancePoints = normalizeAttendancePoints(values?.attendancePoints);
   const skills = normalizeAgentSkills(values?.skills);
-  const minHours = normalizeMinHours(values?.minHours);
-  const maxHours = normalizeMaxHours(values?.maxHours);
   const maxInOfficeShifts = normalizeMaxInOfficeShifts(values?.maxInOfficeShifts);
 
   if (!name || !email) {
@@ -3509,9 +3472,6 @@ function saveAgentDetails(agentId, values) {
   }
   if (!Number.isFinite(payRate) || payRate < 0) {
     return { ok: false, message: 'Pay rate must be a valid non-negative amount (example: $15.45).' };
-  }
-  if (Number.isFinite(maxHours) && maxHours < minHours) {
-    return { ok: false, message: 'Maximum hours must be greater than or equal to minimum hours.' };
   }
   const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email && Number(user.agentId) !== id);
   if (emailInUse) {
@@ -3528,8 +3488,6 @@ function saveAgentDetails(agentId, values) {
         payRate,
         attendancePoints,
         skills,
-        minHours,
-        maxHours,
         maxInOfficeShifts
       }
     : agent);
@@ -3625,14 +3583,6 @@ function openAgentEditModal(agent, onSave) {
             <input name="attendancePoints" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(normalizeAttendancePoints(agent.attendancePoints))}" />
           </label>
           <label style="display:flex; flex-direction:column; gap:6px;">
-            <span>Min hours</span>
-            <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" value="${escapeHtml(agent.minHours ?? 0)}" />
-          </label>
-          <label style="display:flex; flex-direction:column; gap:6px;">
-            <span>Max hours</span>
-            <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" value="${escapeHtml(agent.maxHours ?? '')}" />
-          </label>
-          <label style="display:flex; flex-direction:column; gap:6px;">
             <span>Max in-office shifts</span>
             <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" />
           </label>
@@ -3688,8 +3638,6 @@ function openAgentEditModal(agent, onSave) {
       payRate: formData.get('payRate'),
       attendancePoints: formData.get('attendancePoints'),
       skills: formData.getAll('skills'),
-      minHours: formData.get('minHours'),
-      maxHours: formData.get('maxHours'),
       maxInOfficeShifts: formData.get('maxInOfficeShifts')
     });
     if (!result?.ok) {
@@ -4045,6 +3993,14 @@ function getSwappableShiftsForAgent(agentId) {
 function getWeekSwappableShiftsForAgent(agentId, referenceDateValue = getActiveCalendarWeekReference()) {
   const weekDates = getCalendarWeekDates(referenceDateValue);
   return getSwappableShiftsForAgent(agentId).filter((shift) => shiftIsInWeek(shift, weekDates));
+}
+
+function isSwapRestrictedAgent(agentOrAgentId) {
+  const agent = typeof agentOrAgentId === 'object'
+    ? agentOrAgentId
+    : getAgent(agentOrAgentId);
+  const normalizedName = String(agent?.name || '').trim().toLowerCase();
+  return normalizedName === 'booth duty';
 }
 
 function getProjectedSwapHours(agentId, outgoingShift, incomingShift) {
@@ -4476,11 +4432,11 @@ function renderCalendarPage(currentUser) {
               </select>
               <select name="toAgentId" required>
                 <option value="">Swap with agent</option>
-                ${state.agents.filter((agent) => agent.id !== viewAgent?.id).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+                ${state.agents.filter((agent) => agent.id !== viewAgent?.id && !isSwapRestrictedAgent(agent)).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
               </select>
               <select name="toShiftId" required>
                 <option value="">Select their shift</option>
-                ${state.shifts.filter((shift) => Number(shift.agentId) !== Number(viewAgent?.id) && isPublishedShift(shift) && shiftIsInWeek(shift, getCalendarWeekDates(weekReference))).map((shift) => `<option value="${shift.id}">${escapeHtml(`${getAgent(shift.agentId)?.name || 'Unknown'} - ${getShiftSummary(shift)}`)}</option>`).join('')}
+                ${state.shifts.filter((shift) => Number(shift.agentId) !== Number(viewAgent?.id) && !isSwapRestrictedAgent(shift.agentId) && isPublishedShift(shift) && shiftIsInWeek(shift, getCalendarWeekDates(weekReference))).map((shift) => `<option value="${shift.id}">${escapeHtml(`${getAgent(shift.agentId)?.name || 'Unknown'} - ${getShiftSummary(shift)}`)}</option>`).join('')}
               </select>
             </div>
             <button type="submit">Request swap</button>
@@ -5932,8 +5888,6 @@ function renderAgentsPage(currentUser) {
               ${teamOptions.map((team) => `<option value="${team}">${escapeHtml(team)}</option>`).join('')}
             </select>
             <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
-            <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Min hrs" />
-            <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Max hrs" />
             <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" />
             <button type="submit" style="white-space:nowrap;">Add agent</button>
           </div>
@@ -5950,7 +5904,7 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
                   <div><strong>Assigned hours:</strong> ${escapeHtml(getAssignedHours(agent.id, currentWeekReference))}</div>
                   <div><strong>Credit (incl. PTO):</strong> ${escapeHtml(getMinimumHoursCredit(agent.id, currentWeekReference))}</div>
-                  <div><strong>Targets:</strong> hours ${escapeHtml(agent.minHours ?? 0)}-${escapeHtml(agent.maxHours ?? 'Not set')} | in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
+                  <div><strong>Targets:</strong> in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
                 </div>
                 <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
                   <button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:6px 9px;">Edit</button>
@@ -6689,7 +6643,7 @@ function render() {
                 </select>
                 <select name="toAgentId" required>
                   <option value="">Swap with</option>
-                  ${state.agents.filter((agent) => agent.id !== viewAgent?.id).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+                  ${state.agents.filter((agent) => agent.id !== viewAgent?.id && !isSwapRestrictedAgent(agent)).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
                 </select>
                 <button type="submit">Request swap</button>
               </form>
@@ -7063,8 +7017,6 @@ function bindEvents() {
     const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getPrimaryRole(), getRoleCatalog());
     const payRateRaw = formData.get('payRate')?.toString().trim() || '0';
     const payRate = parseCurrencyAmount(payRateRaw);
-    const minHours = normalizeMinHours(formData.get('minHours'));
-    const maxHours = normalizeMaxHours(formData.get('maxHours'));
     const maxInOfficeShifts = normalizeMaxInOfficeShifts(formData.get('maxInOfficeShifts'));
     if (!name || !email) {
       alert('Name and email are required to add an agent.');
@@ -7072,10 +7024,6 @@ function bindEvents() {
     }
     if (!Number.isFinite(payRate) || payRate < 0) {
       alert('Pay rate must be a valid non-negative amount (example: $15.45).');
-      return;
-    }
-    if (Number.isFinite(maxHours) && maxHours < minHours) {
-      alert('Maximum hours must be greater than or equal to minimum hours.');
       return;
     }
     const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email);
@@ -7093,8 +7041,6 @@ function bindEvents() {
       payRate,
       attendancePoints: 0,
       skills: [],
-      minHours,
-      maxHours,
       maxInOfficeShifts,
       availability: 'Available'
     });
@@ -7503,22 +7449,16 @@ function bindEvents() {
     }
     const fromAgent = getAgent(fromAgentId);
     const toAgent = getAgent(toAgentId);
+    if (isSwapRestrictedAgent(fromAgent) || isSwapRestrictedAgent(toAgent)) {
+      alert('Swaps with Booth Duty are not allowed.');
+      return;
+    }
     const projectedFromHours = getProjectedSwapHours(fromAgentId, fromShift, toShift);
     const projectedToHours = getProjectedSwapHours(toAgentId, toShift, fromShift);
     const projectedFromInOffice = getProjectedSwapInOfficeShiftCount(fromAgentId, fromShift, toShift);
     const projectedToInOffice = getProjectedSwapInOfficeShiftCount(toAgentId, toShift, fromShift);
-    const fromMaxHours = Number(fromAgent?.maxHours || 0);
-    const toMaxHours = Number(toAgent?.maxHours || 0);
     const fromMaxInOffice = normalizeMaxInOfficeShifts(fromAgent?.maxInOfficeShifts);
     const toMaxInOffice = normalizeMaxInOfficeShifts(toAgent?.maxInOfficeShifts);
-    if (fromMaxHours > 0 && projectedFromHours > fromMaxHours) {
-      alert(`${fromAgent?.name || 'This agent'} would exceed their weekly max hours with that swap.`);
-      return;
-    }
-    if (toMaxHours > 0 && projectedToHours > toMaxHours) {
-      alert(`${toAgent?.name || 'That agent'} would exceed their weekly max hours with that swap.`);
-      return;
-    }
     if (Number.isFinite(fromMaxInOffice) && projectedFromInOffice > fromMaxInOffice) {
       alert(`${fromAgent?.name || 'This agent'} would exceed their weekly max in-office shifts with that swap.`);
       return;
@@ -8004,12 +7944,6 @@ function bindEvents() {
       if (!shift || !canAgentPickUpOfferedShift(shift, currentAgentId)) return;
 
       const targetAgent = getAgent(currentAgentId);
-      const maxHours = normalizeMaxHours(targetAgent?.maxHours);
-      const projectedHours = getAssignedHours(currentAgentId, shift.date) + (Number(shift.durationHours) || 0);
-      if (Number.isFinite(maxHours) && projectedHours > maxHours + 0.0001) {
-        alert(`${targetAgent?.name || 'This agent'} would exceed their weekly max hours by picking up this shift.`);
-        return;
-      }
       const maxInOfficeShifts = normalizeMaxInOfficeShifts(targetAgent?.maxInOfficeShifts);
       if (isInOfficeRole(shift.role) && Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts >= 0) {
         const projectedInOfficeCount = getAssignedInOfficeShiftCount(currentAgentId, shift.date) + 1;
@@ -8279,6 +8213,15 @@ function bindEvents() {
 
         const fromAgent = getAgent(updatedRequest.fromAgentId);
         const toAgent = getAgent(updatedRequest.toAgentId);
+        if (isSwapRestrictedAgent(fromAgent) || isSwapRestrictedAgent(toAgent)) {
+          state.swapRequests = state.swapRequests.map((request) => request.id === id
+            ? { ...request, status: 'rejected', rejectedBy: currentAgentId, rejectedAt: new Date().toISOString() }
+            : request);
+          alert('Swaps with Booth Duty are not allowed.');
+          saveState();
+          render();
+          return;
+        }
         const fromMaxInOffice = normalizeMaxInOfficeShifts(fromAgent?.maxInOfficeShifts);
         const toMaxInOffice = normalizeMaxInOfficeShifts(toAgent?.maxInOfficeShifts);
 
