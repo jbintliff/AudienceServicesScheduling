@@ -6138,6 +6138,7 @@ function render() {
   const viewAgent = getViewAgent();
   const currentAgentId = Number(viewAgent?.id);
   const visibleShifts = isAgentView ? getAgentViewShifts() : [];
+  const sortedVisibleShifts = [...visibleShifts].sort(compareCalendarShiftDisplayOrder);
   const blackoutDates = normalizeBlackoutDates(state.blackoutDates);
   const plannerWeekReference = getActiveCalendarWeekReference();
   const weekDates = getCalendarWeekDates(plannerWeekReference);
@@ -6146,13 +6147,14 @@ function render() {
   const adminWeeklyShifts = isAgentView
     ? []
     : getFilteredCalendarShifts().filter((shift) => shift.status === shiftStatuses.published && shiftIsInWeek(shift, plannerWeekDates));
+  const sortedAdminWeeklyShifts = [...adminWeeklyShifts].sort(compareCalendarShiftDisplayOrder);
   const swapAlertCount = state.swapRequests.length;
   const agentViewShifts = getAgentViewShifts();
   const todayDay = days[(new Date().getDay() + 6) % 7] || 'Mon';
   const selectedAgentScheduleView = ['day', 'week', 'month'].includes(state.ui.agentScheduleView) ? state.ui.agentScheduleView : 'week';
   const selectedAgentScheduleDay = days.includes(state.ui.agentScheduleDay) ? state.ui.agentScheduleDay : todayDay;
   const selectedAgentScheduleMonth = state.ui.agentScheduleMonth || new Date().toISOString().slice(0, 7);
-  const monthShifts = visibleShifts
+  const monthShifts = sortedVisibleShifts
     .filter((shift) => String(shift.date || '').slice(0, 7) === selectedAgentScheduleMonth)
     .sort((a, b) => {
       const left = `${a.date || ''} ${a.start || ''}`;
@@ -6255,7 +6257,7 @@ function render() {
                         <h4>${day}</h4>
                         <div class="muted">${escapeHtml(plannerWeekDates[day]?.label || '')}</div>
                         ${getBlackoutDateMarker(plannerWeekDates[day]?.iso || '')}
-                        ${adminWeeklyShifts.filter((shift) => shift.day === day).map((shift) => `
+                        ${sortedAdminWeeklyShifts.filter((shift) => shift.day === day).map((shift) => `
                           <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
                             <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
                           </div>
@@ -6312,7 +6314,7 @@ function render() {
                   <div class="day-card" data-day="${selectedAgentScheduleDay}">
                     <h4>${selectedAgentScheduleDay}</h4>
                     ${getBlackoutDateMarker(weekDates[selectedAgentScheduleDay]?.iso || '')}
-                    ${visibleShifts.filter((shift) => shift.day === selectedAgentScheduleDay).map((shift) => `
+                    ${sortedVisibleShifts.filter((shift) => shift.day === selectedAgentScheduleDay).map((shift) => `
                       <div class="shift" draggable="true" data-shift-id="${shift.id}">
                         <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
                       </div>
@@ -6326,7 +6328,7 @@ function render() {
                     <div class="day-card" data-day="${day}">
                       <h4>${day}</h4>
                       ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
-                      ${visibleShifts.filter((shift) => shift.day === day).map((shift) => `
+                      ${sortedVisibleShifts.filter((shift) => shift.day === day).map((shift) => `
                         <div class="shift" draggable="true" data-shift-id="${shift.id}">
                           <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
                         </div>
