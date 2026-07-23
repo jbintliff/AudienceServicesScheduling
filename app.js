@@ -400,9 +400,9 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Available' },
-    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, attendancePoints: 0, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, attendancePoints: 0, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Available' },
+    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, attendancePoints: 0, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -2291,6 +2291,12 @@ function normalizeMaxInOfficeShifts(value) {
   return Math.floor(parsed);
 }
 
+function normalizeAttendancePoints(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.floor(parsed);
+}
+
 function parseCurrencyAmount(value) {
   const normalized = String(value || '').trim().replace(/[$,\s]/g, '');
   if (!normalized) return 0;
@@ -2437,6 +2443,7 @@ function loadState() {
           const minInOfficeShifts = normalizeMinInOfficeShifts(agent.minInOfficeShifts);
           const maxInOfficeShiftsRaw = typeof agent.maxInOfficeShifts === 'undefined' ? null : agent.maxInOfficeShifts;
           const maxInOfficeShifts = normalizeMaxInOfficeShifts(maxInOfficeShiftsRaw);
+          const attendancePoints = normalizeAttendancePoints(agent.attendancePoints);
           const linkedUserEmail = normalizeEmail(
             authUsersForLookup.find((user) => isAgentLikeUser(user) && Number(user.agentId) === Number(agent.id))?.email || ''
           );
@@ -2445,6 +2452,7 @@ function loadState() {
             email: normalizeEmail(agent.email || linkedUserEmail),
             team: normalizeTeamLabel(agent.team),
             role: normalizeRoleLabel(agent.role, normalizedRoleCatalog),
+            attendancePoints,
             minHours,
             maxHours: Number.isFinite(maxHours) ? Math.max(maxHours, minHours) : maxHours,
             minInOfficeShifts,
@@ -3306,6 +3314,7 @@ function saveAgentDetails(agentId, values) {
   const accessRole = requestedAccessRole === userRoles.admin ? userRoles.agent : requestedAccessRole;
   const team = normalizeTeamLabel(String(values?.team || '').trim() || teamOptions[0]);
   const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
+  const attendancePoints = normalizeAttendancePoints(values?.attendancePoints);
   const minHours = normalizeMinHours(values?.minHours);
   const maxHours = normalizeMaxHours(values?.maxHours);
   const minInOfficeShifts = normalizeMinInOfficeShifts(values?.minInOfficeShifts);
@@ -3336,6 +3345,7 @@ function saveAgentDetails(agentId, values) {
         email,
         team,
         payRate,
+        attendancePoints,
         minHours,
         maxHours,
         minInOfficeShifts,
@@ -3429,6 +3439,10 @@ function openAgentEditModal(agent, onSave) {
             <input name="payRate" type="text" inputmode="decimal" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" />
           </label>
           <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Attendance points</span>
+            <input name="attendancePoints" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(normalizeAttendancePoints(agent.attendancePoints))}" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
             <span>Min hours</span>
             <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" value="${escapeHtml(agent.minHours ?? 0)}" />
           </label>
@@ -3483,6 +3497,7 @@ function openAgentEditModal(agent, onSave) {
       accessRole: formData.get('accessRole'),
       team: formData.get('team'),
       payRate: formData.get('payRate'),
+      attendancePoints: formData.get('attendancePoints'),
       minHours: formData.get('minHours'),
       maxHours: formData.get('maxHours'),
       minInOfficeShifts: formData.get('minInOfficeShifts'),
@@ -5165,6 +5180,7 @@ function renderProfilePage(currentUser) {
               <div><strong>Name:</strong> ${escapeHtml(viewAgent?.name || 'Not set')}</div>
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
+              <div><strong>Attendance points:</strong> ${escapeHtml(normalizeAttendancePoints(viewAgent?.attendancePoints))}</div>
               <div><strong>Email:</strong> ${escapeHtml(activeAgentUser?.email || 'Not set')}</div>
               <div><strong>Phone:</strong> ${escapeHtml(activeAgentUser?.phone || 'Not set')}</div>
             </div>
@@ -6867,6 +6883,7 @@ function bindEvents() {
       team: normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]),
       role,
       payRate,
+      attendancePoints: 0,
       minHours,
       maxHours,
       minInOfficeShifts,
