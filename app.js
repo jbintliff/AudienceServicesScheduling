@@ -3057,16 +3057,35 @@ async function openPolicyPreviewModal(policy) {
   const body = document.getElementById('policy-preview-body');
   const title = document.getElementById('policy-preview-title');
   const openTabLink = document.getElementById('policy-preview-open-tab');
-  if (!(modal instanceof HTMLElement) || !(body instanceof HTMLElement) || !(title instanceof HTMLElement) || !(openTabLink instanceof HTMLAnchorElement)) {
-    return;
+  const canRenderInlineModal = (modal instanceof HTMLElement)
+    && (body instanceof HTMLElement)
+    && (title instanceof HTMLElement)
+    && (openTabLink instanceof HTMLAnchorElement);
+
+  if (canRenderInlineModal) {
+    closePolicyPreviewModal();
   }
-  closePolicyPreviewModal();
+
   const previewBlob = await getPolicyBlob(policy);
   if (!previewBlob) {
     alert('Preview data is unavailable for this file.');
     return;
   }
   const previewSrc = URL.createObjectURL(previewBlob);
+
+  // Fallback for pages that do not render the inline preview modal.
+  if (!canRenderInlineModal) {
+    const newTabLink = document.createElement('a');
+    newTabLink.href = previewSrc;
+    newTabLink.target = '_blank';
+    newTabLink.rel = 'noopener';
+    newTabLink.click();
+    window.setTimeout(() => {
+      URL.revokeObjectURL(previewSrc);
+    }, 60000);
+    return;
+  }
+
   activePolicyPreviewBlobUrl = previewSrc;
   const requestId = Date.now();
   activePolicyPreviewRequestId = requestId;
