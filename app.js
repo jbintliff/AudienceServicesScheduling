@@ -1,6 +1,6 @@
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['In-person', 'WFH', 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
-const teamOptions = ['Audience Services Representative', 'Audience Services Associate'];
+const teamOptions = ['Audience Services Representative', 'Audience Services Associate', 'Audience Services Management'];
 const agentSkillOptions = [
   { value: 'single-tickets', label: 'Single tickets' },
   { value: 'subscrptions', label: 'Subscrptions' },
@@ -4011,6 +4011,9 @@ function getTeamBadgeStyle(team) {
   if (normalizedTeam === 'Audience Services Associate') {
     return 'background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);';
   }
+  if (normalizedTeam === 'Audience Services Management') {
+    return 'background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);';
+  }
   return 'background:#C49583; color:#2E2422; border:1px solid rgba(46,36,34,0.2);';
 }
 
@@ -4135,7 +4138,8 @@ function getAgentTeamSortPriority(agentId) {
   const normalizedTeam = normalizeTeamLabel(getAgent(agentId)?.team || '');
   if (normalizedTeam === 'Audience Services Representative') return 0;
   if (normalizedTeam === 'Audience Services Associate') return 1;
-  return 2;
+  if (normalizedTeam === 'Audience Services Management') return 2;
+  return 3;
 }
 
 function compareCalendarShiftDisplayOrder(leftShift, rightShift) {
