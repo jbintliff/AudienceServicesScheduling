@@ -400,9 +400,9 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, attendancePoints: 0, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, attendancePoints: 0, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Available' },
-    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, attendancePoints: 0, minHours: 0, maxHours: 40, minInOfficeShifts: 0, maxInOfficeShifts: null, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, attendancePoints: 0, minHours: 0, maxHours: 40, maxInOfficeShifts: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, attendancePoints: 0, minHours: 0, maxHours: 40, maxInOfficeShifts: null, availability: 'Available' },
+    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, attendancePoints: 0, minHours: 0, maxHours: 40, maxInOfficeShifts: null, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -2278,12 +2278,6 @@ function normalizeMaxHours(value) {
   return parsed;
 }
 
-function normalizeMinInOfficeShifts(value) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) return 0;
-  return Math.floor(parsed);
-}
-
 function normalizeMaxInOfficeShifts(value) {
   if (value === '' || value === null || typeof value === 'undefined') return null;
   const parsed = Number(value);
@@ -2440,7 +2434,6 @@ function loadState() {
           const minHours = normalizeMinHours(agent.minHours);
           const maxHoursRaw = typeof agent.maxHours === 'undefined' ? 40 : agent.maxHours;
           const maxHours = normalizeMaxHours(maxHoursRaw);
-          const minInOfficeShifts = normalizeMinInOfficeShifts(agent.minInOfficeShifts);
           const maxInOfficeShiftsRaw = typeof agent.maxInOfficeShifts === 'undefined' ? null : agent.maxInOfficeShifts;
           const maxInOfficeShifts = normalizeMaxInOfficeShifts(maxInOfficeShiftsRaw);
           const attendancePoints = normalizeAttendancePoints(agent.attendancePoints);
@@ -2455,8 +2448,7 @@ function loadState() {
             attendancePoints,
             minHours,
             maxHours: Number.isFinite(maxHours) ? Math.max(maxHours, minHours) : maxHours,
-            minInOfficeShifts,
-            maxInOfficeShifts: Number.isFinite(maxInOfficeShifts) ? Math.max(maxInOfficeShifts, minInOfficeShifts) : maxInOfficeShifts
+            maxInOfficeShifts
           };
         })
       : createDefaultState().agents;
@@ -3037,7 +3029,72 @@ function getApprovedTimeOffConflicts(agentId, date, start, end) {
   });
 }
 
-function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, options = {}) {
+function promptInOfficeOverride(agentName, projectedInOfficeCount, maxInOfficeShifts) {
+  return new Promise((resolve) => {
+    const existingOverlay = document.getElementById('in-office-override-modal-overlay');
+    if (existingOverlay) {
+      existingOverlay.remove();
+    }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'in-office-override-modal-overlay';
+    overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:10000; padding:16px;';
+    overlay.innerHTML = `
+      <div style="width:min(620px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
+        <h2 style="margin:0 0 12px;">In-person limit warning</h2>
+        <p class="muted" style="margin:0 0 12px;">${escapeHtml(agentName || 'This agent')} would be scheduled for ${escapeHtml(projectedInOfficeCount)} in-office shift${projectedInOfficeCount === 1 ? '' : 's'} in that week, above the max of ${escapeHtml(maxInOfficeShifts)}.</p>
+        <label style="display:flex; align-items:flex-start; gap:8px; margin-bottom:14px;">
+          <input id="in-office-override-checkbox" type="checkbox" />
+          <span>Override in-person limit and schedule anyway</span>
+        </label>
+        <div class="row" style="justify-content:flex-end; gap:8px;">
+          <button id="in-office-override-cancel" type="button" class="secondary">Cancel</button>
+          <button id="in-office-override-confirm" type="button" disabled>Schedule anyway</button>
+        </div>
+      </div>
+    `;
+
+    const cleanup = (result) => {
+      document.removeEventListener('keydown', onEscape);
+      overlay.remove();
+      resolve(result);
+    };
+
+    const onEscape = (event) => {
+      if (event.key === 'Escape') {
+        cleanup(false);
+      }
+    };
+
+    const checkbox = overlay.querySelector('#in-office-override-checkbox');
+    const confirmButton = overlay.querySelector('#in-office-override-confirm');
+
+    checkbox?.addEventListener('change', () => {
+      if (confirmButton instanceof HTMLButtonElement) {
+        confirmButton.disabled = !(checkbox instanceof HTMLInputElement && checkbox.checked);
+      }
+    });
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        cleanup(false);
+      }
+    });
+
+    overlay.querySelector('#in-office-override-cancel')?.addEventListener('click', () => {
+      cleanup(false);
+    });
+
+    overlay.querySelector('#in-office-override-confirm')?.addEventListener('click', () => {
+      cleanup(true);
+    });
+
+    document.addEventListener('keydown', onEscape);
+    document.body.appendChild(overlay);
+  });
+}
+
+async function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, options = {}) {
   const activeUser = getCurrentUser();
   if (activeUser?.role !== 'admin') {
     return true;
@@ -3071,8 +3128,7 @@ function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, opt
     if (Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts >= 0) {
       const projectedInOfficeCount = getAssignedInOfficeShiftCount(agentId, date, { excludingShiftId: replacingShiftId }) + 1;
       if (projectedInOfficeCount > maxInOfficeShifts) {
-        alert(`${targetAgent?.name || 'This agent'} would be scheduled for ${projectedInOfficeCount} in-office shift${projectedInOfficeCount === 1 ? '' : 's'} in that week, above the in-office max of ${maxInOfficeShifts}.`);
-        return false;
+        return promptInOfficeOverride(targetAgent?.name || 'This agent', projectedInOfficeCount, maxInOfficeShifts);
       }
     }
   }
@@ -3185,7 +3241,7 @@ function openShiftEditModal(shift, onSave) {
     closeModal();
   });
 
-  overlay.querySelector('#shift-edit-form')?.addEventListener('submit', (event) => {
+  overlay.querySelector('#shift-edit-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const nextAgentId = Number(formData.get('agentId'));
@@ -3213,7 +3269,7 @@ function openShiftEditModal(shift, onSave) {
     const nextLocation = requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
     const nextStatus = String(formData.get('status') || '').trim() === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
 
-    if (!confirmShiftAssignmentWithTimeOffWarning(nextAgentId, nextDate, nextStart, nextEnd, {
+    if (!await confirmShiftAssignmentWithTimeOffWarning(nextAgentId, nextDate, nextStart, nextEnd, {
       replacingShiftId: Number(shift.id),
       durationHours: getDurationHours(nextStart, nextEnd),
       role: nextRole
@@ -3317,7 +3373,6 @@ function saveAgentDetails(agentId, values) {
   const attendancePoints = normalizeAttendancePoints(values?.attendancePoints);
   const minHours = normalizeMinHours(values?.minHours);
   const maxHours = normalizeMaxHours(values?.maxHours);
-  const minInOfficeShifts = normalizeMinInOfficeShifts(values?.minInOfficeShifts);
   const maxInOfficeShifts = normalizeMaxInOfficeShifts(values?.maxInOfficeShifts);
 
   if (!name || !email) {
@@ -3328,9 +3383,6 @@ function saveAgentDetails(agentId, values) {
   }
   if (Number.isFinite(maxHours) && maxHours < minHours) {
     return { ok: false, message: 'Maximum hours must be greater than or equal to minimum hours.' };
-  }
-  if (Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts < minInOfficeShifts) {
-    return { ok: false, message: 'Maximum in-office shifts must be greater than or equal to minimum in-office shifts.' };
   }
   const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email && Number(user.agentId) !== id);
   if (emailInUse) {
@@ -3348,7 +3400,6 @@ function saveAgentDetails(agentId, values) {
         attendancePoints,
         minHours,
         maxHours,
-        minInOfficeShifts,
         maxInOfficeShifts
       }
     : agent);
@@ -3451,10 +3502,6 @@ function openAgentEditModal(agent, onSave) {
             <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" value="${escapeHtml(agent.maxHours ?? '')}" />
           </label>
           <label style="display:flex; flex-direction:column; gap:6px;">
-            <span>Min in-office shifts</span>
-            <input name="minInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(agent.minInOfficeShifts ?? 0)}" />
-          </label>
-          <label style="display:flex; flex-direction:column; gap:6px;">
             <span>Max in-office shifts</span>
             <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" />
           </label>
@@ -3500,7 +3547,6 @@ function openAgentEditModal(agent, onSave) {
       attendancePoints: formData.get('attendancePoints'),
       minHours: formData.get('minHours'),
       maxHours: formData.get('maxHours'),
-      minInOfficeShifts: formData.get('minInOfficeShifts'),
       maxInOfficeShifts: formData.get('maxInOfficeShifts')
     });
     if (!result?.ok) {
@@ -5740,7 +5786,6 @@ function renderAgentsPage(currentUser) {
             <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
             <input name="minHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Min hrs" />
             <input name="maxHours" type="number" inputmode="decimal" step="0.25" min="0" placeholder="Max hrs" />
-            <input name="minInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Min in-office" />
             <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" />
             <button type="submit" style="white-space:nowrap;">Add agent</button>
           </div>
@@ -5757,7 +5802,7 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
                   <div><strong>Assigned hours:</strong> ${escapeHtml(getAssignedHours(agent.id, currentWeekReference))}</div>
                   <div><strong>Credit (incl. PTO):</strong> ${escapeHtml(getMinimumHoursCredit(agent.id, currentWeekReference))}</div>
-                  <div><strong>Targets:</strong> hours ${escapeHtml(agent.minHours ?? 0)}-${escapeHtml(agent.maxHours ?? 'Not set')} | in-office ${escapeHtml(agent.minInOfficeShifts ?? 0)}-${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
+                  <div><strong>Targets:</strong> hours ${escapeHtml(agent.minHours ?? 0)}-${escapeHtml(agent.maxHours ?? 'Not set')} | in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
                 </div>
                 <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
                   <button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:6px 9px;">Edit</button>
@@ -6852,7 +6897,6 @@ function bindEvents() {
     const payRate = parseCurrencyAmount(payRateRaw);
     const minHours = normalizeMinHours(formData.get('minHours'));
     const maxHours = normalizeMaxHours(formData.get('maxHours'));
-    const minInOfficeShifts = normalizeMinInOfficeShifts(formData.get('minInOfficeShifts'));
     const maxInOfficeShifts = normalizeMaxInOfficeShifts(formData.get('maxInOfficeShifts'));
     if (!name || !email) {
       alert('Name and email are required to add an agent.');
@@ -6864,10 +6908,6 @@ function bindEvents() {
     }
     if (Number.isFinite(maxHours) && maxHours < minHours) {
       alert('Maximum hours must be greater than or equal to minimum hours.');
-      return;
-    }
-    if (Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts < minInOfficeShifts) {
-      alert('Maximum in-office shifts must be greater than or equal to minimum in-office shifts.');
       return;
     }
     const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email);
@@ -6886,7 +6926,6 @@ function bindEvents() {
       attendancePoints: 0,
       minHours,
       maxHours,
-      minInOfficeShifts,
       maxInOfficeShifts,
       availability: 'Available'
     });
@@ -6926,7 +6965,7 @@ function bindEvents() {
     render();
   });
 
-  document.getElementById('add-shift-form')?.addEventListener('submit', (event) => {
+  document.getElementById('add-shift-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!canManageCalendar) return;
     const formData = new FormData(event.currentTarget);
@@ -6939,7 +6978,7 @@ function bindEvents() {
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
     if (!day || !agentId || !role || !start || !end || !date) return;
-    if (!confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, {
+    if (!await confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, {
       durationHours: getDurationHours(start, end),
       role
     })) return;
@@ -8149,7 +8188,7 @@ function bindEvents() {
   });
 
   document.querySelectorAll('[data-copy-dup-shift]').forEach((button) => {
-    button.addEventListener('click', (event) => {
+    button.addEventListener('click', async (event) => {
       event.preventDefault();
       if (!canManageCalendar) return;
       const id = Number(button.getAttribute('data-copy-dup-shift'));
@@ -8159,7 +8198,7 @@ function bindEvents() {
       const shouldDuplicateNow = confirm('Shift action:\n\nSelect OK to duplicate this shift now.\nSelect Cancel for copy options.');
       if (shouldDuplicateNow) {
         const duplicatedShift = cloneShift(shift);
-        if (!confirmShiftAssignmentWithTimeOffWarning(duplicatedShift.agentId, duplicatedShift.date, duplicatedShift.start, duplicatedShift.end, {
+        if (!await confirmShiftAssignmentWithTimeOffWarning(duplicatedShift.agentId, duplicatedShift.date, duplicatedShift.start, duplicatedShift.end, {
           durationHours: duplicatedShift.durationHours,
           role: duplicatedShift.role
         })) return;
@@ -8177,13 +8216,13 @@ function bindEvents() {
   });
 
   document.querySelectorAll('[data-paste-shift-day]').forEach((button) => {
-    button.addEventListener('click', (event) => {
+    button.addEventListener('click', async (event) => {
       event.preventDefault();
       if (!canManageCalendar) return;
       const day = button.getAttribute('data-paste-shift-day');
       if (!copiedShiftTemplate || !day) return;
       const pastedShift = cloneShift(copiedShiftTemplate, day);
-      if (!confirmShiftAssignmentWithTimeOffWarning(pastedShift.agentId, pastedShift.date, pastedShift.start, pastedShift.end, {
+      if (!await confirmShiftAssignmentWithTimeOffWarning(pastedShift.agentId, pastedShift.date, pastedShift.start, pastedShift.end, {
         durationHours: pastedShift.durationHours,
         role: pastedShift.role
       })) return;
@@ -8216,7 +8255,7 @@ function bindEvents() {
       if (!canManageCalendar) return;
       card.classList.remove('drag-over');
     });
-    card.addEventListener('drop', (event) => {
+    card.addEventListener('drop', async (event) => {
       if (!canManageCalendar) return;
       event.preventDefault();
       card.classList.remove('drag-over');
@@ -8230,7 +8269,7 @@ function bindEvents() {
       const targetDate = card.getAttribute('data-date') || shiftToMove.date || '';
       const movedToNewDate = String(shiftToMove.date || '') !== String(targetDate || '');
 
-      if (movedToNewDate && !confirmShiftAssignmentWithTimeOffWarning(shiftToMove.agentId, targetDate, shiftToMove.start, shiftToMove.end, {
+      if (movedToNewDate && !await confirmShiftAssignmentWithTimeOffWarning(shiftToMove.agentId, targetDate, shiftToMove.start, shiftToMove.end, {
         replacingShiftId: Number(shiftToMove.id),
         durationHours: Number(shiftToMove.durationHours) || getDurationHours(shiftToMove.start, shiftToMove.end),
         role: shiftToMove.role
