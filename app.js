@@ -2966,18 +2966,33 @@ function canPreviewPolicyInline(policy) {
 }
 
 async function inflateZipEntry(entryBytes, method) {
+function resolvePolicyMimeType(policy) {
+  const rawMimeType = String(policy?.mimeType || '').trim().toLowerCase();
+  const policyName = String(policy?.name || '').trim().toLowerCase();
+  if (rawMimeType && rawMimeType !== 'application/octet-stream') {
+    return rawMimeType;
+  }
+  if (/\.pdf$/i.test(policyName)) return 'application/pdf';
+  if (/\.docx$/i.test(policyName)) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (/\.txt$/i.test(policyName)) return 'text/plain';
+  if (/\.md$/i.test(policyName)) return 'text/markdown';
+  if (/\.json$/i.test(policyName)) return 'application/json';
+  if (/\.csv$/i.test(policyName)) return 'text/csv';
+  if (/\.xml$/i.test(policyName)) return 'application/xml';
+  return rawMimeType || 'application/octet-stream';
+}
   if (method === 0) {
     return entryBytes;
   }
   if (method !== 8) {
     return null;
-  }
+  const mimeType = resolvePolicyMimeType(policy);
   if (typeof DecompressionStream !== 'function') {
     return null;
   }
   const stream = new Blob([entryBytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
   const arrayBuffer = await new Response(stream).arrayBuffer();
-  return new Uint8Array(arrayBuffer);
+  const mimeType = resolvePolicyMimeType(policy);
 }
 
 async function extractDocxXmlText(policy) {
@@ -3126,7 +3141,16 @@ async function openPolicyPreviewModal(policy) {
     }
   } else {
     if (requestId === activePolicyPreviewRequestId) {
-      body.innerHTML = `<iframe src="${escapeHtml(previewSrc)}" title="${escapeHtml(policy?.name || 'Policy preview')}" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;"></iframe>`;
+      const resolvedMimeType = resolvePolicyMimeType(policy);
+      if (resolvedMimeType === 'application/pdf') {
+        body.innerHTML = `
+          <object data="${escapeHtml(previewSrc)}" type="application/pdf" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;">
+            <iframe src="${escapeHtml(previewSrc)}" title="${escapeHtml(policy?.name || 'Policy preview')}" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;"></iframe>
+          </object>
+        `;
+      } else {
+        body.innerHTML = `<iframe src="${escapeHtml(previewSrc)}" title="${escapeHtml(policy?.name || 'Policy preview')}" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;"></iframe>`;
+      }
     }
   }
   openTabLink.href = previewSrc;
@@ -7375,7 +7399,10 @@ function bindEvents() {
         {
           id: nextPolicyId,
           name: selectedFile.name,
-          mimeType: selectedFile.type || 'application/octet-stream',
+          mimeType: resolvePolicyMimeType({
+            name: selectedFile.name,
+            mimeType: selectedFile.type || 'application/octet-stream'
+          }),
           sizeBytes: Number(selectedFile.size) || 0,
           uploadedAt: new Date().toISOString()
         }

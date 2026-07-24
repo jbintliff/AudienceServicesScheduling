@@ -196,6 +196,8 @@ function buildAgentCalendarFeed(store, token) {
     'METHOD:PUBLISH',
     'PRODID:-//Audience Services Scheduling//Agent Schedule//EN',
     `X-WR-CALNAME:${escapeIcsText(`${agentUser.name || agentUser.username || 'Agent'} - Work Schedule`)}`,
+    'REFRESH-INTERVAL;VALUE=DURATION:PT5M',
+    'X-PUBLISHED-TTL:PT5M',
     'X-WR-TIMEZONE:America/New_York',
     'BEGIN:VTIMEZONE',
     'TZID:America/New_York',
@@ -237,7 +239,7 @@ function buildAgentCalendarFeed(store, token) {
     if (!dtStart || !dtEnd) {
       return;
     }
-    const uid = `${shift.id || index}-${shift.date || 'date'}-${shift.start || 'start'}-${agentUser.id || agentUser.agentId}@audience-services-scheduling`;
+    const uid = `${shift.id || `${agentUser.id || agentUser.agentId}-${index}`}@audience-services-scheduling`;
     const summary = `Work Shift - ${shift.role || 'Scheduled Shift'}`;
     const statusText = shift.status ? `Status: ${shift.status}` : 'Status: scheduled';
     const description = [
@@ -249,6 +251,7 @@ function buildAgentCalendarFeed(store, token) {
     lines.push('BEGIN:VEVENT');
     lines.push(`UID:${escapeIcsText(uid)}`);
     lines.push(`DTSTAMP:${nowStamp}`);
+    lines.push('SEQUENCE:0');
     lines.push(`DTSTART;TZID=America/New_York:${dtStart}`);
     lines.push(`DTEND;TZID=America/New_York:${dtEnd}`);
     lines.push(`SUMMARY:${escapeIcsText(summary)}`);
@@ -384,6 +387,8 @@ app.get('/api/calendar-feed/:token.ics', (req, res) => {
 
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.send(payload.ics);
 });
 
