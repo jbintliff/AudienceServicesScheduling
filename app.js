@@ -1461,6 +1461,10 @@ function loadPasswordResetRequests() {
 
 function savePasswordResetRequests(requests) {
   safeSetLocalStorage(passwordResetRequestsKey, JSON.stringify(requests));
+  if (!isApplyingRemoteSnapshot && backendApiBase) {
+    // Reset links are often opened on a different device/browser, so push tokens to shared backend.
+    void pushLocalSnapshotToBackend();
+  }
 }
 
 function loadRememberedLogin() {
@@ -1908,19 +1912,6 @@ function getResetLink(token) {
   }
 }
 
-function getCurrentPageResetLink(token) {
-  try {
-    const currentUrl = new URL(window.location.href);
-    currentUrl.search = '';
-    currentUrl.hash = '';
-    currentUrl.searchParams.set('resetToken', String(token || ''));
-    return currentUrl.toString();
-  } catch {
-    const base = String(window.location.pathname || 'index.html');
-    return `${base}?resetToken=${encodeURIComponent(token)}`;
-  }
-}
-
 function loadSession() {
   try {
     const saved = localStorage.getItem(sessionKey);
@@ -2141,7 +2132,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
           <input name="email" type="email" placeholder="Forgot password? Enter your email" required autocomplete="email" />
           <button type="submit" class="secondary">Get reset link</button>
         </form>
-        <div class="muted" style="margin-top:8px;">Enter your agent email to generate a password reset link directly on this screen.</div>
+        <div class="muted" style="margin-top:8px;">Enter your agent email to send a password reset link.</div>
       </div>
     </div>
   `;
@@ -2213,7 +2204,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
 
     const passwordResetRequests = loadPasswordResetRequests();
     const token = createResetToken();
-    const localResetLink = getCurrentPageResetLink(token);
+    const resetLink = getResetLink(token);
     const expiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
     const updatedRequests = [
       ...passwordResetRequests,
@@ -2228,7 +2219,21 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       }
     ];
     savePasswordResetRequests(updatedRequests);
-    renderLoginPage('', 'Reset link generated for this agent account (valid for 1 hour).', localResetLink);
+
+    const agentName = linkedAgent?.name || foundUser.name || foundUser.username || 'Agent';
+    const resetEmailMessage = sendEmailNotification({
+      to: email,
+      subject: 'Password reset link',
+      body: `Hi ${agentName}, use this link to reset your password: ${resetLink}\n\nThis link expires in 1 hour. If you did not request this, you can ignore this message.`,
+      type: 'agent-password-reset'
+    });
+    const outboxCount = loadEmailOutbox().length;
+    const showResetLinkFallback = resetEmailMessage?.deliveryStatus === 'local-only';
+    const deliveryMessage = showResetLinkFallback
+      ? 'Webhook delivery is not enabled, so the reset email was saved locally in Email outbox. Use the reset link below.'
+      : `Reset email queued. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`;
+
+    renderLoginPage('', `If an agent account exists for that email, a reset link email has been prepared. ${deliveryMessage}`, showResetLinkFallback ? resetLink : '');
   });
 }
 
@@ -6250,6 +6255,9 @@ function renderAvailabilityRequestsPage(currentUser) {
                 <div class="row" style="margin-top:8px;">
                   <button class="secondary" data-edit-availability-request="${request.id}">Edit PTO</button>
                 </div>` : ''}
+              <div class="row" style="margin-top:8px;">
+                <button class="danger" data-delete-availability-request="${request.id}">Delete submission</button>
+              </div>
             </div>
           `).join('') || '<div class="muted">No unavailability requests yet.</div>'}
         </div>
@@ -8344,9 +8352,67 @@ function bindEvents() {
     button.addEventListener('click', () => {
       const id = Number(button.getAttribute('data-reject-availability-request'));
       const allAvailabilityRequests = getAllAvailabilityRequests();
+      const request = allAvailabilityRequests.find((item) => item.id === id);
+      if (!request) return;
       const nextAvailabilityRequests = allAvailabilityRequests.map((item) => item.id === id ? { ...item, status: 'rejected' } : item);
       saveAvailabilityRequests(nextAvailabilityRequests);
       saveState();
+
+      const requestOwner = getUserByAgentId(request.agentId);
+      const recipientEmail = request.requesterEmail || requestOwner?.email || '';
+      const recipientName = request.requesterName || requestOwner?.username || 'Agent';
+      if (recipientEmail) {
+        sendEmailNotification({
+          to: recipientEmail,
+          subject: 'Unavailability request denied',
+          body: `Hi ${recipientName}, your unavailability request for ${request.unavailableDate || 'the selected date'} (${formatTimeRange(request.unavailableStart, request.unavailableEnd)}) was denied by an admin.\n\nIf you have questions, contact your manager.`,
+          type: 'availability-rejected'
+        });
+      }
+
+      const outboxCount = loadEmailOutbox().length;
+      const emailStatus = recipientEmail
+        ? ` Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`
+        : ' No agent email was found, so no notification email was queued.';
+      alert(`Request denied.${emailStatus}`);
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-delete-availability-request]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = Number(button.getAttribute('data-delete-availability-request'));
+      const allAvailabilityRequests = getAllAvailabilityRequests();
+      const request = allAvailabilityRequests.find((item) => Number(item.id) === id);
+      if (!request) return;
+
+      const agentName = getAgent(request.agentId)?.name || request.requesterName || 'this agent';
+      const shouldDelete = confirm(
+        `Delete this ${String(request.unavailabilityType || '').trim() || 'availability'} submission for ${agentName} on ${request.unavailableDate || 'the selected date'}?`
+      );
+      if (!shouldDelete) return;
+
+      const nextAvailabilityRequests = allAvailabilityRequests.filter((item) => Number(item.id) !== id);
+      saveAvailabilityRequests(nextAvailabilityRequests);
+      saveState();
+
+      const requestOwner = getUserByAgentId(request.agentId);
+      const recipientEmail = request.requesterEmail || requestOwner?.email || '';
+      const recipientName = request.requesterName || requestOwner?.username || agentName || 'Agent';
+      if (recipientEmail) {
+        sendEmailNotification({
+          to: recipientEmail,
+          subject: 'Unavailability submission deleted',
+          body: `Hi ${recipientName}, an admin deleted your ${String(request.unavailabilityType || '').trim() || 'availability'} submission.\n\nDate: ${request.unavailableDate || 'Not set'}\nTime: ${formatTimeRange(request.unavailableStart, request.unavailableEnd)}\nStatus at deletion: ${request.status || 'pending'}\n\nIf this was unexpected, contact your manager.`,
+          type: 'availability-deleted'
+        });
+      }
+
+      const outboxCount = loadEmailOutbox().length;
+      const emailStatus = recipientEmail
+        ? ` Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`
+        : ' No agent email was found, so no notification email was queued.';
+      alert(`Submission deleted.${emailStatus}`);
       render();
     });
   });
