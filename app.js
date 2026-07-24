@@ -3081,7 +3081,8 @@ function renderPolicyPreviewModal() {
   `;
 }
 
-async function openPolicyPreviewModal(policy) {
+async function openPolicyPreviewModal(policy, options = {}) {
+  const preopenedWindow = options?.preopenedWindow;
   const modal = document.getElementById('policy-preview-modal');
   const body = document.getElementById('policy-preview-body');
   const title = document.getElementById('policy-preview-title');
@@ -3097,10 +3098,16 @@ async function openPolicyPreviewModal(policy) {
 
   const previewBlob = await getPolicyBlob(policy);
   if (!previewBlob) {
+    if (preopenedWindow && !preopenedWindow.closed) {
+      preopenedWindow.close();
+    }
     alert('Preview data is unavailable for this file.');
     return;
   }
   const previewSrc = URL.createObjectURL(previewBlob);
+  if (preopenedWindow && !preopenedWindow.closed) {
+    preopenedWindow.location.href = previewSrc;
+  }
 
   // Fallback for pages that do not render the inline preview modal.
   if (!canRenderInlineModal) {
@@ -7463,7 +7470,10 @@ function bindEvents() {
       if (!policyId) return;
       const policy = (Array.isArray(state.policies) ? state.policies : []).find((item) => Number(item.id) === policyId);
       if (!policy) return;
-      await openPolicyPreviewModal(policy);
+      const resolvedMimeType = resolvePolicyMimeType(policy);
+      const shouldPreopenTab = resolvedMimeType === 'application/pdf';
+      const preopenedWindow = shouldPreopenTab ? window.open('', '_blank', 'noopener') : null;
+      await openPolicyPreviewModal(policy, { preopenedWindow });
     });
   });
 

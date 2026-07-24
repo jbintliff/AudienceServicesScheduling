@@ -125,6 +125,23 @@ function formatUtcDateTimeForIcs(dateValue) {
   return dateValue.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 }
 
+function getEventSyncMetadata(shift, fallbackDate) {
+  const source = String(
+    shift?.updatedAt
+    || shift?.publishedAt
+    || shift?.createdAt
+    || ''
+  ).trim();
+  const parsed = source ? new Date(source) : null;
+  const validDate = parsed && !Number.isNaN(parsed.getTime()) ? parsed : fallbackDate;
+  const millis = validDate instanceof Date ? validDate.getTime() : Date.now();
+  const sequence = Math.max(0, Math.floor((Number.isFinite(millis) ? millis : Date.now()) / 1000));
+  return {
+    lastModified: formatUtcDateTimeForIcs(validDate instanceof Date ? validDate : new Date()),
+    sequence
+  };
+}
+
 function parseShiftLocalDateTimeParts(dateValue, timeValue) {
   const normalizedDate = String(dateValue || '').slice(0, 10);
   const normalizedTime = String(timeValue || '').trim();
@@ -189,6 +206,7 @@ function buildAgentCalendarFeed(store, token) {
     .sort((left, right) => `${left.date || ''}${left.start || ''}`.localeCompare(`${right.date || ''}${right.start || ''}`));
 
   const nowStamp = formatUtcDateTimeForIcs(new Date());
+  const generatedAtIso = new Date().toISOString();
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -196,6 +214,8 @@ function buildAgentCalendarFeed(store, token) {
     'METHOD:PUBLISH',
     'PRODID:-//Audience Services Scheduling//Agent Schedule//EN',
     `X-WR-CALNAME:${escapeIcsText(`${agentUser.name || agentUser.username || 'Agent'} - Work Schedule`)}`,
+    `X-WR-CALDESC:${escapeIcsText(`Auto-updating personal schedule feed. Generated at ${generatedAtIso} (UTC).`)}`,
+    `X-AUDIENCE-SCHEDULING-FEED-BUILD:${escapeIcsText(nowStamp)}`,
     'REFRESH-INTERVAL;VALUE=DURATION:PT5M',
     'X-PUBLISHED-TTL:PT5M',
     'X-WR-TIMEZONE:America/New_York',
@@ -241,6 +261,7 @@ function buildAgentCalendarFeed(store, token) {
     }
     const uid = `${shift.id || `${agentUser.id || agentUser.agentId}-${index}`}@audience-services-scheduling`;
     const summary = `Work Shift - ${shift.role || 'Scheduled Shift'}`;
+    const syncMetadata = getEventSyncMetadata(shift, new Date());
     const statusText = shift.status ? `Status: ${shift.status}` : 'Status: scheduled';
     const description = [
       shift.day ? `Day: ${shift.day}` : '',
@@ -251,7 +272,8 @@ function buildAgentCalendarFeed(store, token) {
     lines.push('BEGIN:VEVENT');
     lines.push(`UID:${escapeIcsText(uid)}`);
     lines.push(`DTSTAMP:${nowStamp}`);
-    lines.push('SEQUENCE:0');
+    lines.push(`LAST-MODIFIED:${syncMetadata.lastModified}`);
+    lines.push(`SEQUENCE:${syncMetadata.sequence}`);
     lines.push(`DTSTART;TZID=America/New_York:${dtStart}`);
     lines.push(`DTEND;TZID=America/New_York:${dtEnd}`);
     lines.push(`SUMMARY:${escapeIcsText(summary)}`);
