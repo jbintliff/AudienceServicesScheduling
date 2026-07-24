@@ -26,6 +26,7 @@ const policyFilesStoreName = 'policy-files';
 const backendUrlKey = 'agent-scheduler-backend-url-v1';
 const appLoginUrlKey = 'agent-scheduler-app-login-url-v1';
 const syncStatusKey = 'agent-scheduler-sync-status-v1';
+const calendarFeedSyncStatusKey = 'agent-scheduler-calendar-feed-sync-status-v1';
 const uiStateKey = 'agent-scheduler-ui-state-v1';
 const fixedEmailSenderName = 'Audience Services Manager';
 const emailDeliveryProviders = ['generic', 'sendgrid', 'mailgun'];
@@ -564,6 +565,7 @@ let selectedCalendarShiftIds = new Set();
 let memoryAvailabilityInbox = [];
 let memoryEmailOutbox = [];
 let lastSuccessfulSyncAt = loadLastSuccessfulSyncAt();
+let lastCalendarFeedSyncAt = loadLastCalendarFeedSyncAt();
 const pendingSharedWriteKeys = new Set();
 let backendSnapshotSyncTimer = null;
 let isPushingLocalSnapshot = false;
@@ -791,6 +793,28 @@ function markSyncSuccess() {
   }
 }
 
+function loadLastCalendarFeedSyncAt() {
+  try {
+    const saved = localStorage.getItem(calendarFeedSyncStatusKey);
+    if (!saved) return '';
+    const parsed = JSON.parse(saved);
+    const at = String(parsed?.at || '');
+    return at ? at : '';
+  } catch {
+    return '';
+  }
+}
+
+function markCalendarFeedSyncSuccess() {
+  const nowIso = new Date().toISOString();
+  lastCalendarFeedSyncAt = nowIso;
+  try {
+    localStorage.setItem(calendarFeedSyncStatusKey, JSON.stringify({ at: nowIso }));
+  } catch {
+    // Ignore storage write errors for sync metadata.
+  }
+}
+
 function getLastSyncStatusText() {
   if (!backendApiBase) {
     return 'Sync status: Local-only mode (no shared backend configured).';
@@ -803,6 +827,20 @@ function getLastSyncStatusText() {
     return 'Last synced: Waiting for first successful backend sync.';
   }
   return `Last synced: ${syncDate.toLocaleString()}`;
+}
+
+function getCalendarFeedSyncStatusText() {
+  if (!backendApiBase) {
+    return 'Calendar feed sync: Local-only mode (no shared backend configured).';
+  }
+  if (!lastCalendarFeedSyncAt) {
+    return 'Calendar feed sync: Waiting for first successful schedule sync.';
+  }
+  const syncDate = new Date(lastCalendarFeedSyncAt);
+  if (Number.isNaN(syncDate.getTime())) {
+    return 'Calendar feed sync: Waiting for first successful schedule sync.';
+  }
+  return `Calendar feed sync: ${syncDate.toLocaleString()}`;
 }
 
 function safeSetLocalStorage(key, value) {
@@ -970,6 +1008,7 @@ async function flushLocalSnapshotSync() {
     const didSync = await pushLocalSnapshotToBackend();
     if (didSync) {
       markSyncSuccess();
+      markCalendarFeedSyncSuccess();
     }
     return didSync;
   } finally {
@@ -4540,6 +4579,7 @@ function renderCalendarPage(currentUser) {
           <div>
             <strong>Week of ${escapeHtml(weekLabel)}</strong>
             <div class="muted">Use these controls to move between weeks without changing your date filter.</div>
+            ${canManageCalendar ? `<div class="muted">${escapeHtml(getCalendarFeedSyncStatusText())}</div>` : ''}
           </div>
           <div class="row" style="gap:8px; flex-wrap:wrap;">
             <button id="calendar-previous-week" class="secondary" type="button">Previous week</button>
