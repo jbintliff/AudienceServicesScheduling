@@ -3083,6 +3083,8 @@ function renderPolicyPreviewModal() {
 
 async function openPolicyPreviewModal(policy, options = {}) {
   const preopenedWindow = options?.preopenedWindow;
+  const resolvedMimeType = resolvePolicyMimeType(policy);
+  const isPdfPreview = resolvedMimeType === 'application/pdf';
   const modal = document.getElementById('policy-preview-modal');
   const body = document.getElementById('policy-preview-body');
   const title = document.getElementById('policy-preview-title');
@@ -3105,14 +3107,16 @@ async function openPolicyPreviewModal(policy, options = {}) {
     return;
   }
   const previewSrc = URL.createObjectURL(previewBlob);
+  const previewDataUrl = isPdfPreview ? await getPolicyDataUrl(policy) : '';
+  const bestPreviewSrc = previewDataUrl || previewSrc;
   if (preopenedWindow && !preopenedWindow.closed) {
-    preopenedWindow.location.href = previewSrc;
+    preopenedWindow.location.href = bestPreviewSrc;
   }
 
   // Fallback for pages that do not render the inline preview modal.
   if (!canRenderInlineModal) {
     const newTabLink = document.createElement('a');
-    newTabLink.href = previewSrc;
+    newTabLink.href = bestPreviewSrc;
     newTabLink.target = '_blank';
     newTabLink.rel = 'noopener';
     newTabLink.click();
@@ -3149,19 +3153,18 @@ async function openPolicyPreviewModal(policy, options = {}) {
     }
   } else {
     if (requestId === activePolicyPreviewRequestId) {
-      const resolvedMimeType = resolvePolicyMimeType(policy);
-      if (resolvedMimeType === 'application/pdf') {
+      if (isPdfPreview) {
         body.innerHTML = `
-          <object data="${escapeHtml(previewSrc)}" type="application/pdf" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;">
-            <iframe src="${escapeHtml(previewSrc)}" title="${escapeHtml(policy?.name || 'Policy preview')}" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;"></iframe>
+          <object data="${escapeHtml(bestPreviewSrc)}" type="application/pdf" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;">
+            <iframe src="${escapeHtml(bestPreviewSrc)}" title="${escapeHtml(policy?.name || 'Policy preview')}" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;"></iframe>
           </object>
         `;
       } else {
-        body.innerHTML = `<iframe src="${escapeHtml(previewSrc)}" title="${escapeHtml(policy?.name || 'Policy preview')}" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;"></iframe>`;
+        body.innerHTML = `<iframe src="${escapeHtml(bestPreviewSrc)}" title="${escapeHtml(policy?.name || 'Policy preview')}" style="width:100%; height:100%; min-height:62vh; border:0; border-radius:8px; background:#fff;"></iframe>`;
       }
     }
   }
-  openTabLink.href = previewSrc;
+  openTabLink.href = bestPreviewSrc;
 }
 
 function closePolicyPreviewModal() {
@@ -7472,7 +7475,15 @@ function bindEvents() {
       if (!policy) return;
       const resolvedMimeType = resolvePolicyMimeType(policy);
       const shouldPreopenTab = resolvedMimeType === 'application/pdf';
-      const preopenedWindow = shouldPreopenTab ? window.open('', '_blank', 'noopener') : null;
+      const preopenedWindow = shouldPreopenTab ? window.open('about:blank', '_blank') : null;
+      if (preopenedWindow && !preopenedWindow.closed) {
+        try {
+          preopenedWindow.document.title = 'Loading policy preview...';
+          preopenedWindow.document.body.innerHTML = '<p style="font-family:Arial,sans-serif; padding:16px;">Loading PDF preview...</p>';
+        } catch {
+          // Ignore if browser restricts document access.
+        }
+      }
       await openPolicyPreviewModal(policy, { preopenedWindow });
     });
   });
