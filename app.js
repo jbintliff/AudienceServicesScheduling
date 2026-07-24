@@ -6233,30 +6233,24 @@ function renderAvailabilityRequestsPage(currentUser) {
         <div class="muted">Visible after filters: ${visibleAvailabilityRequestsForList.length} (${filteredPendingCount} pending)</div>
         <div class="request-list" style="margin-top:12px;">
           ${visibleAvailabilityRequestsForList.map((request) => `
-            <div class="card" style="border-left:4px solid ${request.status === 'approved' ? '#7AACAF' : request.status === 'rejected' ? '#AB5C57' : '#FDD592'};">
-              <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+            <div class="card" style="border-left:4px solid ${request.status === 'approved' ? '#7AACAF' : request.status === 'rejected' ? '#AB5C57' : '#FDD592'}; padding:10px 12px;">
+              <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px;">
                 <div>
-                  <strong>${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')}</strong>
-                  <div class="muted">Type: ${escapeHtml(request.unavailabilityType || 'Availability')}</div>
-                  <div class="muted">Requested unavailability date: ${escapeHtml(request.unavailableDate || 'Not set')}</div>
-                  <div class="muted">Time: ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')}</div>
-                  <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
-                  <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
-                  ${request.note ? `<div class="muted">Note: ${escapeHtml(request.note)}</div>` : ''}
+                  <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:2px;">
+                    <strong>${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')}</strong>
+                    <span class="muted">${escapeHtml(request.unavailabilityType || 'Availability')}</span>
+                  </div>
+                  <div class="muted">${escapeHtml(request.unavailableDate || 'Not set')} • ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')} • ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
+                  <div class="muted">Submitted ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
+                  ${request.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
                 </div>
                 <span class="status-badge ${request.status || 'pending'}">${request.status || 'pending'}</span>
               </div>
-              ${request.status === 'pending' ? `
-                <div class="row" style="margin-top:8px;">
-                  <button class="success" data-approve-availability-request="${request.id}">Approve</button>
-                  <button class="danger" data-reject-availability-request="${request.id}">Deny</button>
-                </div>` : ''}
-              ${request.status === 'approved' && String(request.unavailabilityType || '').trim() === 'PTO' ? `
-                <div class="row" style="margin-top:8px;">
-                  <button class="secondary" data-edit-availability-request="${request.id}">Edit PTO</button>
-                </div>` : ''}
-              <div class="row" style="margin-top:8px;">
-                <button class="danger" data-delete-availability-request="${request.id}">Delete submission</button>
+              <div class="row" style="margin-top:6px; gap:6px; flex-wrap:wrap;">
+                ${request.status === 'pending' ? `<button class="success" data-approve-availability-request="${request.id}" style="padding:5px 8px; font-size:12px;">Approve</button>` : ''}
+                ${request.status === 'pending' ? `<button class="danger" data-reject-availability-request="${request.id}" style="padding:5px 8px; font-size:12px;">Deny</button>` : ''}
+                ${request.status === 'approved' && String(request.unavailabilityType || '').trim() === 'PTO' ? `<button class="secondary" data-edit-availability-request="${request.id}" style="padding:5px 8px; font-size:12px;">Edit</button>` : ''}
+                <button class="danger" data-delete-availability-request="${request.id}" style="padding:5px 8px; font-size:12px;">Delete</button>
               </div>
             </div>
           `).join('') || '<div class="muted">No unavailability requests yet.</div>'}
