@@ -2904,7 +2904,7 @@ async function getPolicyDataUrl(policy) {
   if (!bytes) return '';
   const base64 = bytesToBase64(bytes);
   if (!base64) return '';
-  const mimeType = String(policy?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+  const mimeType = resolvePolicyMimeType(policy);
   return `data:${mimeType};base64,${base64}`;
 }
 
@@ -2926,7 +2926,7 @@ async function getPolicyBytes(policy) {
 async function getPolicyBlob(policy) {
   const bytes = await getPolicyBytes(policy);
   if (!bytes) return null;
-  const mimeType = String(policy?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+  const mimeType = resolvePolicyMimeType(policy);
   return new Blob([bytes], { type: mimeType });
 }
 
@@ -2965,7 +2965,6 @@ function canPreviewPolicyInline(policy) {
   return false;
 }
 
-async function inflateZipEntry(entryBytes, method) {
 function resolvePolicyMimeType(policy) {
   const rawMimeType = String(policy?.mimeType || '').trim().toLowerCase();
   const policyName = String(policy?.name || '').trim().toLowerCase();
@@ -2981,18 +2980,20 @@ function resolvePolicyMimeType(policy) {
   if (/\.xml$/i.test(policyName)) return 'application/xml';
   return rawMimeType || 'application/octet-stream';
 }
+
+async function inflateZipEntry(entryBytes, method) {
   if (method === 0) {
     return entryBytes;
   }
   if (method !== 8) {
     return null;
-  const mimeType = resolvePolicyMimeType(policy);
+  }
   if (typeof DecompressionStream !== 'function') {
     return null;
   }
   const stream = new Blob([entryBytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
   const arrayBuffer = await new Response(stream).arrayBuffer();
-  const mimeType = resolvePolicyMimeType(policy);
+  return new Uint8Array(arrayBuffer);
 }
 
 async function extractDocxXmlText(policy) {
