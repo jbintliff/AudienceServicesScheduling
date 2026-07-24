@@ -6113,6 +6113,7 @@ function renderAvailabilityRequestsPage(currentUser) {
   const monthBlackoutDates = allBlackoutDates
     .filter((dateValue) => String(dateValue || '').startsWith(`${selectedMonth}-`))
     .sort((left, right) => left.localeCompare(right));
+  const agentsByName = [...state.agents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
 
   root.innerHTML = `
     <div class="app">
@@ -6157,7 +6158,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           <div class="row" style="flex-wrap:wrap; gap:8px;">
             <select name="agentId" required>
               <option value="">Select agent</option>
-              ${state.agents.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+              ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
             </select>
             <input name="unavailableDate" type="date" required />
             <input name="unavailableStart" type="time" value="09:00" required />
