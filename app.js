@@ -2784,11 +2784,21 @@ function getShiftStyle(shift) {
   return `background:${getShiftRoleColor(shift)}; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}${absentFade}`;
 }
 
+function getPlannerWeekIsoDateForDay(dayLabel) {
+  const safeDay = String(dayLabel || '').trim();
+  if (!days.includes(safeDay)) return '';
+  const activeWeekDates = getCalendarWeekDates(getActiveCalendarWeekReference());
+  return String(activeWeekDates?.[safeDay]?.iso || '').slice(0, 10);
+}
+
 function cloneShift(shift, dayOverride) {
+  const nextDay = dayOverride || shift.day;
+  const nextDate = dayOverride ? (getPlannerWeekIsoDateForDay(nextDay) || shift.date) : shift.date;
   return {
     ...shift,
     id: createId(),
-    day: dayOverride || shift.day,
+    day: nextDay,
+    date: nextDate,
     status: shiftStatuses.draft
   };
 }
@@ -6575,7 +6585,7 @@ function render() {
                   </div>
                   <div class="day-row">
                     ${days.map((day) => `
-                      <div class="day-card" data-day="${day}">
+                      <div class="day-card" data-day="${day}" data-date="${escapeHtml(plannerWeekDates[day]?.iso || '')}">
                         <h4>${day}</h4>
                         <div class="muted">${escapeHtml(plannerWeekDates[day]?.label || '')}</div>
                         ${getBlackoutDateMarker(plannerWeekDates[day]?.iso || '')}

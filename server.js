@@ -179,6 +179,31 @@ function formatShiftLocalDateTimeForIcs(localParts) {
   return `${ymd}T${hh}${mm}00`;
 }
 
+function getShiftFeedDate(shift) {
+  const shiftDate = String(shift?.date || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(shiftDate)) {
+    return '';
+  }
+  const dayLabel = String(shift?.day || '').trim();
+  const targetDayIndex = days.indexOf(dayLabel);
+  if (targetDayIndex < 0) {
+    return shiftDate;
+  }
+  const parsed = new Date(`${shiftDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return shiftDate;
+  }
+  const currentDayIndex = (parsed.getDay() + 6) % 7;
+  if (currentDayIndex === targetDayIndex) {
+    return shiftDate;
+  }
+  parsed.setDate(parsed.getDate() - currentDayIndex + targetDayIndex);
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const dayOfMonth = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dayOfMonth}`;
+}
+
 function escapeIcsText(value) {
   return String(value || '')
     .replace(/\\/g, '\\\\')
@@ -207,8 +232,17 @@ function buildAgentCalendarFeed(store, token) {
   const shifts = Array.isArray(parsedState?.shifts) ? parsedState.shifts : [];
   const agentShifts = shifts
     .filter((shift) => Number(shift?.agentId) === Number(agentUser.agentId))
-    .filter((shift) => /^\d{4}-\d{2}-\d{2}$/.test(String(shift?.date || '')))
-    .sort((left, right) => `${left.date || ''}${left.start || ''}`.localeCompare(`${right.date || ''}${right.start || ''}`));
+    .map((shift) => {
+      const normalizedFeedDate = getShiftFeedDate(shift);
+      return normalizedFeedDate
+        ? {
+            ...shift,
+            _feedDate: normalizedFeedDate
+          }
+        : null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => `${left._feedDate || ''}${left.start || ''}`.localeCompare(`${right._feedDate || ''}${right.start || ''}`));
 
   const nowStamp = formatUtcDateTimeForIcs(new Date());
   const generatedAtIso = new Date().toISOString();
@@ -245,8 +279,9 @@ function buildAgentCalendarFeed(store, token) {
   ];
 
   agentShifts.forEach((shift, index) => {
-    const startParts = parseShiftLocalDateTimeParts(shift.date, shift.start);
-    const endParts = parseShiftLocalDateTimeParts(shift.date, shift.end);
+    const shiftDate = String(shift._feedDate || shift.date || '').slice(0, 10);
+    const startParts = parseShiftLocalDateTimeParts(shiftDate, shift.start);
+    const endParts = parseShiftLocalDateTimeParts(shiftDate, shift.end);
     if (!startParts || !endParts) {
       return;
     }
