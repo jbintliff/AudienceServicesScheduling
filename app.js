@@ -4509,7 +4509,7 @@ function renderCalendarPage(currentUser) {
                 <div class="shift ${canManageCalendar && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="${canManageCalendar ? 'true' : 'false'}" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
                   <div class="row" style="justify-content:flex-start; align-items:center; gap:6px; margin-bottom:2px;">
                     ${canManageCalendar ? `<input type="checkbox" data-shift-select-checkbox="${shift.id}" ${selectedCalendarShiftIds.has(Number(shift.id)) ? 'checked' : ''} aria-label="Select shift for bulk actions" />` : ''}
-                    <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>${getAgent(shift.agentId)?.role ? `<span class="muted"> (${escapeHtml(getAgent(shift.agentId)?.role)})</span>` : ''}
+                    <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>
                   </div>
                   ${!isAgentView && getAgent(shift.agentId)?.team ? `<div class="muted">${escapeHtml(normalizeTeamLabel(getAgent(shift.agentId)?.team))}</div>` : ''}
                   ${getShiftRoleLocationHtml(shift)}<br />${formatTimeRange(shift.start, shift.end)}
