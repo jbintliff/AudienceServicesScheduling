@@ -125,13 +125,28 @@ function formatUtcDateTimeForIcs(dateValue) {
   return dateValue.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 }
 
-function formatLocalDateTimeForIcs(dateValue, timeValue) {
+function parseShiftDateTime(dateValue, timeValue) {
   const normalizedDate = String(dateValue || '').slice(0, 10);
-  const normalizedTime = String(timeValue || '').slice(0, 5);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate) || !/^\d{2}:\d{2}$/.test(normalizedTime)) {
+  const normalizedTime = String(timeValue || '').trim();
+  const match = normalizedTime.match(/^(\d{1,2}):(\d{2})$/);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate) || !match) {
     return '';
   }
-  return `${normalizedDate.replace(/-/g, '')}T${normalizedTime.replace(':', '')}00`;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return '';
+  }
+  const parsed = new Date(Date.UTC(
+    Number(normalizedDate.slice(0, 4)),
+    Number(normalizedDate.slice(5, 7)) - 1,
+    Number(normalizedDate.slice(8, 10)),
+    hours,
+    minutes,
+    0,
+    0
+  ));
+  return Number.isNaN(parsed.getTime()) ? '' : parsed;
 }
 
 function escapeIcsText(value) {
@@ -172,12 +187,17 @@ function buildAgentCalendarFeed(store, token) {
   ];
 
   agentShifts.forEach((shift, index) => {
-    const dtStart = formatLocalDateTimeForIcs(shift.date, shift.start);
-    const dtEnd = formatLocalDateTimeForIcs(shift.date, shift.end);
-    if (!dtStart || !dtEnd) {
+    const startDate = parseShiftDateTime(shift.date, shift.start);
+    const endDate = parseShiftDateTime(shift.date, shift.end);
+    if (!startDate || !endDate) {
       return;
     }
-    const uid = `${shift.id || index}-${agentUser.id || agentUser.agentId}@audience-services-scheduling`;
+    const resolvedEndDate = endDate <= startDate
+      ? new Date(endDate.getTime() + (24 * 60 * 60 * 1000))
+      : endDate;
+    const dtStart = formatUtcDateTimeForIcs(startDate);
+    const dtEnd = formatUtcDateTimeForIcs(resolvedEndDate);
+    const uid = `${shift.id || index}-${shift.date || 'date'}-${shift.start || 'start'}-${agentUser.id || agentUser.agentId}@audience-services-scheduling`;
     const summary = `Work Shift - ${shift.role || 'Scheduled Shift'}`;
     const statusText = shift.status ? `Status: ${shift.status}` : 'Status: scheduled';
     const description = [

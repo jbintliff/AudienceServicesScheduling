@@ -5420,8 +5420,9 @@ function renderProfilePage(currentUser) {
               <input id="agent-calendar-sync-url" value="${escapeHtml(calendarSyncUrl)}" readonly />
               <div class="row">
                 <button id="copy-agent-calendar-sync-url" type="button">Copy sync URL</button>
+                <button id="regenerate-agent-calendar-sync-url" class="secondary" type="button">Regenerate URL</button>
               </div>
-              <div class="muted">Need changes to this URL? Contact an admin.</div>
+              <div class="muted">If your subscribed calendar is stale, regenerate to create a new feed link and re-subscribe in your calendar app.</div>
             </div>
           </div>
 
@@ -8008,6 +8009,34 @@ function bindEvents() {
       return;
     }
     alert('Calendar sync URL copied.');
+  });
+
+  document.getElementById('regenerate-agent-calendar-sync-url')?.addEventListener('click', () => {
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+    const shouldRegenerate = confirm('Regenerate your calendar sync URL? You will need to re-subscribe using the new link in Google Calendar, Apple Calendar, or Outlook.');
+    if (!shouldRegenerate) return;
+
+    const nextCalendarFeedToken = createCalendarFeedToken();
+    authUsers = authUsers.map((user) => Number(user.id) === Number(currentUser.id)
+      ? {
+          ...user,
+          calendarFeedToken: nextCalendarFeedToken,
+          updatedAt: getCurrentIsoTimestamp(),
+          profileUpdatedAt: getCurrentIsoTimestamp()
+        }
+      : user);
+
+    const didSaveAuthUsers = saveAuthUsers();
+    if (!didSaveAuthUsers) {
+      alert('Unable to regenerate your calendar sync URL right now. Please check browser storage settings and try again.');
+      syncFromStorage();
+      render();
+      return;
+    }
+
+    alert('Calendar sync URL regenerated. Copy the new URL and re-subscribe in your calendar app.');
+    render();
   });
 
   document.querySelectorAll('[data-role-color]').forEach((input) => {
