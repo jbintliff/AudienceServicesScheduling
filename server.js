@@ -377,6 +377,34 @@ app.get('/api/policy-files/:id', (req, res) => {
   });
 });
 
+app.get('/api/policy-files/:id/raw', (req, res) => {
+  const policyId = String(req.params.id || '').trim();
+  if (!policyId) {
+    res.status(400).send('Missing policy id');
+    return;
+  }
+
+  const record = readPolicyFileRecord(policyId);
+  if (!record || !record.contentBase64) {
+    res.status(404).send('Policy file not found');
+    return;
+  }
+
+  const mimeType = String(record.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+  let fileBytes;
+  try {
+    fileBytes = Buffer.from(String(record.contentBase64 || ''), 'base64');
+  } catch {
+    res.status(500).send('Invalid policy file encoding');
+    return;
+  }
+
+  res.setHeader('Content-Type', mimeType);
+  res.setHeader('Content-Length', String(fileBytes.length));
+  res.setHeader('Content-Disposition', `inline; filename="policy-${policyId}"`);
+  res.send(fileBytes);
+});
+
 app.delete('/api/policy-files/:id', (req, res) => {
   const policyId = String(req.params.id || '').trim();
   if (!policyId) {

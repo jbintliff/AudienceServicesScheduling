@@ -2930,6 +2930,13 @@ async function getPolicyBlob(policy) {
   return new Blob([bytes], { type: mimeType });
 }
 
+function getPolicyDirectPreviewUrl(policy) {
+  const normalizedApiBase = normalizeBackendUrl(backendApiBase);
+  const policyId = Number(policy?.id) || 0;
+  if (!normalizedApiBase || !policyId) return '';
+  return `${normalizedApiBase}/policy-files/${encodeURIComponent(String(policyId))}/raw`;
+}
+
 function isTextLikePolicy(policy) {
   if (isDocxPolicy(policy)) return false;
   const mimeType = String(policy?.mimeType || '').trim().toLowerCase();
@@ -3085,6 +3092,7 @@ async function openPolicyPreviewModal(policy, options = {}) {
   const preopenedWindow = options?.preopenedWindow;
   const resolvedMimeType = resolvePolicyMimeType(policy);
   const isPdfPreview = resolvedMimeType === 'application/pdf';
+  const directPreviewUrl = isPdfPreview ? getPolicyDirectPreviewUrl(policy) : '';
   const modal = document.getElementById('policy-preview-modal');
   const body = document.getElementById('policy-preview-body');
   const title = document.getElementById('policy-preview-title');
@@ -3108,7 +3116,7 @@ async function openPolicyPreviewModal(policy, options = {}) {
   }
   const previewSrc = URL.createObjectURL(previewBlob);
   const previewDataUrl = isPdfPreview ? await getPolicyDataUrl(policy) : '';
-  const bestPreviewSrc = previewDataUrl || previewSrc;
+  const bestPreviewSrc = directPreviewUrl || previewDataUrl || previewSrc;
   if (preopenedWindow && !preopenedWindow.closed) {
     preopenedWindow.location.href = bestPreviewSrc;
   }
