@@ -23,6 +23,8 @@ const allowedKeys = new Set([
   'agent-scheduler-email-delivery-settings-v1'
 ]);
 
+const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
 function ensureDataFile() {
   const dataDir = path.dirname(dataFilePath);
   if (!fs.existsSync(dataDir)) {
@@ -212,6 +214,25 @@ function escapeIcsText(value) {
     .replace(/\r?\n/g, '\\n');
 }
 
+function foldIcsLine(line, maxLineLength = 74) {
+  const source = String(line || '');
+  if (source.length <= maxLineLength) {
+    return [source];
+  }
+  const folded = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    const nextChunk = source.slice(cursor, cursor + maxLineLength);
+    if (cursor === 0) {
+      folded.push(nextChunk);
+    } else {
+      folded.push(` ${nextChunk}`);
+    }
+    cursor += maxLineLength;
+  }
+  return folded;
+}
+
 function buildAgentCalendarFeed(store, token) {
   const parsedUsers = parseJsonString(store['agent-scheduler-users-v1'], []);
   const parsedState = parseJsonString(store['agent-scheduler-state-v4'], {});
@@ -327,7 +348,8 @@ function buildAgentCalendarFeed(store, token) {
   });
 
   lines.push('END:VCALENDAR');
-  return { status: 200, ics: `${lines.join('\r\n')}\r\n` };
+  const foldedLines = lines.flatMap((line) => foldIcsLine(line));
+  return { status: 200, ics: `${foldedLines.join('\r\n')}\r\n` };
 }
 
 const app = express();
@@ -468,18 +490,23 @@ app.get('/api/calendar-feed/:token.ics', (req, res) => {
     return;
   }
 
-  const store = readStore();
-  const payload = buildAgentCalendarFeed(store, token);
-  if (payload.status !== 200) {
-    res.status(404).send('Calendar feed not found');
-    return;
-  }
+  try {
+    const store = readStore();
+    const payload = buildAgentCalendarFeed(store, token);
+    if (payload.status !== 200) {
+      res.status(404).send('Calendar feed not found');
+      return;
+    }
 
-  res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.send(payload.ics);
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.send(payload.ics);
+  } catch (error) {
+    console.error('Failed to generate calendar feed', error);
+    res.status(500).send('Calendar feed generation failed');
+  }
 });
 
 app.listen(port, () => {
