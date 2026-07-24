@@ -6133,6 +6133,30 @@ function renderAvailabilityRequestsPage(currentUser) {
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
+        <h2>Add PTO manually</h2>
+        <p class="muted">Create an approved PTO entry directly for an agent.</p>
+        <form id="add-manual-pto-form" class="stack" style="margin-top:10px;">
+          <div class="row" style="flex-wrap:wrap; gap:8px;">
+            <select name="agentId" required>
+              <option value="">Select agent</option>
+              ${state.agents.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+            </select>
+            <input name="unavailableDate" type="date" required />
+            <input name="unavailableStart" type="time" value="09:00" required />
+            <input name="unavailableEnd" type="time" value="17:00" required />
+          </div>
+          <textarea name="note" rows="3" placeholder="Reason/details for PTO" required></textarea>
+          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+            <input name="sendNotification" type="checkbox" checked />
+            <span>Send email notification to agent</span>
+          </label>
+          <div class="row" style="justify-content:flex-end;">
+            <button type="submit">Add approved PTO</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px;">
         <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px;">
           <h2 style="margin:0;">Request calendar (${escapeHtml(calendarData.label)})</h2>
           <input id="availability-calendar-month" type="month" value="${escapeHtml(selectedMonth)}" />
@@ -7633,6 +7657,86 @@ function bindEvents() {
     state.ui.availabilityFrom = '';
     state.ui.availabilityTo = '';
     saveUiState();
+    render();
+  });
+
+  document.getElementById('add-manual-pto-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const currentUser = getCurrentUser();
+    if (currentUser?.role !== 'admin') return;
+
+    const formData = new FormData(event.currentTarget);
+    const agentId = Number(formData.get('agentId'));
+    const unavailableDate = String(formData.get('unavailableDate') || '').trim();
+    const unavailableStart = String(formData.get('unavailableStart') || '').trim();
+    const unavailableEnd = String(formData.get('unavailableEnd') || '').trim();
+    const note = String(formData.get('note') || '').trim();
+    const shouldSendNotification = formData.get('sendNotification') === 'on';
+
+    const agent = getAgent(agentId);
+    if (!agent) {
+      alert('Select a valid agent.');
+      return;
+    }
+    if (!getDayFromDate(unavailableDate)) {
+      alert('Enter a valid PTO date.');
+      return;
+    }
+    if (!unavailableStart || !unavailableEnd || toMinutes(unavailableEnd) <= toMinutes(unavailableStart)) {
+      alert('End time must be later than start time.');
+      return;
+    }
+    if (!note) {
+      alert('Enter a note for this PTO request.');
+      return;
+    }
+
+    const nowIso = getCurrentIsoTimestamp();
+    const requestOwner = getUserByAgentId(agentId);
+    const nextManualPtoRequest = {
+      id: createId(),
+      agentId,
+      requesterUserId: requestOwner?.id || null,
+      requesterEmail: requestOwner?.email || agent.email || '',
+      requesterName: agent.name || requestOwner?.username || 'Agent',
+      availability: 'Unavailable',
+      unavailabilityType: 'PTO',
+      unavailableDate,
+      unavailableStart,
+      unavailableEnd,
+      note,
+      recurrenceType: 'once',
+      recurrenceDay: '',
+      recurrenceEndDate: '',
+      recurrenceGroupId: '',
+      recurrenceInstance: 1,
+      recurrenceTotal: 1,
+      requestedAt: nowIso,
+      status: 'approved'
+    };
+
+    state.agents = state.agents.map((item) => Number(item.id) === agentId
+      ? {
+          ...item,
+          availability: 'Unavailable'
+        }
+      : item);
+
+    const nextAvailabilityRequests = [...getAllAvailabilityRequests(), nextManualPtoRequest];
+    saveAvailabilityRequests(nextAvailabilityRequests);
+    saveState();
+
+    const recipientEmail = nextManualPtoRequest.requesterEmail;
+    if (shouldSendNotification && recipientEmail) {
+      sendEmailNotification({
+        to: recipientEmail,
+        subject: 'PTO added by admin',
+        body: `Hi ${nextManualPtoRequest.requesterName || 'Agent'}, an admin added approved PTO for you.\n\nDate: ${unavailableDate}\nTime: ${formatTimeRange(unavailableStart, unavailableEnd)}\nNote: ${note}`,
+        type: 'availability-admin-added'
+      });
+    }
+
+    alert('Approved PTO added successfully.');
     render();
   });
 
