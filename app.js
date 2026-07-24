@@ -3314,9 +3314,9 @@ function openShiftEditModal(shift, onSave) {
             </select>
           </label>
           <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
-            <span>Location</span>
+            <span>Venue</span>
             <select name="location">
-              <option value="">No location</option>
+              <option value="">No venue</option>
               ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(shift.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
             </select>
           </label>
@@ -4185,15 +4185,28 @@ function formatTimeRange(startTime, endTime) {
   return `${formatTime12Hour(startTime)} - ${formatTime12Hour(endTime)}`;
 }
 
+function getShiftRoleLocationText(shift) {
+  const role = String(shift?.role || getPrimaryRole()).trim() || getPrimaryRole();
+  const location = String(shift?.location || '').trim();
+  return location ? `${role} • ${location}` : role;
+}
+
+function getShiftRoleLocationHtml(shift) {
+  const role = String(shift?.role || getPrimaryRole()).trim() || getPrimaryRole();
+  const location = String(shift?.location || '').trim();
+  return location
+    ? `${escapeHtml(role)}<br />${escapeHtml(location)}`
+    : `${escapeHtml(role)}`;
+}
+
 function getShiftSummary(shift, includeDay = true) {
   if (!shift) return 'Shift';
   const segments = [];
   if (includeDay && shift.day) {
     segments.push(shift.day);
   }
-  segments.push(shift.role || getPrimaryRole());
+  segments.push(getShiftRoleLocationText(shift));
   segments.push(formatTimeRange(shift.start, shift.end));
-  segments.push(shift.location || 'No location');
   return segments.join(' | ');
 }
 
@@ -4365,7 +4378,7 @@ function renderCalendarPage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>${isAgentView ? 'My calendar' : 'Calendar view'}</h1>
-          <p class="muted">${isAgentView ? (isTeamLeadView ? 'Review the full published team schedule, request swaps, and mark absences.' : 'Review the full published team schedule and request swaps for your own shifts.') : 'Filter shifts by day, agent, or location in a dedicated planning page.'}</p>
+          <p class="muted">${isAgentView ? (isTeamLeadView ? 'Review the full published team schedule, request swaps, and mark absences.' : 'Review the full published team schedule and request swaps for your own shifts.') : 'Filter shifts by day, agent, or venue in a dedicated planning page.'}</p>
         </div>
         <div class="row">
           ${isAgentView ? renderAgentNavigationLinks() : renderAdminNavigationLinks({ includeExport: true })}
@@ -4395,7 +4408,7 @@ function renderCalendarPage(currentUser) {
             ${roleItems.map((role) => `<option value="${escapeHtml(role)}" ${String(calendarFilters.role || 'All') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
           </select>
           <select id="calendar-location-filter">
-            <option value="All" ${calendarFilters.location === 'All' ? 'selected' : ''}>All locations</option>
+            <option value="All" ${calendarFilters.location === 'All' ? 'selected' : ''}>All venues</option>
             ${locations.map((location) => `<option value="${location}" ${calendarFilters.location === location ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
           </select>
           <button id="calendar-filters-apply" type="button">Apply filters</button>
@@ -4439,7 +4452,7 @@ function renderCalendarPage(currentUser) {
               <input name="start" type="time" value="08:00" required />
               <input name="end" type="time" value="16:00" required />
               <select name="location">
-                <option value="">No location</option>
+                <option value="">No venue</option>
                 ${getLocationCatalog().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
               </select>
               <input name="date" type="date" required />
@@ -4499,7 +4512,7 @@ function renderCalendarPage(currentUser) {
                     <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>${getAgent(shift.agentId)?.role ? `<span class="muted"> (${escapeHtml(getAgent(shift.agentId)?.role)})</span>` : ''}
                   </div>
                   ${!isAgentView && getAgent(shift.agentId)?.team ? `<div class="muted">${escapeHtml(normalizeTeamLabel(getAgent(shift.agentId)?.team))}</div>` : ''}
-                  ${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
+                  ${getShiftRoleLocationHtml(shift)}<br />${formatTimeRange(shift.start, shift.end)}
                   ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}</div><div class="row calendar-shift-actions" style="margin-top:6px;">${canManageCalendar ? `<button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-dup-shift="${shift.id}">Copy/Dup</button>` : ''}${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}</div>` : ''}
                   ${isAgentView ? `
                     <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
@@ -5436,7 +5449,7 @@ function renderAdminOptionsPage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>Admin options</h1>
-          <p class="muted">Manage shift templates, roles, locations, and role colors from one page.</p>
+          <p class="muted">Manage shift templates, roles, venues, and role colors from one page.</p>
         </div>
         <div class="row">
           ${renderAdminNavigationLinks({ includeExport: true })}
@@ -5458,7 +5471,7 @@ function renderAdminOptionsPage(currentUser) {
                 ${roleChoices.map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
               </select>
               <select name="location">
-                <option value="">No default location</option>
+                <option value="">No default venue</option>
                 ${locationChoices.map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
               </select>
               <label class="row" style="gap:6px; align-items:center; white-space:nowrap;">
@@ -5481,7 +5494,7 @@ function renderAdminOptionsPage(currentUser) {
                       ${roleChoices.map((role) => `<option value="${escapeHtml(role)}" ${String(template.role || '') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
                     </select>
                     <select name="location">
-                      <option value="">No default location</option>
+                      <option value="">No default venue</option>
                       ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(template.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
                     </select>
                     <label class="row" style="gap:6px; align-items:center; white-space:nowrap;">
@@ -5499,10 +5512,10 @@ function renderAdminOptionsPage(currentUser) {
         </div>
 
         <div class="panel">
-          <h2>Locations</h2>
+          <h2>Venues</h2>
           <form id="add-shift-location-form" class="row" style="margin-bottom:10px;">
-            <input name="location" placeholder="Add location" required />
-            <button type="submit">Add location</button>
+            <input name="location" placeholder="Add venue" required />
+            <button type="submit">Add venue</button>
           </form>
           <div class="row" style="gap:8px; flex-wrap:wrap;">
             ${locationChoices.map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}<button type="button" class="danger" data-remove-shift-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
@@ -6458,7 +6471,7 @@ function render() {
                         ${getBlackoutDateMarker(plannerWeekDates[day]?.iso || '')}
                         ${sortedAdminWeeklyShifts.filter((shift) => shift.day === day).map((shift) => `
                           <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                            <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
+                            <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}<br />${formatTimeRange(shift.start, shift.end)}
                           </div>
                         `).join('')}
                       </div>
@@ -6515,7 +6528,7 @@ function render() {
                     ${getBlackoutDateMarker(weekDates[selectedAgentScheduleDay]?.iso || '')}
                     ${sortedVisibleShifts.filter((shift) => shift.day === selectedAgentScheduleDay).map((shift) => `
                       <div class="shift" draggable="true" data-shift-id="${shift.id}">
-                        <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
+                        <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}<br />${formatTimeRange(shift.start, shift.end)}
                       </div>
                     `).join('') || '<div class="muted">No shifts for this day.</div>'}
                   </div>
@@ -6529,7 +6542,7 @@ function render() {
                       ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                       ${sortedVisibleShifts.filter((shift) => shift.day === day).map((shift) => `
                         <div class="shift" draggable="true" data-shift-id="${shift.id}">
-                          <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${escapeHtml(shift.role || getPrimaryRole())}<br />${escapeHtml(shift.location || 'No location')}<br />${formatTimeRange(shift.start, shift.end)}
+                          <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}<br />${formatTimeRange(shift.start, shift.end)}
                         </div>
                       `).join('')}
                     </div>
@@ -6542,7 +6555,7 @@ function render() {
                     <div class="card">
                       <strong>${escapeHtml(shift.date || shift.day || 'Date not set')}</strong>
                       <div class="muted">${escapeHtml(shift.day || '')} • ${formatTimeRange(shift.start, shift.end)}</div>
-                      <div class="muted">${escapeHtml(shift.role || getPrimaryRole())} • ${escapeHtml(shift.location || 'No location')}</div>
+                      <div class="muted">${escapeHtml(getShiftRoleLocationText(shift))}</div>
                     </div>
                   `).join('') || '<div class="muted">No shifts in this month.</div>'}
                 </div>
@@ -7374,7 +7387,7 @@ function bindEvents() {
     const location = String(formData.get('location') || '').trim();
     if (!location) return;
     if (getLocationCatalog().some((item) => item.toLowerCase() === location.toLowerCase())) {
-      alert('That location already exists.');
+      alert('That venue already exists.');
       return;
     }
     state.locationCatalog = [...getLocationCatalog(), location];
@@ -7389,7 +7402,7 @@ function bindEvents() {
       const locationInUse = state.shifts.some((shift) => String(shift.location || '').trim() === location)
         || state.templates.some((template) => String(template.location || '').trim() === location);
       if (locationInUse) {
-        alert('That location is in use by shifts or templates and cannot be removed yet.');
+        alert('That venue is in use by shifts or templates and cannot be removed yet.');
         return;
       }
       state.locationCatalog = getLocationCatalog().filter((item) => item !== location);
