@@ -1153,6 +1153,7 @@ function normalizeAvailabilityRequestStatus(value) {
   const normalized = String(value || 'pending').trim().toLowerCase();
   if (normalized === 'approved') return 'approved';
   if (normalized === 'rejected' || normalized === 'denied' || normalized === 'declined') return 'rejected';
+  if (normalized === 'deleted' || normalized === 'removed') return 'deleted';
   return 'pending';
 }
 
@@ -2684,6 +2685,7 @@ function filterAvailabilityRequestsForAdminList(requests, filters = {}) {
   return (Array.isArray(requests) ? requests : []).filter((request) => {
     const requestDate = getAvailabilityRequestDate(request);
     const normalizedStatus = normalizeAvailabilityRequestStatus(request?.status);
+    if (normalizedStatus === 'deleted') return false;
     const matchesDate = !date || (requestDate && requestDate === date);
     const matchesFrom = !from || (requestDate && requestDate >= from);
     const matchesTo = !to || (requestDate && requestDate <= to);
@@ -4355,7 +4357,7 @@ function renderAgentNavigationLinks() {
     '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>',
     '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>',
     '<a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>',
-    '<a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Approved requests</button></a>',
+    '<a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Completed requests</button></a>',
     '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>',
     '<a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>'
   ].join('');
@@ -5680,7 +5682,7 @@ function renderAgentRequestsPage(currentUser) {
     root.innerHTML = `
       <div class="app">
         <div class="panel">
-          <h1>Approved requests</h1>
+          <h1>Completed requests</h1>
           <p class="muted">This page is available for agent accounts only.</p>
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
         </div>
@@ -5692,15 +5694,21 @@ function renderAgentRequestsPage(currentUser) {
   const currentAgentId = Number(currentUser?.agentId);
   const viewAgent = getAgent(currentAgentId) || getViewAgent();
   const allAvailabilityRequests = getAllAvailabilityRequests();
-  const approvedAvailabilityRequests = allAvailabilityRequests.filter((request) => isAvailabilityRequestVisibleToUser(request, currentUser) && request.status === 'approved');
+  const completedAvailabilityRequests = allAvailabilityRequests
+    .filter((request) => {
+      if (!isAvailabilityRequestVisibleToUser(request, currentUser)) return false;
+      const normalizedStatus = normalizeAvailabilityRequestStatus(request.status);
+      return normalizedStatus === 'approved' || normalizedStatus === 'rejected' || normalizedStatus === 'deleted';
+    })
+    .sort((left, right) => (right.requestedAt || '').localeCompare(left.requestedAt || ''));
   const approvedSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'completed');
 
   root.innerHTML = `
     <div class="app">
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
-          <h1>Approved requests</h1>
-          <p class="muted">Your approved unavailability and completed swap requests.</p>
+          <h1>Completed requests</h1>
+          <p class="muted">Your approved, rejected, and deleted unavailability requests plus completed swap requests.</p>
         </div>
         <div class="row">
           ${renderAgentNavigationLinks()}
@@ -5710,22 +5718,24 @@ function renderAgentRequestsPage(currentUser) {
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
-        <h2>Approved unavailability requests</h2>
+        <h2>Unavailability requests</h2>
         <div class="request-list" style="margin-top:10px;">
-          ${approvedAvailabilityRequests.map((request) => `
+          ${completedAvailabilityRequests.map((request) => `
             <div class="card">
               <div class="muted">Type: ${escapeHtml(request.unavailabilityType || 'Availability')}</div>
               <div class="muted">Unavailability date: ${escapeHtml(request.unavailableDate || 'Not set')}</div>
               <div class="muted">Time: ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')}</div>
               <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
-              <div class="muted">Approved: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
+              <div class="muted">Status: ${escapeHtml(normalizeAvailabilityRequestStatus(request.status))}</div>
+              <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
+              ${normalizeAvailabilityRequestStatus(request.status) === 'deleted' && request.deletedAt ? `<div class="muted">Deleted: ${escapeHtml(new Date(request.deletedAt).toLocaleString())}</div>` : ''}
             </div>
-          `).join('') || '<div class="muted">No approved unavailability requests yet.</div>'}
+          `).join('') || '<div class="muted">No completed unavailability requests yet.</div>'}
         </div>
       </div>
 
       <div class="panel">
-        <h2>Approved swap requests</h2>
+        <h2>Completed swap requests</h2>
         <div class="request-list" style="margin-top:10px;">
           ${approvedSwapRequests.map((request) => `
             <div class="card">
@@ -5734,7 +5744,7 @@ function renderAgentRequestsPage(currentUser) {
               <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
               <div class="muted">Approved: ${escapeHtml(request.completedAt ? new Date(request.completedAt).toLocaleString() : (request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown'))}</div>
             </div>
-          `).join('') || '<div class="muted">No approved swap requests yet.</div>'}
+          `).join('') || '<div class="muted">No completed swap requests yet.</div>'}
         </div>
       </div>
     </div>
@@ -6067,8 +6077,11 @@ function renderAvailabilityRequestsPage(currentUser) {
   }
 
   const allAvailabilityRequests = getAllAvailabilityRequests();
-  const filteredAvailabilityRequests = getFilteredAvailabilityRequests(allAvailabilityRequests);
-  const visibleAvailabilityRequests = [...(filteredAvailabilityRequests.length > 0 ? filteredAvailabilityRequests : allAvailabilityRequests)]
+  const adminVisibleAvailabilityRequests = allAvailabilityRequests.filter(
+    (request) => normalizeAvailabilityRequestStatus(request.status) !== 'deleted'
+  );
+  const filteredAvailabilityRequests = getFilteredAvailabilityRequests(adminVisibleAvailabilityRequests);
+  const visibleAvailabilityRequests = [...(filteredAvailabilityRequests.length > 0 ? filteredAvailabilityRequests : adminVisibleAvailabilityRequests)]
     .sort((left, right) => (right.requestedAt || '').localeCompare(left.requestedAt || ''));
   const visibleSwapRequests = [...(Array.isArray(state.swapRequests) ? state.swapRequests : [])]
     .sort((left, right) => (right.requestedAt || '').localeCompare(left.requestedAt || ''));
@@ -8386,7 +8399,13 @@ function bindEvents() {
       );
       if (!shouldDelete) return;
 
-      const nextAvailabilityRequests = allAvailabilityRequests.filter((item) => Number(item.id) !== id);
+      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => Number(item.id) === id
+        ? {
+            ...item,
+            status: 'deleted',
+            deletedAt: getCurrentIsoTimestamp()
+          }
+        : item);
       saveAvailabilityRequests(nextAvailabilityRequests);
       saveState();
 
