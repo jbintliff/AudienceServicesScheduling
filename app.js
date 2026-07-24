@@ -565,6 +565,8 @@ let memoryAvailabilityInbox = [];
 let memoryEmailOutbox = [];
 let lastSuccessfulSyncAt = loadLastSuccessfulSyncAt();
 const pendingSharedWriteKeys = new Set();
+let backendSnapshotSyncTimer = null;
+let isPushingLocalSnapshot = false;
 let adminManagerNotice = null;
 let adminProfileNotice = null;
 const attemptedResetTokenLookups = new Set();
@@ -957,6 +959,35 @@ async function pushLocalSnapshotToBackend() {
     pendingSharedWriteKeys.clear();
   }
   return didSync;
+}
+
+async function flushLocalSnapshotSync() {
+  if (!backendApiBase || isApplyingRemoteSnapshot || isPushingLocalSnapshot) {
+    return false;
+  }
+  isPushingLocalSnapshot = true;
+  try {
+    const didSync = await pushLocalSnapshotToBackend();
+    if (didSync) {
+      markSyncSuccess();
+    }
+    return didSync;
+  } finally {
+    isPushingLocalSnapshot = false;
+  }
+}
+
+function queueImmediateBackendSnapshotSync() {
+  if (!backendApiBase || isApplyingRemoteSnapshot) {
+    return;
+  }
+  if (backendSnapshotSyncTimer) {
+    window.clearTimeout(backendSnapshotSyncTimer);
+  }
+  backendSnapshotSyncTimer = window.setTimeout(() => {
+    backendSnapshotSyncTimer = null;
+    void flushLocalSnapshotSync();
+  }, 250);
 }
 
 function mergeRemoteSnapshotWithPendingLocal(remoteStore) {
@@ -2644,7 +2675,11 @@ function saveState() {
   const didSaveInbox = safeSetLocalStorage(availabilityInboxKey, JSON.stringify(state.availabilityRequests));
   const didSaveRequests = safeSetLocalStorage(availabilityRequestsKey, JSON.stringify(state.availabilityRequests));
   saveUiState();
-  return didSaveState && didSaveInbox && didSaveRequests;
+  const didSaveAll = didSaveState && didSaveInbox && didSaveRequests;
+  if (didSaveAll) {
+    queueImmediateBackendSnapshotSync();
+  }
+  return didSaveAll;
 }
 
 function getFilteredAvailabilityRequests(requests) {
@@ -2794,12 +2829,16 @@ function getPlannerWeekIsoDateForDay(dayLabel) {
 function cloneShift(shift, dayOverride) {
   const nextDay = dayOverride || shift.day;
   const nextDate = dayOverride ? (getPlannerWeekIsoDateForDay(nextDay) || shift.date) : shift.date;
+  const createdAt = getCurrentIsoTimestamp();
   return {
     ...shift,
     id: createId(),
     day: nextDay,
     date: nextDate,
-    status: shiftStatuses.draft
+    status: shiftStatuses.draft,
+    createdAt,
+    updatedAt: createdAt,
+    publishedAt: ''
   };
 }
 
@@ -3474,7 +3513,11 @@ function openShiftEditModal(shift, onSave) {
       role: nextRole,
       location: nextLocation,
       status: nextStatus,
-      durationHours: getDurationHours(nextStart, nextEnd)
+      durationHours: getDurationHours(nextStart, nextEnd),
+      updatedAt: getCurrentIsoTimestamp(),
+      publishedAt: nextStatus === shiftStatuses.published
+        ? (shift.publishedAt || getCurrentIsoTimestamp())
+        : ''
     });
     closeModal();
   });
@@ -7260,7 +7303,22 @@ function bindEvents() {
       role
     })) return;
 
-    state.shifts.push({ id: createId(), day, date, agentId, role, start, end, durationHours: getDurationHours(start, end), location, status: shiftStatuses.draft });
+    const createdAt = getCurrentIsoTimestamp();
+    state.shifts.push({
+      id: createId(),
+      day,
+      date,
+      agentId,
+      role,
+      start,
+      end,
+      durationHours: getDurationHours(start, end),
+      location,
+      status: shiftStatuses.draft,
+      createdAt,
+      updatedAt: createdAt,
+      publishedAt: ''
+    });
     saveState();
     render();
   });
@@ -8246,7 +8304,8 @@ function bindEvents() {
             ...item,
             offeredForPickup: shouldOffer,
             offeredByAgentId: shouldOffer ? currentAgentId : null,
-            offeredAt: shouldOffer ? new Date().toISOString() : null
+            offeredAt: shouldOffer ? new Date().toISOString() : null,
+            updatedAt: getCurrentIsoTimestamp()
           }
         : item);
       saveState();
@@ -8281,7 +8340,8 @@ function bindEvents() {
             offeredForPickup: false,
             offeredByAgentId: null,
             offeredAt: null,
-            pickedUpAt: new Date().toISOString()
+            pickedUpAt: new Date().toISOString(),
+            updatedAt: getCurrentIsoTimestamp()
           }
         : item);
       saveState();
@@ -8322,9 +8382,15 @@ function bindEvents() {
       .filter((shift) => selectedCalendarShiftIds.has(Number(shift.id)) && shift.status !== shiftStatuses.published)
       .map((shift) => ({ ...shift, status: shiftStatuses.published }));
     const shouldSendEmails = shiftsToNotify.length > 0 ? shouldSendPublishedScheduleEmails(shiftsToNotify.length) : false;
+    const publishedAt = getCurrentIsoTimestamp();
 
     state.shifts = state.shifts.map((shift) => (selectedCalendarShiftIds.has(Number(shift.id))
-      ? { ...shift, status: shiftStatuses.published }
+      ? {
+          ...shift,
+          status: shiftStatuses.published,
+          publishedAt: shift.publishedAt || publishedAt,
+          updatedAt: publishedAt
+        }
       : shift));
 
     if (shouldSendEmails) {
@@ -8364,9 +8430,17 @@ function bindEvents() {
       if (!shift) return;
       openShiftEditModal(shift, (updatedShift) => {
         const shouldNotify = shift.status !== shiftStatuses.published && updatedShift.status === shiftStatuses.published;
-        state.shifts = state.shifts.map((item) => item.id === id ? updatedShift : item);
+        const nowIso = getCurrentIsoTimestamp();
+        const finalizedShift = {
+          ...updatedShift,
+          updatedAt: nowIso,
+          publishedAt: updatedShift.status === shiftStatuses.published
+            ? (updatedShift.publishedAt || shift.publishedAt || nowIso)
+            : ''
+        };
+        state.shifts = state.shifts.map((item) => item.id === id ? finalizedShift : item);
         if (shouldNotify && shouldSendPublishedScheduleEmails(1)) {
-          sendShiftPublishedEmail(updatedShift);
+          sendShiftPublishedEmail(finalizedShift);
         }
         saveState();
         render();
@@ -8383,8 +8457,16 @@ function bindEvents() {
       const shouldSendEmails = shiftToPublish.status !== shiftStatuses.published
         ? shouldSendPublishedScheduleEmails(1)
         : false;
+      const publishedAt = getCurrentIsoTimestamp();
 
-      state.shifts = state.shifts.map((shift) => shift.id === id ? { ...shift, status: shiftStatuses.published } : shift);
+      state.shifts = state.shifts.map((shift) => shift.id === id
+        ? {
+            ...shift,
+            status: shiftStatuses.published,
+            publishedAt: shift.publishedAt || publishedAt,
+            updatedAt: publishedAt
+          }
+        : shift);
       if (shiftToPublish.status !== shiftStatuses.published && shouldSendEmails) {
         sendShiftPublishedEmail({ ...shiftToPublish, status: shiftStatuses.published });
       }
@@ -8404,7 +8486,8 @@ function bindEvents() {
           ? {
               ...item,
               absenceReason,
-              absentMarkedAt: getCurrentIsoTimestamp()
+              absentMarkedAt: getCurrentIsoTimestamp(),
+              updatedAt: getCurrentIsoTimestamp()
             }
           : item);
         saveState();
@@ -8425,7 +8508,8 @@ function bindEvents() {
         ? {
             ...item,
             absenceReason: '',
-            absentMarkedAt: ''
+            absentMarkedAt: '',
+            updatedAt: getCurrentIsoTimestamp()
           }
         : item);
       saveState();
@@ -8636,10 +8720,10 @@ function bindEvents() {
 
         state.shifts = state.shifts.map((shift) => {
           if (Number(shift.id) === Number(fromShiftId)) {
-            return { ...shift, agentId: updatedRequest.toAgentId };
+            return { ...shift, agentId: updatedRequest.toAgentId, updatedAt: getCurrentIsoTimestamp() };
           }
           if (Number(shift.id) === Number(toShiftId)) {
-            return { ...shift, agentId: updatedRequest.fromAgentId };
+            return { ...shift, agentId: updatedRequest.fromAgentId, updatedAt: getCurrentIsoTimestamp() };
           }
           return shift;
         });
@@ -8778,7 +8862,8 @@ function bindEvents() {
         ? {
             ...shift,
             day: targetDay,
-            date: targetDate || shift.date
+            date: targetDate || shift.date,
+            updatedAt: getCurrentIsoTimestamp()
           }
         : shift);
       saveState();
