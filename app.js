@@ -2560,11 +2560,11 @@ function loadState() {
           const maxInOfficeShiftsRaw = typeof agent.maxInOfficeShifts === 'undefined' ? null : agent.maxInOfficeShifts;
           const maxInOfficeShifts = normalizeMaxInOfficeShifts(maxInOfficeShiftsRaw);
           const attendancePoints = normalizeAttendancePoints(agent.attendancePoints);
-          const pronouns = normalizePronouns(agent.pronouns);
+          const linkedUser = authUsersForLookup.find((user) => isAgentLikeUser(user) && Number(user.agentId) === Number(agent.id)) || null;
+          const linkedUserPronouns = normalizePronouns(linkedUser?.pronouns || '');
+          const pronouns = normalizePronouns(agent.pronouns || linkedUserPronouns);
           const skills = normalizeAgentSkills(agent.skills);
-          const linkedUserEmail = normalizeEmail(
-            authUsersForLookup.find((user) => isAgentLikeUser(user) && Number(user.agentId) === Number(agent.id))?.email || ''
-          );
+          const linkedUserEmail = normalizeEmail(linkedUser?.email || '');
           return {
             ...agent,
             email: normalizeEmail(agent.email || linkedUserEmail),
@@ -3542,6 +3542,8 @@ function saveAgentDetails(agentId, values) {
       ? {
           ...user,
           email,
+          pronouns,
+          updatedAt: profileUpdatedAt,
           role: accessRole,
           profileUpdatedAt
         }
@@ -3559,6 +3561,7 @@ function saveAgentDetails(agentId, values) {
       profileUpdatedAt: createdAt,
       mustChangePassword: true,
       calendarFeedToken: createCalendarFeedToken(),
+      pronouns,
       role: accessRole,
       agentId: id
     }));
@@ -7962,15 +7965,25 @@ function bindEvents() {
 
     const formData = new FormData(event.currentTarget);
     const pronouns = normalizePronouns(formData.get('pronouns'));
+    const profileUpdatedAt = getCurrentIsoTimestamp();
     state.agents = state.agents.map((agent) => Number(agent.id) === currentAgentId
       ? {
           ...agent,
           pronouns
         }
       : agent);
+    authUsers = authUsers.map((user) => Number(user.id) === Number(currentUser.id)
+      ? {
+          ...user,
+          pronouns,
+          updatedAt: profileUpdatedAt,
+          profileUpdatedAt
+        }
+      : user);
 
+    const didSaveAuthUsers = saveAuthUsers();
     const didSave = saveState();
-    if (!didSave) {
+    if (!didSaveAuthUsers || !didSave) {
       alert('Unable to save pronouns right now. Please check browser storage settings and try again.');
       syncFromStorage();
       render();
