@@ -3963,6 +3963,14 @@ function formatIsoDateLocal(dateValue) {
   return `${year}-${month}-${dayOfMonth}`;
 }
 
+function getCurrentLocalIsoDate() {
+  return formatIsoDateLocal(new Date());
+}
+
+function getCurrentLocalMonthValue() {
+  return getCurrentLocalIsoDate().slice(0, 7);
+}
+
 function getNextDateForWeekdayOnOrAfter(anchorDate, weekdayLabel) {
   const parsedDate = new Date(`${String(anchorDate || '').slice(0, 10)}T00:00:00`);
   const targetIndex = days.indexOf(String(weekdayLabel || ''));
@@ -4386,7 +4394,7 @@ function getCalendarWeekDates(referenceDateValue) {
     const dayDate = new Date(monday);
     dayDate.setDate(monday.getDate() + index);
     acc[day] = {
-      iso: dayDate.toISOString().slice(0, 10),
+      iso: formatIsoDateLocal(dayDate),
       label: dayDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     };
     return acc;
@@ -4418,11 +4426,11 @@ function getShiftedWeekReference(referenceDateValue, dayOffset) {
     return '';
   }
   baseDate.setDate(baseDate.getDate() + dayOffset);
-  return baseDate.toISOString().slice(0, 10);
+  return formatIsoDateLocal(baseDate);
 }
 
 function getActiveCalendarWeekReference() {
-  return state.ui.calendar?.weekReference || state.ui.calendar?.date || new Date().toISOString().slice(0, 10);
+  return state.ui.calendar?.weekReference || state.ui.calendar?.date || getCurrentLocalIsoDate();
 }
 
 async function exportData() {
@@ -4508,7 +4516,7 @@ function renderAbsenceManagerNavigationLinks() {
 function renderCalendarPage(currentUser) {
   const spendByDay = getSpendByDay();
   const calendarFilters = state.ui.calendar || {};
-  const weekReference = calendarFilters.weekReference || calendarFilters.date || new Date().toISOString().slice(0, 10);
+  const weekReference = calendarFilters.weekReference || calendarFilters.date || getCurrentLocalIsoDate();
   const weekDates = getCalendarWeekDates(weekReference);
   const weekLabel = getCalendarWeekLabel(weekDates);
   const locations = getAllLocations();
@@ -6066,7 +6074,7 @@ function renderAgentsPage(currentUser) {
     }
     return String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' });
   });
-  const currentWeekReference = new Date().toISOString().slice(0, 10);
+  const currentWeekReference = getCurrentLocalIsoDate();
 
   root.innerHTML = `
     <div class="app">
@@ -6153,7 +6161,7 @@ function getAvailabilityStatusStyles(status) {
 }
 
 function getAvailabilityCalendarCells(monthValue, requests) {
-  const normalizedMonth = monthValue || new Date().toISOString().slice(0, 7);
+  const normalizedMonth = monthValue || getCurrentLocalMonthValue();
   const monthStart = new Date(`${normalizedMonth}-01T00:00:00`);
   if (Number.isNaN(monthStart.getTime())) {
     return { label: 'Invalid month', cells: [] };
@@ -6161,7 +6169,7 @@ function getAvailabilityCalendarCells(monthValue, requests) {
 
   const year = monthStart.getFullYear();
   const month = monthStart.getMonth();
-  const firstWeekDay = monthStart.getDay();
+  const firstWeekDay = (monthStart.getDay() + 6) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const requestsByDate = (Array.isArray(requests) ? requests : []).reduce((acc, request) => {
     const key = (request.unavailableDate || '').slice(0, 10) || (request.requestedAt || '').slice(0, 10);
@@ -6247,7 +6255,7 @@ function renderAvailabilityRequestsPage(currentUser) {
   const visibleSwapRequestsForList = filterSwapRequestsForAdminList(visibleSwapRequests, swapRequestFilters);
   const filteredPendingCount = visibleAvailabilityRequestsForList.filter((request) => normalizeAvailabilityRequestStatus(request.status) === 'pending').length;
   const filteredPendingSwapCount = visibleSwapRequestsForList.filter((request) => getSwapRequestFilterStatus(request) === 'pending').length;
-  const selectedMonth = state.ui.availabilityCalendarMonth || new Date().toISOString().slice(0, 7);
+  const selectedMonth = state.ui.availabilityCalendarMonth || getCurrentLocalMonthValue();
   const calendarData = getAvailabilityCalendarCells(selectedMonth, visibleAvailabilityRequests);
   const allBlackoutDates = normalizeBlackoutDates(state.blackoutDates);
   const monthBlackoutDates = allBlackoutDates
@@ -6327,7 +6335,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
         </div>
         <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
-          ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayLabel) => `<div class="muted" style="text-align:center;">${dayLabel}</div>`).join('')}
+          ${days.map((dayLabel) => `<div class="muted" style="text-align:center;">${dayLabel}</div>`).join('')}
         </div>
         <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px;">
           ${calendarData.cells.map((cell) => {
@@ -6568,7 +6576,7 @@ function render() {
   const todayDay = days[(new Date().getDay() + 6) % 7] || 'Mon';
   const selectedAgentScheduleView = ['day', 'week', 'month'].includes(state.ui.agentScheduleView) ? state.ui.agentScheduleView : 'week';
   const selectedAgentScheduleDay = days.includes(state.ui.agentScheduleDay) ? state.ui.agentScheduleDay : todayDay;
-  const selectedAgentScheduleMonth = state.ui.agentScheduleMonth || new Date().toISOString().slice(0, 7);
+  const selectedAgentScheduleMonth = state.ui.agentScheduleMonth || getCurrentLocalMonthValue();
   const monthShifts = sortedVisibleShifts
     .filter((shift) => String(shift.date || '').slice(0, 7) === selectedAgentScheduleMonth)
     .sort((a, b) => {
@@ -8032,7 +8040,7 @@ function bindEvents() {
   });
 
   document.getElementById('calendar-current-week')?.addEventListener('click', () => {
-    state.ui.calendar.weekReference = new Date().toISOString().slice(0, 10);
+    state.ui.calendar.weekReference = getCurrentLocalIsoDate();
     saveUiState();
     render();
   });
@@ -8056,7 +8064,7 @@ function bindEvents() {
   });
 
   document.getElementById('weekly-current-week')?.addEventListener('click', () => {
-    state.ui.calendar.weekReference = new Date().toISOString().slice(0, 10);
+    state.ui.calendar.weekReference = getCurrentLocalIsoDate();
     saveUiState();
     render();
   });

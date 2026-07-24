@@ -278,6 +278,7 @@ function buildAgentCalendarFeed(store, token) {
     `X-AUDIENCE-SCHEDULING-FEED-BUILD:${escapeIcsText(nowStamp)}`,
     'REFRESH-INTERVAL;VALUE=DURATION:PT5M',
     'X-PUBLISHED-TTL:PT5M',
+    'X-WR-WEEKSTART:MO',
     'X-WR-TIMEZONE:America/New_York',
     'BEGIN:VTIMEZONE',
     'TZID:America/New_York',
