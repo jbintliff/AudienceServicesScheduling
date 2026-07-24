@@ -194,7 +194,12 @@ function buildAgentCalendarFeed(store, token) {
     return { status: 404, ics: '' };
   }
 
-  const agentUser = parsedUsers.find((user) => user?.role === 'agent' && String(user?.calendarFeedToken || '').trim() === token);
+  const agentUser = parsedUsers.find((user) => {
+    const hasAgentId = Number.isFinite(Number(user?.agentId));
+    const role = String(user?.role || '').trim().toLowerCase();
+    const isAgentLikeRole = role === 'agent' || role === 'team-lead';
+    return hasAgentId && isAgentLikeRole && String(user?.calendarFeedToken || '').trim() === token;
+  });
   if (!agentUser) {
     return { status: 404, ics: '' };
   }
