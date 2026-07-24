@@ -125,7 +125,7 @@ function formatUtcDateTimeForIcs(dateValue) {
   return dateValue.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 }
 
-function parseShiftDateTime(dateValue, timeValue) {
+function parseShiftLocalDateTimeParts(dateValue, timeValue) {
   const normalizedDate = String(dateValue || '').slice(0, 10);
   const normalizedTime = String(timeValue || '').trim();
   const match = normalizedTime.match(/^(\d{1,2}):(\d{2})$/);
@@ -137,16 +137,29 @@ function parseShiftDateTime(dateValue, timeValue) {
   if (!Number.isFinite(hours) || !Number.isFinite(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
     return '';
   }
-  const parsed = new Date(Date.UTC(
-    Number(normalizedDate.slice(0, 4)),
-    Number(normalizedDate.slice(5, 7)) - 1,
-    Number(normalizedDate.slice(8, 10)),
+  return {
+    date: normalizedDate,
     hours,
-    minutes,
-    0,
-    0
-  ));
-  return Number.isNaN(parsed.getTime()) ? '' : parsed;
+    minutes
+  };
+}
+
+function addDaysToIsoDate(dateValue, dayCount) {
+  const parsed = new Date(`${String(dateValue || '').slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return '';
+  }
+  parsed.setDate(parsed.getDate() + Number(dayCount || 0));
+  return parsed.toISOString().slice(0, 10);
+}
+
+function formatShiftLocalDateTimeForIcs(localParts) {
+  if (!localParts || !localParts.date) return '';
+  const ymd = String(localParts.date || '').replace(/-/g, '');
+  if (!/^\d{8}$/.test(ymd)) return '';
+  const hh = String(Number(localParts.hours)).padStart(2, '0');
+  const mm = String(Number(localParts.minutes)).padStart(2, '0');
+  return `${ymd}T${hh}${mm}00`;
 }
 
 function escapeIcsText(value) {
@@ -183,20 +196,47 @@ function buildAgentCalendarFeed(store, token) {
     'METHOD:PUBLISH',
     'PRODID:-//Audience Services Scheduling//Agent Schedule//EN',
     `X-WR-CALNAME:${escapeIcsText(`${agentUser.name || agentUser.username || 'Agent'} - Work Schedule`)}`,
-    'X-WR-TIMEZONE:UTC'
+    'X-WR-TIMEZONE:America/New_York',
+    'BEGIN:VTIMEZONE',
+    'TZID:America/New_York',
+    'X-LIC-LOCATION:America/New_York',
+    'BEGIN:DAYLIGHT',
+    'TZOFFSETFROM:-0500',
+    'TZOFFSETTO:-0400',
+    'TZNAME:EDT',
+    'DTSTART:19700308T020000',
+    'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU',
+    'END:DAYLIGHT',
+    'BEGIN:STANDARD',
+    'TZOFFSETFROM:-0400',
+    'TZOFFSETTO:-0500',
+    'TZNAME:EST',
+    'DTSTART:19701101T020000',
+    'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU',
+    'END:STANDARD',
+    'END:VTIMEZONE'
   ];
 
   agentShifts.forEach((shift, index) => {
-    const startDate = parseShiftDateTime(shift.date, shift.start);
-    const endDate = parseShiftDateTime(shift.date, shift.end);
-    if (!startDate || !endDate) {
+    const startParts = parseShiftLocalDateTimeParts(shift.date, shift.start);
+    const endParts = parseShiftLocalDateTimeParts(shift.date, shift.end);
+    if (!startParts || !endParts) {
       return;
     }
-    const resolvedEndDate = endDate <= startDate
-      ? new Date(endDate.getTime() + (24 * 60 * 60 * 1000))
-      : endDate;
-    const dtStart = formatUtcDateTimeForIcs(startDate);
-    const dtEnd = formatUtcDateTimeForIcs(resolvedEndDate);
+    const startMinutes = (startParts.hours * 60) + startParts.minutes;
+    const endMinutes = (endParts.hours * 60) + endParts.minutes;
+    const endDateValue = endMinutes <= startMinutes
+      ? addDaysToIsoDate(startParts.date, 1)
+      : startParts.date;
+    const resolvedEndParts = {
+      ...endParts,
+      date: endDateValue || startParts.date
+    };
+    const dtStart = formatShiftLocalDateTimeForIcs(startParts);
+    const dtEnd = formatShiftLocalDateTimeForIcs(resolvedEndParts);
+    if (!dtStart || !dtEnd) {
+      return;
+    }
     const uid = `${shift.id || index}-${shift.date || 'date'}-${shift.start || 'start'}-${agentUser.id || agentUser.agentId}@audience-services-scheduling`;
     const summary = `Work Shift - ${shift.role || 'Scheduled Shift'}`;
     const statusText = shift.status ? `Status: ${shift.status}` : 'Status: scheduled';
@@ -209,8 +249,8 @@ function buildAgentCalendarFeed(store, token) {
     lines.push('BEGIN:VEVENT');
     lines.push(`UID:${escapeIcsText(uid)}`);
     lines.push(`DTSTAMP:${nowStamp}`);
-    lines.push(`DTSTART:${dtStart}`);
-    lines.push(`DTEND:${dtEnd}`);
+    lines.push(`DTSTART;TZID=America/New_York:${dtStart}`);
+    lines.push(`DTEND;TZID=America/New_York:${dtEnd}`);
     lines.push(`SUMMARY:${escapeIcsText(summary)}`);
     if (description) {
       lines.push(`DESCRIPTION:${escapeIcsText(description)}`);
