@@ -479,9 +479,9 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, attendancePoints: 0, maxInOfficeShifts: null, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, attendancePoints: 0, maxInOfficeShifts: null, availability: 'Available' },
-    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, attendancePoints: 0, maxInOfficeShifts: null, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Available' },
+    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -2386,6 +2386,10 @@ function normalizeAttendancePoints(value) {
   return Math.floor(parsed);
 }
 
+function normalizePronouns(value) {
+  return String(value || '').trim().slice(0, 80);
+}
+
 function normalizeAgentSkills(value) {
   const allowedSkills = new Set(agentSkillOptions.map((skill) => skill.value));
   const source = Array.isArray(value) ? value : [];
@@ -2550,6 +2554,7 @@ function loadState() {
           const maxInOfficeShiftsRaw = typeof agent.maxInOfficeShifts === 'undefined' ? null : agent.maxInOfficeShifts;
           const maxInOfficeShifts = normalizeMaxInOfficeShifts(maxInOfficeShiftsRaw);
           const attendancePoints = normalizeAttendancePoints(agent.attendancePoints);
+          const pronouns = normalizePronouns(agent.pronouns);
           const skills = normalizeAgentSkills(agent.skills);
           const linkedUserEmail = normalizeEmail(
             authUsersForLookup.find((user) => isAgentLikeUser(user) && Number(user.agentId) === Number(agent.id))?.email || ''
@@ -2560,6 +2565,7 @@ function loadState() {
             team: normalizeTeamLabel(agent.team),
             role: normalizeRoleLabel(agent.role, normalizedRoleCatalog),
             attendancePoints,
+            pronouns,
             skills,
             maxInOfficeShifts
           };
@@ -3492,6 +3498,7 @@ function saveAgentDetails(agentId, values) {
   const team = normalizeTeamLabel(String(values?.team || '').trim() || teamOptions[0]);
   const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
   const attendancePoints = normalizeAttendancePoints(values?.attendancePoints);
+  const pronouns = normalizePronouns(values?.pronouns);
   const skills = normalizeAgentSkills(values?.skills);
   const maxInOfficeShifts = normalizeMaxInOfficeShifts(values?.maxInOfficeShifts);
 
@@ -3515,6 +3522,7 @@ function saveAgentDetails(agentId, values) {
         team,
         payRate,
         attendancePoints,
+        pronouns,
         skills,
         maxInOfficeShifts
       }
@@ -3611,6 +3619,10 @@ function openAgentEditModal(agent, onSave) {
             <input name="attendancePoints" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(normalizeAttendancePoints(agent.attendancePoints))}" />
           </label>
           <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Pronouns</span>
+            <input name="pronouns" placeholder="e.g. she/her" value="${escapeHtml(normalizePronouns(agent.pronouns))}" maxlength="80" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
             <span>Max in-office shifts</span>
             <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" />
           </label>
@@ -3665,6 +3677,7 @@ function openAgentEditModal(agent, onSave) {
       team: formData.get('team'),
       payRate: formData.get('payRate'),
       attendancePoints: formData.get('attendancePoints'),
+      pronouns: formData.get('pronouns'),
       skills: formData.getAll('skills'),
       maxInOfficeShifts: formData.get('maxInOfficeShifts')
     });
@@ -5371,6 +5384,7 @@ function renderProfilePage(currentUser) {
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
               <div><strong>Attendance points:</strong> ${escapeHtml(normalizeAttendancePoints(viewAgent?.attendancePoints))}</div>
+              <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(viewAgent?.pronouns) || 'Not set')}</div>
               <div><strong>Skills:</strong> ${escapeHtml(getAgentSkillsSummary(viewAgent?.skills))}</div>
               <div><strong>Email:</strong> ${escapeHtml(activeAgentUser?.email || 'Not set')}</div>
               <div><strong>Phone:</strong> ${escapeHtml(activeAgentUser?.phone || 'Not set')}</div>
@@ -5399,6 +5413,14 @@ function renderProfilePage(currentUser) {
               </div>
               <div class="muted">Need changes to this URL? Contact an admin.</div>
             </div>
+          </div>
+
+          <div class="panel">
+            <h2>Update pronouns</h2>
+            <form id="agent-update-pronouns-form" class="stack" style="margin-top:10px;">
+              <input name="pronouns" type="text" placeholder="e.g. she/her" value="${escapeHtml(normalizePronouns(viewAgent?.pronouns))}" maxlength="80" />
+              <button type="submit">Save pronouns</button>
+            </form>
           </div>
 
           <div class="panel">
@@ -5943,6 +5965,7 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Team:</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span></div>
                   <div><strong>Email:</strong> ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
+                  <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(agent.pronouns) || 'Not set')}</div>
                   <div><strong>Assigned hours:</strong> ${escapeHtml(getAssignedHours(agent.id, currentWeekReference))}</div>
                   <div><strong>Credit (incl. PTO):</strong> ${escapeHtml(getMinimumHoursCredit(agent.id, currentWeekReference))}</div>
                   <div><strong>Targets:</strong> in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
@@ -7081,6 +7104,7 @@ function bindEvents() {
       role,
       payRate,
       attendancePoints: 0,
+      pronouns: '',
       skills: [],
       maxInOfficeShifts,
       availability: 'Available'
@@ -7806,6 +7830,33 @@ function bindEvents() {
     authUsers = authUsers.map((user) => user.id === currentUser.id ? { ...user, phone } : user);
     saveAuthUsers();
     alert('Phone number updated successfully.');
+    render();
+  });
+
+  document.getElementById('agent-update-pronouns-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+    const currentAgentId = Number(currentUser?.agentId);
+    if (!currentAgentId) return;
+
+    const formData = new FormData(event.currentTarget);
+    const pronouns = normalizePronouns(formData.get('pronouns'));
+    state.agents = state.agents.map((agent) => Number(agent.id) === currentAgentId
+      ? {
+          ...agent,
+          pronouns
+        }
+      : agent);
+
+    const didSave = saveState();
+    if (!didSave) {
+      alert('Unable to save pronouns right now. Please check browser storage settings and try again.');
+      syncFromStorage();
+      render();
+      return;
+    }
+    alert('Pronouns updated successfully.');
     render();
   });
 
