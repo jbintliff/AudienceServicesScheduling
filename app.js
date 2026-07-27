@@ -4443,6 +4443,105 @@ function openAvailabilityRequestDetailsModal(request) {
   document.body.appendChild(overlay);
 }
 
+function openAvailabilityRequestListModal(requests, dateLabel = '') {
+  const requestList = Array.isArray(requests) ? requests.filter(Boolean) : [];
+  if (requestList.length === 0) {
+    alert('No requests were found for this date.');
+    return;
+  }
+
+  const existingOverlay = document.getElementById('availability-request-list-modal-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  const normalizedDateLabel = String(dateLabel || '').trim();
+  const orderedRequests = [...requestList].sort((left, right) => {
+    const leftStart = String(left?.unavailableStart || '00:00');
+    const rightStart = String(right?.unavailableStart || '00:00');
+    const timeDiff = toMinutes(leftStart) - toMinutes(rightStart);
+    if (timeDiff !== 0) return timeDiff;
+    const leftName = String(getAgent(left?.agentId)?.name || left?.requesterName || '');
+    const rightName = String(getAgent(right?.agentId)?.name || right?.requesterName || '');
+    return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' });
+  });
+
+  const overlay = document.createElement('div');
+  overlay.id = 'availability-request-list-modal-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:min(760px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
+      <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px;">
+        <div>
+          <h2 style="margin:0;">Requests for ${escapeHtml(normalizedDateLabel || 'selected date')}</h2>
+          <div class="muted">${orderedRequests.length} request${orderedRequests.length === 1 ? '' : 's'} on this date</div>
+        </div>
+        <button type="button" id="availability-request-list-close" class="secondary">Close</button>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        ${orderedRequests.map((request) => {
+          const typeMeta = getAvailabilityRequestTypeMeta(request);
+          const statusValue = normalizeAvailabilityRequestStatus(request?.status);
+          const statusStyles = getAvailabilityStatusStyles(statusValue);
+          const agentName = getAgent(request?.agentId)?.name || request?.requesterName || 'Unknown';
+          return `
+            <button type="button" data-open-availability-request-from-list="${request.id}" style="text-align:left; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.14); color:#e5e7eb; border-radius:10px; padding:10px; cursor:pointer;">
+              <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+                <div>
+                  <div class="row" style="gap:6px; flex-wrap:wrap; margin-bottom:4px;">
+                    <span class="chip" style="${typeMeta.style}">${escapeHtml(typeMeta.label)}</span>
+                    <span class="chip" style="${statusStyles} border:1px solid rgba(255,255,255,0.2);">${escapeHtml(statusValue)}</span>
+                  </div>
+                  <strong>${escapeHtml(agentName)}</strong>
+                  <div class="muted">${escapeHtml(formatTimeRange(request?.unavailableStart || '--:--', request?.unavailableEnd || '--:--'))}</div>
+                  ${request?.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
+                </div>
+                <span class="muted" style="font-size:12px;">View details</span>
+              </div>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+
+  const closeModal = () => {
+    document.removeEventListener('keydown', onEscape);
+    overlay.remove();
+  };
+
+  const onEscape = (event) => {
+    if (event.key === 'Escape') {
+      closeModal();
+    }
+  };
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeModal();
+    }
+  });
+
+  overlay.querySelector('#availability-request-list-close')?.addEventListener('click', () => {
+    closeModal();
+  });
+
+  overlay.querySelectorAll('[data-open-availability-request-from-list]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const requestId = Number(button.getAttribute('data-open-availability-request-from-list'));
+      if (!requestId) return;
+      const targetRequest = getAllAvailabilityRequests().find((entry) => Number(entry.id) === requestId);
+      if (!targetRequest) return;
+      closeModal();
+      openAvailabilityRequestDetailsModal(targetRequest);
+    });
+  });
+
+  document.addEventListener('keydown', onEscape);
+  document.body.appendChild(overlay);
+}
+
 function getDayFromDate(dateValue) {
   const parsedDate = new Date(`${dateValue}T00:00:00`);
   if (Number.isNaN(parsedDate.getTime())) {
@@ -6978,6 +7077,7 @@ function renderAvailabilityRequestsPage(currentUser) {
               return '<div class="card" style="min-height:96px; opacity:0.25;"></div>';
             }
             const blackoutDate = isBlackoutDate(cell.date);
+            const requestIdsForDate = (cell.requests || []).map((request) => Number(request?.id)).filter((id) => Number.isFinite(id)).join(',');
             return `
               <div class="card" style="min-height:96px; padding:8px; ${blackoutDate ? 'border-color:#AB5C57; box-shadow:inset 0 0 0 1px rgba(171,92,87,0.55);' : ''}">
                 <div style="font-weight:600; margin-bottom:6px;">${cell.day}</div>
@@ -6991,7 +7091,7 @@ function renderAvailabilityRequestsPage(currentUser) {
                     </div>
                   `;
                   }).join('')}
-                  ${(cell.requests || []).length > 3 ? `<div class="muted">+${(cell.requests || []).length - 3} more</div>` : ''}
+                  ${(cell.requests || []).length > 3 ? `<button type="button" class="secondary" data-view-availability-request-list="${requestIdsForDate}" data-view-availability-request-list-date="${escapeHtml(cell.date || '')}" style="padding:3px 6px; font-size:12px; text-align:left;">+${(cell.requests || []).length - 3} more</button>` : ''}
                 </div>
               </div>
             `;
@@ -9787,6 +9887,22 @@ function bindEvents() {
       const request = getAllAvailabilityRequests().find((entry) => Number(entry.id) === id);
       if (!request) return;
       openAvailabilityRequestDetailsModal(request);
+    });
+  });
+
+  document.querySelectorAll('[data-view-availability-request-list]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const ids = String(button.getAttribute('data-view-availability-request-list') || '')
+        .split(',')
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+      if (ids.length === 0) return;
+      const targetRequests = getAllAvailabilityRequests()
+        .filter((request) => ids.includes(Number(request.id)))
+        .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted');
+      if (targetRequests.length === 0) return;
+      const dateLabel = String(button.getAttribute('data-view-availability-request-list-date') || '').trim();
+      openAvailabilityRequestListModal(targetRequests, dateLabel);
     });
   });
 
