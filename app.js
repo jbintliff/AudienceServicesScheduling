@@ -1381,6 +1381,20 @@ function createTemporaryPassword() {
   return `Temp-${Math.random().toString(36).slice(2, 8)}A1!`;
 }
 
+function getNewPasswordPolicyError(passwordValue) {
+  const password = String(passwordValue || '');
+  if (password.length < 8) {
+    return 'New password must be at least 8 characters and include at least one uppercase letter and one special character.';
+  }
+  if (!/[A-Z]/.test(password)) {
+    return 'New password must include at least one uppercase letter and one special character.';
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return 'New password must include at least one special character.';
+  }
+  return '';
+}
+
 function createCalendarFeedToken() {
   if (globalThis.crypto?.randomUUID) {
     return `cal-${globalThis.crypto.randomUUID().replace(/-/g, '')}`;
@@ -2157,8 +2171,9 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       const newPassword = formData.get('newPassword')?.toString() || '';
       const confirmPassword = formData.get('confirmPassword')?.toString() || '';
 
-      if (newPassword.length < 8) {
-        alert('New password must be at least 8 characters.');
+      const passwordPolicyError = getNewPasswordPolicyError(newPassword);
+      if (passwordPolicyError) {
+        alert(passwordPolicyError);
         return;
       }
       if (newPassword !== confirmPassword) {
@@ -2347,8 +2362,9 @@ function renderFirstLoginPasswordSetupPage(currentUser, options = {}) {
       const confirmPassword = formData.get('confirmPassword')?.toString() || '';
       const shouldRememberLogin = Boolean(formData.get('savePassword'));
 
-      if (newPassword.length < 8) {
-        setStatus('New password must be at least 8 characters.', true);
+      const passwordPolicyError = getNewPasswordPolicyError(newPassword);
+      if (passwordPolicyError) {
+        setStatus(passwordPolicyError, true);
         return;
       }
       if (newPassword !== confirmPassword) {
@@ -5350,8 +5366,9 @@ function renderProfilePage(currentUser) {
         alert('Current password is incorrect.');
         return;
       }
-      if (newPassword.length < 8) {
-        alert('New password must be at least 8 characters.');
+      const passwordPolicyError = getNewPasswordPolicyError(newPassword);
+      if (passwordPolicyError) {
+        alert(passwordPolicyError);
         return;
       }
       if (newPassword !== confirmPassword) {
@@ -5743,8 +5760,9 @@ function renderProfilePage(currentUser) {
         alert('Current password is incorrect.');
         return;
       }
-      if (newPassword.length < 8) {
-        alert('New password must be at least 8 characters.');
+      const passwordPolicyError = getNewPasswordPolicyError(newPassword);
+      if (passwordPolicyError) {
+        alert(passwordPolicyError);
         return;
       }
       if (newPassword !== confirmPassword) {
@@ -8397,8 +8415,9 @@ function bindEvents() {
       alert('Current password is incorrect.');
       return;
     }
-    if (newPassword.length < 8) {
-      alert('New password must be at least 8 characters.');
+    const passwordPolicyError = getNewPasswordPolicyError(newPassword);
+    if (passwordPolicyError) {
+      alert(passwordPolicyError);
       return;
     }
     if (newPassword !== confirmPassword) {
