@@ -4853,7 +4853,7 @@ function renderCalendarPage(currentUser) {
                   </div>
                   ${!isAgentView && getAgent(shift.agentId)?.team ? `<div class="muted">${escapeHtml(normalizeTeamLabel(getAgent(shift.agentId)?.team))}</div>` : ''}
                   ${getShiftRoleLocationHtml(shift)}<br />${formatTimeRange(shift.start, shift.end)}
-                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}</div><div class="row calendar-shift-actions" style="margin-top:6px;">${canManageCalendar ? `<button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button><button type="button" class="secondary" data-copy-dup-shift="${shift.id}">Copy/Dup</button>` : ''}${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}</div>` : ''}
+                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}</div><div class="row calendar-shift-actions" style="margin-top:6px;">${canManageCalendar ? `<button type="button" class="secondary" data-copy-dup-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button>` : ''}${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}</div>` : ''}
                   ${isAgentView ? `
                     <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
                     <div class="row" style="margin-top:6px;">
@@ -9014,22 +9014,6 @@ function bindEvents() {
       const id = Number(button.getAttribute('data-copy-dup-shift'));
       const shift = state.shifts.find((item) => item.id === id);
       if (!shift) return;
-
-      const shouldDuplicateNow = confirm('Shift action:\n\nSelect OK to duplicate this shift now.\nSelect Cancel for copy options.');
-      if (shouldDuplicateNow) {
-        const duplicatedShift = cloneShift(shift);
-        if (!await confirmShiftAssignmentWithTimeOffWarning(duplicatedShift.agentId, duplicatedShift.date, duplicatedShift.start, duplicatedShift.end, {
-          durationHours: duplicatedShift.durationHours,
-          role: duplicatedShift.role
-        })) return;
-        state.shifts.push(duplicatedShift);
-        saveState();
-        render();
-        return;
-      }
-
-      const shouldCopyForPaste = confirm('Copy this shift so you can paste it elsewhere?');
-      if (!shouldCopyForPaste) return;
       copiedShiftTemplate = { ...shift };
       render();
     });
