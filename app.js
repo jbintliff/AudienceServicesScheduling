@@ -7019,58 +7019,30 @@ function render() {
                           return Array.from(shiftsByTime.entries()).map(([timeKey, timeGroupShifts]) => {
                             const [startTime, endTime] = String(timeKey).split('|');
                             const timeLabel = formatTimeRange(startTime, endTime);
-                            const shiftsByRole = new Map();
-
-                            const getRoleGroupLabel = (shift) => {
+                            const getRoleSortOrder = (shift) => {
                               const normalizedRole = String(shift?.role || '').trim().toLowerCase();
-                              if (normalizedRole.includes('in-person') || normalizedRole.includes('in person')) {
-                                return 'In-person';
-                              }
-                              if (normalizedRole === 'wfh' || normalizedRole.includes('work from home')) {
-                                return 'WFH';
-                              }
-                              return getShiftRoleLocationText(shift);
-                            };
-
-                            const getRoleGroupOrder = (roleLabel) => {
-                              if (roleLabel === 'In-person') return 0;
-                              if (roleLabel === 'WFH') return 1;
+                              if (normalizedRole.includes('in-person') || normalizedRole.includes('in person')) return 0;
+                              if (normalizedRole === 'wfh' || normalizedRole.includes('work from home')) return 1;
                               return 2;
                             };
 
-                            timeGroupShifts.forEach((shift) => {
-                              const roleKey = getRoleGroupLabel(shift);
-                              const existing = shiftsByRole.get(roleKey) || [];
-                              existing.push(shift);
-                              shiftsByRole.set(roleKey, existing);
-                            });
-
-                            const sortedRoleGroups = Array.from(shiftsByRole.entries()).sort(([leftKey], [rightKey]) => {
-                              const orderDiff = getRoleGroupOrder(leftKey) - getRoleGroupOrder(rightKey);
-                              if (orderDiff !== 0) return orderDiff;
-                              return String(leftKey).localeCompare(String(rightKey), undefined, { sensitivity: 'base' });
+                            const sortedTimeGroupShifts = [...timeGroupShifts].sort((leftShift, rightShift) => {
+                              const roleDiff = getRoleSortOrder(leftShift) - getRoleSortOrder(rightShift);
+                              if (roleDiff !== 0) return roleDiff;
+                              const leftName = String(getAgent(leftShift?.agentId)?.name || '');
+                              const rightName = String(getAgent(rightShift?.agentId)?.name || '');
+                              const nameDiff = leftName.localeCompare(rightName, undefined, { sensitivity: 'base' });
+                              if (nameDiff !== 0) return nameDiff;
+                              return Number(leftShift?.id || 0) - Number(rightShift?.id || 0);
                             });
 
                             return `
                               <div class="chip" style="display:block; margin:8px 0 6px; background:#6B7280; color:#FFFFFF; border:1px solid rgba(255,255,255,0.24);">${escapeHtml(timeLabel)}</div>
-                              ${sortedRoleGroups.map(([roleKey, roleShifts]) => {
-                                const sortedRoleShifts = [...roleShifts].sort((leftShift, rightShift) => {
-                                  const leftName = String(getAgent(leftShift?.agentId)?.name || '');
-                                  const rightName = String(getAgent(rightShift?.agentId)?.name || '');
-                                  const nameDiff = leftName.localeCompare(rightName, undefined, { sensitivity: 'base' });
-                                  if (nameDiff !== 0) return nameDiff;
-                                  return Number(leftShift?.id || 0) - Number(rightShift?.id || 0);
-                                });
-
-                                return `
-                                  <div class="muted" style="font-weight:600; margin:4px 0 6px;">${escapeHtml(roleKey)}</div>
-                                  ${sortedRoleShifts.map((shift) => `
-                                    <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                                      <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}
-                                    </div>
-                                  `).join('')}
-                                `;
-                              }).join('')}
+                              ${sortedTimeGroupShifts.map((shift) => `
+                                <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
+                                  <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}
+                                </div>
+                              `).join('')}
                             `;
                           }).join('');
                         })()}
