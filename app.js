@@ -2554,6 +2554,116 @@ function getPtoDateMarkers(dateValue) {
   return markerHtml ? `<div style="display:flex; flex-direction:column; gap:4px; margin-top:6px;">${markerHtml}</div>` : '';
 }
 
+function isRecurringAvailabilityRequestActive(request, referenceDateValue = '') {
+  const normalizedStatus = normalizeAvailabilityRequestStatus(request?.status);
+  if (normalizedStatus !== 'pending' && normalizedStatus !== 'approved') {
+    return false;
+  }
+  if (String(request?.unavailabilityType || '').trim() !== 'Availability') {
+    return false;
+  }
+  if (String(request?.recurrenceType || '').trim() !== 'weekly') {
+    return false;
+  }
+  const recurrenceEndDate = String(request?.recurrenceEndDate || request?.unavailableDate || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(recurrenceEndDate)) {
+    return false;
+  }
+  const referenceDate = String(referenceDateValue || getCurrentLocalIsoDate()).slice(0, 10);
+  return recurrenceEndDate >= referenceDate;
+}
+
+function getRecurringAvailabilityDateMarkers(dateValue) {
+  const normalizedDate = String(dateValue || '').trim().slice(0, 10);
+  if (!normalizedDate) {
+    return '';
+  }
+
+  const recurringAvailabilityRequests = getAllAvailabilityRequests()
+    .filter((request) => isRecurringAvailabilityRequestActive(request, normalizedDate))
+    .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === normalizedDate)
+    .sort((left, right) => {
+      const leftName = String(getAgent(left?.agentId)?.name || left?.requesterName || '').trim();
+      const rightName = String(getAgent(right?.agentId)?.name || right?.requesterName || '').trim();
+      return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' });
+    });
+
+  if (recurringAvailabilityRequests.length === 0) {
+    return '';
+  }
+
+  const seenLabels = new Set();
+  const markerHtml = recurringAvailabilityRequests.map((request) => {
+    const agentName = String(getAgent(request?.agentId)?.name || request?.requesterName || 'Agent').trim() || 'Agent';
+    const label = `${agentName} recurring availability`;
+    if (seenLabels.has(label)) {
+      return '';
+    }
+    seenLabels.add(label);
+    return `<div class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(75,58,31,0.25);">${escapeHtml(label)}</div>`;
+  }).filter(Boolean).join('');
+
+  return markerHtml ? `<div style="display:flex; flex-direction:column; gap:4px; margin-top:6px;">${markerHtml}</div>` : '';
+}
+
+function getActiveRecurringAvailabilityGroupsForAgent(agentId, referenceDateValue = '') {
+  const normalizedAgentId = Number(agentId);
+  if (!Number.isFinite(normalizedAgentId)) {
+    return [];
+  }
+
+  const referenceDate = String(referenceDateValue || getCurrentLocalIsoDate()).slice(0, 10);
+  const groupedRequests = new Map();
+
+  getAllAvailabilityRequests()
+    .filter((request) => Number(request?.agentId) === normalizedAgentId)
+    .filter((request) => isRecurringAvailabilityRequestActive(request, referenceDate))
+    .forEach((request) => {
+      const recurrenceDay = days.includes(String(request?.recurrenceDay || ''))
+        ? String(request.recurrenceDay)
+        : getDayFromDate(String(request?.unavailableDate || '').slice(0, 10));
+      const recurrenceEndDate = String(request?.recurrenceEndDate || request?.unavailableDate || '').slice(0, 10);
+      const groupKey = String(request?.recurrenceGroupId || `${normalizedAgentId}-${recurrenceDay}-${request?.unavailableStart || ''}-${request?.unavailableEnd || ''}-${recurrenceEndDate}`);
+      const requestDate = String(request?.unavailableDate || '').slice(0, 10);
+      const normalizedStatus = normalizeAvailabilityRequestStatus(request?.status);
+
+      if (!groupedRequests.has(groupKey)) {
+        groupedRequests.set(groupKey, {
+          id: groupKey,
+          recurrenceDay,
+          unavailableStart: String(request?.unavailableStart || ''),
+          unavailableEnd: String(request?.unavailableEnd || ''),
+          firstDate: requestDate,
+          recurrenceEndDate,
+          statuses: new Set([normalizedStatus])
+        });
+        return;
+      }
+
+      const existing = groupedRequests.get(groupKey);
+      existing.statuses.add(normalizedStatus);
+      if (requestDate && (!existing.firstDate || requestDate < existing.firstDate)) {
+        existing.firstDate = requestDate;
+      }
+      if (recurrenceEndDate && (!existing.recurrenceEndDate || recurrenceEndDate > existing.recurrenceEndDate)) {
+        existing.recurrenceEndDate = recurrenceEndDate;
+      }
+    });
+
+  return Array.from(groupedRequests.values())
+    .map((group) => ({
+      ...group,
+      status: group.statuses.has('pending') ? 'pending' : 'approved'
+    }))
+    .sort((left, right) => {
+      const endCompare = String(left.recurrenceEndDate || '').localeCompare(String(right.recurrenceEndDate || ''));
+      if (endCompare !== 0) return endCompare;
+      const dayCompare = String(left.recurrenceDay || '').localeCompare(String(right.recurrenceDay || ''));
+      if (dayCompare !== 0) return dayCompare;
+      return String(left.unavailableStart || '').localeCompare(String(right.unavailableStart || ''));
+    });
+}
+
 function getAgentAccountEmail(agentId) {
   const agent = getAgent(agentId);
   const agentEmail = normalizeEmail(agent?.email || '');
@@ -4729,6 +4839,7 @@ function renderCalendarPage(currentUser) {
                   <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                   ${canManageCalendar ? getPtoDateMarkers(weekDates[day]?.iso || '') : ''}
+                  ${canManageCalendar ? getRecurringAvailabilityDateMarkers(weekDates[day]?.iso || '') : ''}
                 </div>
                 ${canManageCalendar ? `<button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button>` : ''}
               </div>
@@ -5565,6 +5676,7 @@ function renderProfilePage(currentUser) {
     activeAgentUser = getCurrentUser() || { ...activeAgentUser, calendarFeedToken: nextCalendarFeedToken };
   }
   const calendarSyncUrl = getAgentCalendarFeedUrl(activeAgentUser.calendarFeedToken);
+  const activeRecurringAvailabilityGroups = getActiveRecurringAvailabilityGroupsForAgent(viewAgent?.id, getCurrentLocalIsoDate());
 
   root.innerHTML = `
     <div class="app agents-compact">
@@ -5629,6 +5741,23 @@ function renderProfilePage(currentUser) {
                 <button id="regenerate-agent-calendar-sync-url" class="secondary" type="button">Regenerate URL</button>
               </div>
               <div class="muted">If your subscribed calendar is stale, regenerate to create a new feed link and re-subscribe in your calendar app.</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>Active recurring availability</h2>
+            <div class="muted" style="margin-bottom:8px;">Recurring availability requests stay here until their end date.</div>
+            <div class="stack" style="gap:8px;">
+              ${activeRecurringAvailabilityGroups.map((group) => `
+                <div class="card" style="padding:8px 10px; border:1px solid rgba(75,58,31,0.28); background:rgba(253,213,146,0.12);">
+                  <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <strong>${escapeHtml(group.recurrenceDay || 'Recurring availability')}</strong>
+                    <span class="chip" style="${group.status === 'pending' ? 'background:#FDD592; color:#4B3A1F; border:1px solid rgba(75,58,31,0.25);' : 'background:#7AACAF; color:#17383B; border:1px solid rgba(23,56,59,0.25);'}">${escapeHtml(group.status)}</span>
+                  </div>
+                  <div class="muted">Time: ${escapeHtml(formatTimeRange(group.unavailableStart || '00:00', group.unavailableEnd || '00:00'))}</div>
+                  <div class="muted">Range: ${escapeHtml(group.firstDate || 'Unknown')} through ${escapeHtml(group.recurrenceEndDate || 'Unknown')}</div>
+                </div>
+              `).join('') || '<div class="muted">No active recurring availability requests.</div>'}
             </div>
           </div>
 
