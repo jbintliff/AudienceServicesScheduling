@@ -4634,57 +4634,59 @@ function renderCalendarPage(currentUser) {
       </div>
 
       ${canManageCalendar ? `
-        <div class="panel" style="margin-bottom:16px;">
-          <h3>Create shift</h3>
-          <form id="add-shift-form" class="stack">
-            <div class="row">
-              <select name="templateId">
-                <option value="">Use template (optional)</option>
-                ${state.templates.filter((template) => isTemplateActive(template)).map((template) => `<option value="${template.id}">${escapeHtml(template.name)} (${escapeHtml(formatTimeRange(template.start, template.end))})</option>`).join('')}
-              </select>
-              <select name="agentId">
-                <option value="">Unassigned (optional)</option>
-                ${[...state.agents].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
-              </select>
-              <select name="role" required>
-                ${getRoleLegendItems().map((role) => `<option value="${role}">${escapeHtml(role)}</option>`).join('')}
-              </select>
-            </div>
-            <div class="row">
-              <input name="start" type="time" value="08:00" required />
-              <input name="end" type="time" value="16:00" required />
-              <select name="location">
-                <option value="">No venue</option>
-                ${getLocationCatalog().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
-              </select>
-              <input name="date" type="date" required />
-            </div>
-            <button type="submit">Add shift</button>
-          </form>
-        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:12px; margin-bottom:16px; align-items:start;">
+          <div class="panel" style="margin-bottom:0;">
+            <h3>Create shift</h3>
+            <form id="add-shift-form" class="stack">
+              <div class="row">
+                <select name="templateId">
+                  <option value="">Use template (optional)</option>
+                  ${state.templates.filter((template) => isTemplateActive(template)).map((template) => `<option value="${template.id}">${escapeHtml(template.name)} (${escapeHtml(formatTimeRange(template.start, template.end))})</option>`).join('')}
+                </select>
+                <select name="agentId">
+                  <option value="">Unassigned (optional)</option>
+                  ${[...state.agents].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+                </select>
+                <select name="role" required>
+                  ${getRoleLegendItems().map((role) => `<option value="${role}">${escapeHtml(role)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="row">
+                <input name="start" type="time" value="08:00" required />
+                <input name="end" type="time" value="16:00" required />
+                <select name="location">
+                  <option value="">No venue</option>
+                  ${getLocationCatalog().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
+                </select>
+                <input name="date" type="date" required />
+              </div>
+              <button type="submit">Add shift</button>
+            </form>
+          </div>
 
-        <div class="panel" style="margin-bottom:16px;">
-          <h3>Add approved PTO</h3>
-          <div class="muted" style="margin-bottom:8px;">Add PTO directly from Schedule and optionally notify the agent by email.</div>
-          <form id="add-manual-pto-form" class="stack">
-            <div class="row" style="flex-wrap:wrap; gap:8px;">
-              <select name="agentId" required>
-                <option value="">Select agent</option>
-                ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
-              </select>
-              <input name="unavailableDate" type="date" required />
-              <input name="unavailableStart" type="time" value="09:00" required />
-              <input name="unavailableEnd" type="time" value="17:00" required />
-            </div>
-            <textarea name="note" rows="3" placeholder="Reason/details for PTO" required></textarea>
-            <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
-              <input name="sendNotification" type="checkbox" checked />
-              <span>Send email notification to agent</span>
-            </label>
-            <div class="row" style="justify-content:flex-end;">
-              <button type="submit">Add approved PTO</button>
-            </div>
-          </form>
+          <div class="panel" style="margin-bottom:0;">
+            <h3>Add approved PTO</h3>
+            <div class="muted" style="margin-bottom:8px;">Add PTO directly from Schedule and optionally notify the agent by email.</div>
+            <form id="add-manual-pto-form" class="stack">
+              <div class="row" style="flex-wrap:wrap; gap:8px;">
+                <select name="agentId" required>
+                  <option value="">Select agent</option>
+                  ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+                </select>
+                <input name="unavailableDate" type="date" required />
+                <input name="unavailableStart" type="time" value="09:00" required />
+                <input name="unavailableEnd" type="time" value="17:00" required />
+              </div>
+              <textarea name="note" rows="3" placeholder="Reason/details for PTO" required></textarea>
+              <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+                <input name="sendNotification" type="checkbox" checked />
+                <span>Send email notification to agent</span>
+              </label>
+              <div class="row" style="justify-content:flex-end;">
+                <button type="submit">Add approved PTO</button>
+              </div>
+            </form>
+          </div>
         </div>` : ''}
 
       ${isAgentView ? `
