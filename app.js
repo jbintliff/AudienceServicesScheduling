@@ -7081,9 +7081,12 @@ function renderAvailabilityRequestsPage(currentUser) {
         `}
       </div>
 
-      ${hideSwapRequests ? '' : `
       <div class="panel" style="margin-top:16px;">
-        <h2>Swap requests</h2>
+        <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+          <h2 style="margin:0;">Swap requests</h2>
+          <button id="availability-swap-requests-toggle" class="secondary" type="button">${hideSwapRequests ? 'View swap requests' : 'Hide swap requests'}</button>
+        </div>
+        ${hideSwapRequests ? '<div class="muted" style="margin-top:10px;">Swap requests are hidden.</div>' : `
         <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
           <input id="availability-swap-date-filter" type="date" value="${escapeHtml(swapRequestFilters.date)}" />
           <input id="availability-swap-from-filter" type="date" value="${escapeHtml(swapRequestFilters.from)}" />
@@ -7123,8 +7126,8 @@ function renderAvailabilityRequestsPage(currentUser) {
             `;
           }).join('') || '<div class="muted">No swap requests yet.</div>'}
         </div>
+        `}
       </div>
-      `}
     </div>
   `;
 
@@ -8701,6 +8704,12 @@ function bindEvents() {
 
   document.getElementById('availability-hide-swap-requests')?.addEventListener('change', (event) => {
     state.ui.availabilitySwapRequestsHidden = Boolean(event.target.checked);
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('availability-swap-requests-toggle')?.addEventListener('click', () => {
+    state.ui.availabilitySwapRequestsHidden = !Boolean(state.ui.availabilitySwapRequestsHidden);
     saveUiState();
     render();
   });
