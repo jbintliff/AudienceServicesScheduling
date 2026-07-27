@@ -2946,6 +2946,88 @@ function filterAvailabilityRequestsForAdminList(requests, filters = {}) {
   });
 }
 
+function groupAvailabilityRequestsForAdminList(requests) {
+  const entries = [];
+  const recurringGroups = new Map();
+
+  (Array.isArray(requests) ? requests : []).forEach((request) => {
+    const normalizedStatus = normalizeAvailabilityRequestStatus(request?.status);
+    const isRecurringAvailability = String(request?.unavailabilityType || '').trim() === 'Availability'
+      && String(request?.recurrenceType || '').trim().toLowerCase() === 'weekly';
+
+    if (!isRecurringAvailability) {
+      entries.push({
+        id: `single-${request?.id || createId()}`,
+        kind: 'single',
+        representativeRequest: request,
+        requestIds: [Number(request?.id)].filter((id) => Number.isFinite(id)),
+        status: normalizedStatus,
+        occurrenceCount: 1,
+        rangeStart: String(request?.unavailableDate || '').slice(0, 10),
+        rangeEnd: String(request?.unavailableDate || '').slice(0, 10),
+        requestedAt: String(request?.requestedAt || '')
+      });
+      return;
+    }
+
+    const recurrenceDay = days.includes(String(request?.recurrenceDay || ''))
+      ? String(request.recurrenceDay)
+      : getDayFromDate(String(request?.unavailableDate || '').slice(0, 10));
+    const recurrenceEndDate = String(request?.recurrenceEndDate || request?.unavailableDate || '').slice(0, 10);
+    const groupKey = String(request?.recurrenceGroupId || `${request?.agentId || 'agent'}-${recurrenceDay}-${request?.unavailableStart || ''}-${request?.unavailableEnd || ''}-${recurrenceEndDate}`);
+    const requestDate = String(request?.unavailableDate || '').slice(0, 10);
+
+    if (!recurringGroups.has(groupKey)) {
+      recurringGroups.set(groupKey, {
+        id: `group-${groupKey}`,
+        kind: 'recurring-group',
+        representativeRequest: request,
+        requestIds: [Number(request?.id)].filter((id) => Number.isFinite(id)),
+        statusSet: new Set([normalizedStatus]),
+        occurrenceCount: 1,
+        rangeStart: requestDate,
+        rangeEnd: requestDate,
+        requestedAt: String(request?.requestedAt || '')
+      });
+      return;
+    }
+
+    const group = recurringGroups.get(groupKey);
+    const requestId = Number(request?.id);
+    if (Number.isFinite(requestId) && !group.requestIds.includes(requestId)) {
+      group.requestIds.push(requestId);
+    }
+    group.statusSet.add(normalizedStatus);
+    group.occurrenceCount += 1;
+
+    if (requestDate && (!group.rangeStart || requestDate < group.rangeStart)) {
+      group.rangeStart = requestDate;
+    }
+    if (requestDate && (!group.rangeEnd || requestDate > group.rangeEnd)) {
+      group.rangeEnd = requestDate;
+    }
+
+    const groupRequestedAt = String(group.requestedAt || '');
+    const nextRequestedAt = String(request?.requestedAt || '');
+    if (nextRequestedAt && (!groupRequestedAt || nextRequestedAt > groupRequestedAt)) {
+      group.requestedAt = nextRequestedAt;
+      group.representativeRequest = request;
+    }
+  });
+
+  recurringGroups.forEach((group) => {
+    const status = group.statusSet.has('pending')
+      ? 'pending'
+      : (group.statusSet.has('approved') ? 'approved' : 'rejected');
+    entries.push({
+      ...group,
+      status
+    });
+  });
+
+  return entries.sort((left, right) => String(right.requestedAt || '').localeCompare(String(left.requestedAt || '')));
+}
+
 function filterSwapRequestsForAdminList(requests, filters = {}) {
   const date = String(filters.date || '').trim();
   const from = String(filters.from || '').trim();
@@ -4118,6 +4200,94 @@ function openAvailabilityRequestEditModal(request, onSave) {
       note: nextNote,
       updatedAt: new Date().toISOString()
     });
+    closeModal();
+  });
+
+  document.addEventListener('keydown', onEscape);
+  document.body.appendChild(overlay);
+}
+
+function openAvailabilityRequestDetailsModal(request) {
+  if (!request) return;
+  const existingOverlay = document.getElementById('availability-request-details-modal-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  const typeMeta = getAvailabilityRequestTypeMeta(request);
+  const statusValue = String(request?.status || 'pending');
+  const statusStyles = getAvailabilityStatusStyles(statusValue);
+  const recurrenceLabel = getAvailabilityRecurrenceLabel(request);
+  const agentName = getAgent(request?.agentId)?.name || request?.requesterName || 'Unknown';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'availability-request-details-modal-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:min(760px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
+      <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px;">
+        <h2 style="margin:0;">Availability request details</h2>
+        <button type="button" id="availability-request-details-close" class="secondary">Close</button>
+      </div>
+      <div class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+        <span class="chip" style="${typeMeta.style}">${escapeHtml(typeMeta.label)}</span>
+        <span class="chip" style="${statusStyles} border:1px solid rgba(255,255,255,0.2);">${escapeHtml(statusValue)}</span>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px;">
+        <div class="card" style="padding:10px;">
+          <strong>Agent</strong>
+          <div class="muted" style="margin-top:4px;">${escapeHtml(agentName)}</div>
+        </div>
+        <div class="card" style="padding:10px;">
+          <strong>Date</strong>
+          <div class="muted" style="margin-top:4px;">${escapeHtml(request?.unavailableDate || 'Not set')}</div>
+        </div>
+        <div class="card" style="padding:10px;">
+          <strong>Time</strong>
+          <div class="muted" style="margin-top:4px;">${escapeHtml(formatTimeRange(request?.unavailableStart || '--:--', request?.unavailableEnd || '--:--'))}</div>
+        </div>
+        <div class="card" style="padding:10px;">
+          <strong>Recurrence</strong>
+          <div class="muted" style="margin-top:4px;">${escapeHtml(recurrenceLabel)}</div>
+        </div>
+        <div class="card" style="padding:10px;">
+          <strong>Requested by</strong>
+          <div class="muted" style="margin-top:4px;">${escapeHtml(request?.requesterName || 'Unknown')}</div>
+        </div>
+        <div class="card" style="padding:10px;">
+          <strong>Requester email</strong>
+          <div class="muted" style="margin-top:4px;">${escapeHtml(request?.requesterEmail || 'Not set')}</div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:10px; margin-top:10px;">
+        <strong>Submitted</strong>
+        <div class="muted" style="margin-top:4px;">${escapeHtml(request?.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
+      </div>
+
+      ${request?.note ? `<div class="card" style="padding:10px; margin-top:10px;"><strong>Note</strong><div class="muted" style="margin-top:4px; white-space:pre-wrap;">${escapeHtml(request.note)}</div></div>` : ''}
+    </div>
+  `;
+
+  const closeModal = () => {
+    document.removeEventListener('keydown', onEscape);
+    overlay.remove();
+  };
+
+  const onEscape = (event) => {
+    if (event.key === 'Escape') {
+      closeModal();
+    }
+  };
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeModal();
+    }
+  });
+
+  overlay.querySelector('#availability-request-details-close')?.addEventListener('click', () => {
     closeModal();
   });
 
@@ -6596,8 +6766,9 @@ function renderAvailabilityRequestsPage(currentUser) {
   const hideAllRequests = Boolean(state.ui.availabilityAllRequestsHidden);
   const hideSwapRequests = Boolean(state.ui.availabilitySwapRequestsHidden);
   const visibleAvailabilityRequestsForList = filterAvailabilityRequestsForAdminList(visibleAvailabilityRequests, allRequestFilters);
+  const groupedAvailabilityRequestsForList = groupAvailabilityRequestsForAdminList(visibleAvailabilityRequestsForList);
   const visibleSwapRequestsForList = filterSwapRequestsForAdminList(visibleSwapRequests, swapRequestFilters);
-  const filteredPendingCount = visibleAvailabilityRequestsForList.filter((request) => normalizeAvailabilityRequestStatus(request.status) === 'pending').length;
+  const filteredPendingCount = groupedAvailabilityRequestsForList.filter((entry) => normalizeAvailabilityRequestStatus(entry.status) === 'pending').length;
   const filteredPendingSwapCount = visibleSwapRequestsForList.filter((request) => getSwapRequestFilterStatus(request) === 'pending').length;
   const selectedMonth = state.ui.availabilityCalendarMonth || getCurrentLocalMonthValue();
   const calendarData = getAvailabilityCalendarCells(selectedMonth, visibleAvailabilityRequests);
@@ -6713,7 +6884,7 @@ function renderAvailabilityRequestsPage(currentUser) {
                   ${(cell.requests || []).slice(0, 3).map((request) => {
                     const typeMeta = getAvailabilityRequestTypeMeta(request);
                     return `
-                    <div title="${escapeHtml((getAgent(request.agentId)?.name || 'Unknown'))} - ${escapeHtml(typeMeta.label)}" style="padding:3px 6px; border-radius:999px; font-size:12px; ${typeMeta.style}">
+                    <div data-view-availability-request="${request.id}" title="${escapeHtml((getAgent(request.agentId)?.name || 'Unknown'))} - ${escapeHtml(typeMeta.label)}" style="padding:3px 6px; border-radius:999px; font-size:12px; cursor:pointer; ${typeMeta.style}">
                       ${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')} • ${escapeHtml(typeMeta.label)}
                     </div>
                   `;
@@ -6737,9 +6908,12 @@ function renderAvailabilityRequestsPage(currentUser) {
         </div>
       </div>
 
-      ${hideAllRequests ? '' : `
       <div class="panel">
-        <h2>All requests</h2>
+        <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+          <h2 style="margin:0;">All requests</h2>
+          <button id="availability-all-requests-toggle" class="secondary" type="button">${hideAllRequests ? 'View requests' : 'Hide requests'}</button>
+        </div>
+        ${hideAllRequests ? '<div class="muted" style="margin-top:10px;">All requests are hidden.</div>' : `
         <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
           <input id="availability-all-date-filter" type="date" value="${escapeHtml(allRequestFilters.date)}" />
           <input id="availability-all-from-filter" type="date" value="${escapeHtml(allRequestFilters.from)}" />
@@ -6757,36 +6931,44 @@ function renderAvailabilityRequestsPage(currentUser) {
           <button id="availability-all-filters-apply" type="button">Apply filters</button>
           <button id="availability-all-filters-reset" class="secondary" type="button">Reset filters</button>
         </div>
-        <div class="muted">Visible after filters: ${visibleAvailabilityRequestsForList.length} (${filteredPendingCount} pending)</div>
+        <div class="muted">Visible after filters: ${groupedAvailabilityRequestsForList.length} (${filteredPendingCount} pending)</div>
         <div class="request-list" style="margin-top:12px;">
-          ${visibleAvailabilityRequestsForList.map((request) => `
-            <div class="card" style="border-left:4px solid ${request.status === 'approved' ? '#7AACAF' : request.status === 'rejected' ? '#AB5C57' : '#FDD592'}; padding:10px 12px;">
+          ${groupedAvailabilityRequestsForList.map((entry) => {
+            const request = entry.representativeRequest;
+            const requestStatus = normalizeAvailabilityRequestStatus(entry.status);
+            const typeMeta = getAvailabilityRequestTypeMeta(request);
+            const requestIdsValue = entry.requestIds.join(',');
+            const rangeText = entry.kind === 'recurring-group'
+              ? `${entry.rangeStart || request.unavailableDate || 'Not set'} to ${entry.rangeEnd || request.unavailableDate || 'Not set'} • ${entry.occurrenceCount} date${entry.occurrenceCount === 1 ? '' : 's'}`
+              : `${request.unavailableDate || 'Not set'} • ${request.unavailableStart || '--:--'} - ${request.unavailableEnd || '--:--'}`;
+            return `
+            <div class="card" data-view-availability-request="${request.id}" style="border-left:4px solid ${requestStatus === 'approved' ? '#7AACAF' : requestStatus === 'rejected' ? '#AB5C57' : '#FDD592'}; padding:10px 12px; cursor:pointer;">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px;">
                 <div>
-                  ${(() => {
-                    const typeMeta = getAvailabilityRequestTypeMeta(request);
-                    return `<div style="margin-bottom:4px;"><span class="chip" style="${typeMeta.style}">${escapeHtml(typeMeta.label)}</span></div>`;
-                  })()}
+                  <div style="margin-bottom:4px;"><span class="chip" style="${typeMeta.style}">${escapeHtml(typeMeta.label)}</span></div>
                   <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:2px;">
                     <strong>${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')}</strong>
+                    ${entry.kind === 'recurring-group' ? `<span class="muted">Recurring series</span>` : ''}
                   </div>
-                  <div class="muted">${escapeHtml(request.unavailableDate || 'Not set')} • ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')} • ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
-                  <div class="muted">Submitted ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
+                  <div class="muted">${escapeHtml(rangeText)} • ${escapeHtml(entry.kind === 'recurring-group' ? 'Repeats weekly' : getAvailabilityRecurrenceLabel(request))}</div>
+                  <div class="muted">Time window: ${escapeHtml(formatTimeRange(request.unavailableStart || '--:--', request.unavailableEnd || '--:--'))}</div>
+                  <div class="muted">Submitted ${escapeHtml(entry.requestedAt ? new Date(entry.requestedAt).toLocaleString() : 'Unknown')}</div>
                   ${request.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
                 </div>
-                <span class="status-badge ${request.status || 'pending'}">${request.status || 'pending'}</span>
+                <span class="status-badge ${requestStatus}">${requestStatus}</span>
               </div>
               <div class="row" style="margin-top:6px; gap:6px; flex-wrap:wrap;">
-                ${request.status === 'pending' ? `<button class="success" data-approve-availability-request="${request.id}" style="padding:5px 8px; font-size:12px;">Approve</button>` : ''}
-                ${request.status === 'pending' ? `<button class="danger" data-reject-availability-request="${request.id}" style="padding:5px 8px; font-size:12px;">Deny</button>` : ''}
-                ${request.status === 'approved' && String(request.unavailabilityType || '').trim() === 'PTO' ? `<button class="secondary" data-edit-availability-request="${request.id}" style="padding:5px 8px; font-size:12px;">Edit</button>` : ''}
-                <button class="danger" data-delete-availability-request="${request.id}" style="padding:5px 8px; font-size:12px;">Delete</button>
+                ${requestStatus === 'pending' ? `<button class="success" data-approve-availability-request-ids="${requestIdsValue}" style="padding:5px 8px; font-size:12px;">Approve</button>` : ''}
+                ${requestStatus === 'pending' ? `<button class="danger" data-reject-availability-request-ids="${requestIdsValue}" style="padding:5px 8px; font-size:12px;">Deny</button>` : ''}
+                ${entry.kind === 'single' && requestStatus === 'approved' && String(request.unavailabilityType || '').trim() === 'PTO' ? `<button class="secondary" data-edit-availability-request="${request.id}" style="padding:5px 8px; font-size:12px;">Edit</button>` : ''}
+                <button class="danger" data-delete-availability-request-ids="${requestIdsValue}" style="padding:5px 8px; font-size:12px;">Delete</button>
               </div>
             </div>
-          `).join('') || '<div class="muted">No unavailability requests yet.</div>'}
+          `;
+          }).join('') || '<div class="muted">No unavailability requests yet.</div>'}
         </div>
+        `}
       </div>
-      `}
 
       ${hideSwapRequests ? '' : `
       <div class="panel" style="margin-top:16px;">
@@ -8400,6 +8582,12 @@ function bindEvents() {
     render();
   });
 
+  document.getElementById('availability-all-requests-toggle')?.addEventListener('click', () => {
+    state.ui.availabilityAllRequestsHidden = !Boolean(state.ui.availabilityAllRequestsHidden);
+    saveUiState();
+    render();
+  });
+
   document.getElementById('availability-hide-swap-requests')?.addEventListener('change', (event) => {
     state.ui.availabilitySwapRequestsHidden = Boolean(event.target.checked);
     saveUiState();
@@ -9027,56 +9215,84 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll('[data-approve-availability-request]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const id = Number(button.getAttribute('data-approve-availability-request'));
-      const allAvailabilityRequests = getAllAvailabilityRequests();
-      const request = allAvailabilityRequests.find((item) => item.id === id);
+  document.querySelectorAll('[data-view-availability-request]').forEach((item) => {
+    item.addEventListener('click', (event) => {
+      if (event.target.closest('button')) return;
+      const id = Number(item.getAttribute('data-view-availability-request'));
+      if (!id) return;
+      const request = getAllAvailabilityRequests().find((entry) => Number(entry.id) === id);
       if (!request) return;
-      state.agents = state.agents.map((agent) => agent.id === request.agentId
+      openAvailabilityRequestDetailsModal(request);
+    });
+  });
+
+  document.querySelectorAll('[data-approve-availability-request-ids]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const ids = String(button.getAttribute('data-approve-availability-request-ids') || '')
+        .split(',')
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+      if (ids.length === 0) return;
+      const allAvailabilityRequests = getAllAvailabilityRequests();
+      const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
+      if (targetRequests.length === 0) return;
+
+      const targetAgentIds = new Set(targetRequests.map((request) => Number(request.agentId)).filter((id) => Number.isFinite(id)));
+      state.agents = state.agents.map((agent) => targetAgentIds.has(Number(agent.id))
         ? {
             ...agent,
             availability: 'Unavailable'
           }
         : agent);
-      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => item.id === id ? { ...item, status: 'approved' } : item);
+
+      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => (ids.includes(Number(item.id)) ? { ...item, status: 'approved' } : item));
       saveAvailabilityRequests(nextAvailabilityRequests);
       saveState();
-      const requestOwner = getUserByAgentId(request.agentId);
-      const recipientEmail = request.requesterEmail || requestOwner?.email || '';
-      const recipientName = request.requesterName || requestOwner?.username || 'Agent';
+
+      const primaryRequest = targetRequests[0];
+      const requestOwner = getUserByAgentId(primaryRequest.agentId);
+      const recipientEmail = primaryRequest.requesterEmail || requestOwner?.email || '';
+      const recipientName = primaryRequest.requesterName || requestOwner?.username || 'Agent';
       if (recipientEmail) {
+        const seriesLabel = targetRequests.length > 1 ? ` (${targetRequests.length} requests)` : '';
         sendEmailNotification({
           to: recipientEmail,
           subject: 'Unavailability request approved',
-          body: `Hi ${recipientName}, your unavailability request for ${request.unavailableDate || 'the selected date'} (${formatTimeRange(request.unavailableStart, request.unavailableEnd)}) has been approved.`,
+          body: `Hi ${recipientName}, your unavailability request${seriesLabel} has been approved.`,
           type: 'availability-approved'
         });
       }
       const outboxCount = loadEmailOutbox().length;
-      alert(`Request approved. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
+      alert(`Request${targetRequests.length === 1 ? '' : 's'} approved. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
       render();
     });
   });
 
-  document.querySelectorAll('[data-reject-availability-request]').forEach((button) => {
+  document.querySelectorAll('[data-reject-availability-request-ids]').forEach((button) => {
     button.addEventListener('click', () => {
-      const id = Number(button.getAttribute('data-reject-availability-request'));
+      const ids = String(button.getAttribute('data-reject-availability-request-ids') || '')
+        .split(',')
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+      if (ids.length === 0) return;
       const allAvailabilityRequests = getAllAvailabilityRequests();
-      const request = allAvailabilityRequests.find((item) => item.id === id);
-      if (!request) return;
-      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => item.id === id ? { ...item, status: 'rejected' } : item);
+      const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
+      if (targetRequests.length === 0) return;
+
+      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => (ids.includes(Number(item.id)) ? { ...item, status: 'rejected' } : item));
       saveAvailabilityRequests(nextAvailabilityRequests);
       saveState();
 
-      const requestOwner = getUserByAgentId(request.agentId);
-      const recipientEmail = request.requesterEmail || requestOwner?.email || '';
-      const recipientName = request.requesterName || requestOwner?.username || 'Agent';
+      const primaryRequest = targetRequests[0];
+      const requestOwner = getUserByAgentId(primaryRequest.agentId);
+      const recipientEmail = primaryRequest.requesterEmail || requestOwner?.email || '';
+      const recipientName = primaryRequest.requesterName || requestOwner?.username || 'Agent';
       if (recipientEmail) {
+        const seriesLabel = targetRequests.length > 1 ? ` (${targetRequests.length} requests)` : '';
         sendEmailNotification({
           to: recipientEmail,
           subject: 'Unavailability request denied',
-          body: `Hi ${recipientName}, your unavailability request for ${request.unavailableDate || 'the selected date'} (${formatTimeRange(request.unavailableStart, request.unavailableEnd)}) was denied by an admin.\n\nIf you have questions, contact your manager.`,
+          body: `Hi ${recipientName}, your unavailability request${seriesLabel} was denied by an admin.\n\nIf you have questions, contact your manager.`,
           type: 'availability-rejected'
         });
       }
@@ -9085,25 +9301,33 @@ function bindEvents() {
       const emailStatus = recipientEmail
         ? ` Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`
         : ' No agent email was found, so no notification email was queued.';
-      alert(`Request denied.${emailStatus}`);
+      alert(`Request${targetRequests.length === 1 ? '' : 's'} denied.${emailStatus}`);
       render();
     });
   });
 
-  document.querySelectorAll('[data-delete-availability-request]').forEach((button) => {
+  document.querySelectorAll('[data-delete-availability-request-ids]').forEach((button) => {
     button.addEventListener('click', () => {
-      const id = Number(button.getAttribute('data-delete-availability-request'));
+      const ids = String(button.getAttribute('data-delete-availability-request-ids') || '')
+        .split(',')
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+      if (ids.length === 0) return;
       const allAvailabilityRequests = getAllAvailabilityRequests();
-      const request = allAvailabilityRequests.find((item) => Number(item.id) === id);
-      if (!request) return;
+      const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
+      if (targetRequests.length === 0) return;
+      const primaryRequest = targetRequests[0];
 
-      const agentName = getAgent(request.agentId)?.name || request.requesterName || 'this agent';
+      const agentName = getAgent(primaryRequest.agentId)?.name || primaryRequest.requesterName || 'this agent';
+      const requestLabel = targetRequests.length > 1
+        ? `${targetRequests.length} recurring availability submissions`
+        : `${String(primaryRequest.unavailabilityType || '').trim() || 'availability'} submission`;
       const shouldDelete = confirm(
-        `Delete this ${String(request.unavailabilityType || '').trim() || 'availability'} submission for ${agentName} on ${request.unavailableDate || 'the selected date'}?`
+        `Delete ${requestLabel} for ${agentName}${targetRequests.length > 1 ? '' : ` on ${primaryRequest.unavailableDate || 'the selected date'}`}?`
       );
       if (!shouldDelete) return;
 
-      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => Number(item.id) === id
+      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => ids.includes(Number(item.id))
         ? {
             ...item,
             status: 'deleted',
@@ -9113,14 +9337,14 @@ function bindEvents() {
       saveAvailabilityRequests(nextAvailabilityRequests);
       saveState();
 
-      const requestOwner = getUserByAgentId(request.agentId);
-      const recipientEmail = request.requesterEmail || requestOwner?.email || '';
-      const recipientName = request.requesterName || requestOwner?.username || agentName || 'Agent';
+      const requestOwner = getUserByAgentId(primaryRequest.agentId);
+      const recipientEmail = primaryRequest.requesterEmail || requestOwner?.email || '';
+      const recipientName = primaryRequest.requesterName || requestOwner?.username || agentName || 'Agent';
       if (recipientEmail) {
         sendEmailNotification({
           to: recipientEmail,
           subject: 'Unavailability submission deleted',
-          body: `Hi ${recipientName}, an admin deleted your ${String(request.unavailabilityType || '').trim() || 'availability'} submission.\n\nDate: ${request.unavailableDate || 'Not set'}\nTime: ${formatTimeRange(request.unavailableStart, request.unavailableEnd)}\nStatus at deletion: ${request.status || 'pending'}\n\nIf this was unexpected, contact your manager.`,
+          body: `Hi ${recipientName}, an admin deleted your ${targetRequests.length > 1 ? `${targetRequests.length} recurring availability submissions` : `${String(primaryRequest.unavailabilityType || '').trim() || 'availability'} submission`}.\n\nDate: ${primaryRequest.unavailableDate || 'Not set'}\nTime: ${formatTimeRange(primaryRequest.unavailableStart, primaryRequest.unavailableEnd)}\nStatus at deletion: ${primaryRequest.status || 'pending'}\n\nIf this was unexpected, contact your manager.`,
           type: 'availability-deleted'
         });
       }
@@ -9129,7 +9353,7 @@ function bindEvents() {
       const emailStatus = recipientEmail
         ? ` Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`
         : ' No agent email was found, so no notification email was queued.';
-      alert(`Submission deleted.${emailStatus}`);
+      alert(`Submission${targetRequests.length === 1 ? '' : 's'} deleted.${emailStatus}`);
       render();
     });
   });
