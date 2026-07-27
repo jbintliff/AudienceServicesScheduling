@@ -4239,8 +4239,13 @@ function getAvailabilityRecurrenceLabel(request) {
   return 'Recurring weekly';
 }
 
-function getWeeklySpend() {
-  return state.shifts.reduce((sum, shift) => {
+function getWeeklySpend(referenceDateValue = '', options = {}) {
+  const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
+  const publishedOnly = Boolean(options.publishedOnly);
+  return state.shifts
+    .filter((shift) => (!publishedOnly || shift.status === shiftStatuses.published))
+    .filter((shift) => shiftIsInWeek(shift, weekDates))
+    .reduce((sum, shift) => {
     const agent = getAgent(shift.agentId);
     return sum + (agent ? agent.payRate * shift.durationHours : 0);
   }, 0);
@@ -6880,6 +6885,7 @@ function render() {
   const weekDates = getCalendarWeekDates(plannerWeekReference);
   const plannerWeekDates = getCalendarWeekDates(plannerWeekReference);
   const plannerWeekLabel = getCalendarWeekLabel(plannerWeekDates);
+  const viewedWeekFullCost = getWeeklySpend(plannerWeekReference, { publishedOnly: true });
   const adminWeeklyShifts = isAgentView
     ? []
     : getFilteredCalendarShifts().filter((shift) => shift.status === shiftStatuses.published && shiftIsInWeek(shift, plannerWeekDates));
@@ -6920,7 +6926,7 @@ function render() {
           <div class="stat"><strong>${state.agents.length}</strong><div class="muted">Agents</div></div>
           <div class="stat"><strong>${state.shifts.length}</strong><div class="muted">Shifts</div></div>
           <div class="stat"><strong>${stats.available}</strong><div class="muted">Available</div></div>
-          <div class="stat"><strong>$${getWeeklySpend()}</strong><div class="muted">Weekly spend</div></div>
+          <div class="stat"><strong>$${escapeHtml(viewedWeekFullCost.toFixed(2))}</strong><div class="muted">Viewed week cost (published)</div></div>
         </div>` : `
         <div class="panel" style="margin-bottom:12px;">
           <h2 style="margin:0 0 8px;">Employee Hotline</h2>
@@ -6974,6 +6980,7 @@ function render() {
                     <div>
                       <strong>Week of ${escapeHtml(plannerWeekLabel)}</strong>
                       <div class="muted">Move between weeks without leaving the dashboard.</div>
+                      <div class="muted">Full week cost (published): <strong>$${escapeHtml(viewedWeekFullCost.toFixed(2))}</strong></div>
                     </div>
                     <div class="row" style="gap:8px; flex-wrap:wrap;">
                       <button id="weekly-previous-week" class="secondary" type="button">Previous week</button>
