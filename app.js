@@ -4537,6 +4537,42 @@ function getShiftSummary(shift, includeDay = true) {
   return segments.join(' | ');
 }
 
+function getShiftTimeRangeKey(shift) {
+  const start = String(shift?.start || '').trim();
+  const end = String(shift?.end || '').trim();
+  return `${start}|${end}`;
+}
+
+function renderCalendarShiftCard(shift, options = {}) {
+  const canManageCalendar = Boolean(options.canManageCalendar);
+  const isAgentView = Boolean(options.isAgentView);
+  const canMarkAbsence = Boolean(options.canMarkAbsence);
+  const currentAgentId = Number(options.currentAgentId) || null;
+  const showRoleLocation = options.showRoleLocation !== false;
+  const showTimeRange = options.showTimeRange !== false;
+  const absenceReason = normalizeShiftAbsenceReason(shift?.absenceReason);
+
+  return `
+    <div class="shift ${canManageCalendar && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="${canManageCalendar ? 'true' : 'false'}" data-shift-id="${shift.id}" style="${getShiftStyle(shift)} user-select:text; -webkit-user-select:text;">
+      <div class="row" style="justify-content:flex-start; align-items:center; gap:6px; margin-bottom:2px;">
+        ${canManageCalendar ? `<input type="checkbox" data-shift-select-checkbox="${shift.id}" ${selectedCalendarShiftIds.has(Number(shift.id)) ? 'checked' : ''} aria-label="Select shift for bulk actions" />` : ''}
+        <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>
+      </div>
+      ${!isAgentView && getAgent(shift.agentId)?.team ? `<div class="muted">${escapeHtml(normalizeTeamLabel(getAgent(shift.agentId)?.team))}</div>` : ''}
+      ${showRoleLocation ? `${getShiftRoleLocationHtml(shift)}${showTimeRange ? `<br />${formatTimeRange(shift.start, shift.end)}` : ''}` : (showTimeRange ? `${formatTimeRange(shift.start, shift.end)}` : '')}
+      ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}</div><div class="row calendar-shift-actions" style="margin-top:6px;">${canManageCalendar ? `<button type="button" class="secondary" data-copy-dup-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button>` : ''}${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}</div>` : ''}
+      ${isAgentView ? `
+        <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
+        <div class="row" style="margin-top:6px;">
+          ${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}
+          ${canAgentOfferShift(shift, currentAgentId) ? `<button type="button" class="secondary" data-offer-shift="${shift.id}">${isShiftOfferedForPickup(shift) ? 'Cancel offer' : 'Offer shift'}</button>` : ''}
+          ${canAgentPickUpOfferedShift(shift, currentAgentId) ? `<button type="button" class="success" data-pickup-offered-shift="${shift.id}">Pick up shift</button>` : ''}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
 function getAllLocations() {
   return Array.from(new Set([...getLocationCatalog(), ...state.shifts.map((shift) => shift.location).filter(Boolean)])).sort();
 }
@@ -4860,28 +4896,47 @@ function renderCalendarPage(currentUser) {
                 </div>
                 ${canManageCalendar ? `<button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button>` : ''}
               </div>
-              ${sortedVisibleCalendarShifts.filter((shift) => shift.day === day).map((shift) => {
-                const absenceReason = normalizeShiftAbsenceReason(shift?.absenceReason);
-                return `
-                <div class="shift ${canManageCalendar && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="${canManageCalendar ? 'true' : 'false'}" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                  <div class="row" style="justify-content:flex-start; align-items:center; gap:6px; margin-bottom:2px;">
-                    ${canManageCalendar ? `<input type="checkbox" data-shift-select-checkbox="${shift.id}" ${selectedCalendarShiftIds.has(Number(shift.id)) ? 'checked' : ''} aria-label="Select shift for bulk actions" />` : ''}
-                    <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>
-                  </div>
-                  ${!isAgentView && getAgent(shift.agentId)?.team ? `<div class="muted">${escapeHtml(normalizeTeamLabel(getAgent(shift.agentId)?.team))}</div>` : ''}
-                  ${getShiftRoleLocationHtml(shift)}<br />${formatTimeRange(shift.start, shift.end)}
-                  ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}</div><div class="row calendar-shift-actions" style="margin-top:6px;">${canManageCalendar ? `<button type="button" class="secondary" data-copy-dup-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button>` : ''}${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}</div>` : ''}
-                  ${isAgentView ? `
-                    <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
-                    <div class="row" style="margin-top:6px;">
-                      ${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}
-                      ${canAgentOfferShift(shift, currentAgentId) ? `<button type="button" class="secondary" data-offer-shift="${shift.id}">${isShiftOfferedForPickup(shift) ? 'Cancel offer' : 'Offer shift'}</button>` : ''}
-                      ${canAgentPickUpOfferedShift(shift, currentAgentId) ? `<button type="button" class="success" data-pickup-offered-shift="${shift.id}">Pick up shift</button>` : ''}
-                    </div>
-                  ` : ''}
-                </div>
-              `;
-              }).join('')}
+              ${(() => {
+                const dayShifts = sortedVisibleCalendarShifts.filter((shift) => shift.day === day);
+                if (dayShifts.length === 0) {
+                  return '<div class="muted">No shifts.</div>';
+                }
+
+                const shiftsByTime = new Map();
+                dayShifts.forEach((shift) => {
+                  const timeKey = getShiftTimeRangeKey(shift);
+                  const existing = shiftsByTime.get(timeKey) || [];
+                  existing.push(shift);
+                  shiftsByTime.set(timeKey, existing);
+                });
+
+                return Array.from(shiftsByTime.entries()).map(([timeKey, timeGroupShifts]) => {
+                  const [startTime, endTime] = String(timeKey).split('|');
+                  const timeLabel = formatTimeRange(startTime, endTime);
+                  const shiftsByRole = new Map();
+                  timeGroupShifts.forEach((shift) => {
+                    const roleKey = getShiftRoleLocationText(shift);
+                    const existing = shiftsByRole.get(roleKey) || [];
+                    existing.push(shift);
+                    shiftsByRole.set(roleKey, existing);
+                  });
+
+                  return `
+                    <div class="chip" style="display:block; margin:8px 0 6px; background:#6B7280; color:#FFFFFF; border:1px solid rgba(255,255,255,0.24);">${escapeHtml(timeLabel)}</div>
+                    ${Array.from(shiftsByRole.entries()).map(([roleKey, roleShifts]) => `
+                      <div class="muted" style="font-weight:600; margin:4px 0 6px;">${escapeHtml(roleKey)}</div>
+                      ${roleShifts.map((shift) => renderCalendarShiftCard(shift, {
+                        canManageCalendar,
+                        isAgentView,
+                        canMarkAbsence,
+                        currentAgentId,
+                        showRoleLocation: false,
+                        showTimeRange: false
+                      })).join('')}
+                    `).join('')}
+                  `;
+                }).join('');
+              })()}
             </div>
           `).join('')}
         </div>
