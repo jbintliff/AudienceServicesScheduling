@@ -2520,6 +2520,40 @@ function getBlackoutDateMarker(dateValue) {
   return '<div class="chip" style="margin-top:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>';
 }
 
+function getPtoDateMarkers(dateValue) {
+  const normalizedDate = String(dateValue || '').trim().slice(0, 10);
+  if (!normalizedDate) {
+    return '';
+  }
+
+  const approvedPtoRequests = getAllAvailabilityRequests()
+    .filter((request) => normalizeAvailabilityRequestStatus(request?.status) === 'approved')
+    .filter((request) => String(request?.unavailabilityType || '').trim() === 'PTO')
+    .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === normalizedDate)
+    .sort((left, right) => {
+      const leftName = String(getAgent(left?.agentId)?.name || left?.requesterName || '').trim();
+      const rightName = String(getAgent(right?.agentId)?.name || right?.requesterName || '').trim();
+      return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' });
+    });
+
+  if (approvedPtoRequests.length === 0) {
+    return '';
+  }
+
+  const seenLabels = new Set();
+  const markerHtml = approvedPtoRequests.map((request) => {
+    const agentName = String(getAgent(request?.agentId)?.name || request?.requesterName || 'Agent').trim() || 'Agent';
+    const label = `${agentName} PTO`;
+    if (seenLabels.has(label)) {
+      return '';
+    }
+    seenLabels.add(label);
+    return `<div class="chip" style="background:#7AACAF; color:#17383B; border:1px solid rgba(23,56,59,0.25);">${escapeHtml(label)}</div>`;
+  }).filter(Boolean).join('');
+
+  return markerHtml ? `<div style="display:flex; flex-direction:column; gap:4px; margin-top:6px;">${markerHtml}</div>` : '';
+}
+
 function getAgentAccountEmail(agentId) {
   const agent = getAgent(agentId);
   const agentEmail = normalizeEmail(agent?.email || '');
@@ -4692,6 +4726,7 @@ function renderCalendarPage(currentUser) {
                   <h4 style="margin:0;">${day}</h4>
                   <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
+                  ${canManageCalendar ? getPtoDateMarkers(weekDates[day]?.iso || '') : ''}
                 </div>
                 ${canManageCalendar ? `<button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button>` : ''}
               </div>
