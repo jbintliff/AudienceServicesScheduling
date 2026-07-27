@@ -6620,9 +6620,16 @@ function renderAvailabilityRequestsPage(currentUser) {
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
-        <h2>Add PTO manually</h2>
-        <p class="muted">Create an approved PTO entry directly for an agent.</p>
+        <h2>Add availability or PTO manually</h2>
+        <p class="muted">Create approved PTO, one-time availability, or recurring weekly availability entries directly for an agent.</p>
         <form id="add-manual-pto-form" class="stack" style="margin-top:10px;">
+          <div class="row" style="flex-wrap:wrap; gap:8px;">
+            <select name="requestKind" required>
+              <option value="pto">Approved PTO</option>
+              <option value="availability-once">One-time availability</option>
+              <option value="availability-recurring">Recurring availability (weekly)</option>
+            </select>
+          </div>
           <div class="row" style="flex-wrap:wrap; gap:8px;">
             <select name="agentId" required>
               <option value="">Select agent</option>
@@ -6632,13 +6639,21 @@ function renderAvailabilityRequestsPage(currentUser) {
             <input name="unavailableStart" type="time" value="09:00" required />
             <input name="unavailableEnd" type="time" value="17:00" required />
           </div>
+          <div class="row" style="flex-wrap:wrap; gap:8px;">
+            <select name="recurrenceDay">
+              <option value="">Recurring day (weekly only)</option>
+              ${days.map((day) => `<option value="${day}">${day}</option>`).join('')}
+            </select>
+            <input name="recurrenceStartDate" type="date" placeholder="Recurring start date" />
+            <input name="recurrenceEndDate" type="date" placeholder="Recurring end date" />
+          </div>
           <textarea name="note" rows="3" placeholder="Reason/details for PTO" required></textarea>
           <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
             <input name="sendNotification" type="checkbox" checked />
             <span>Send email notification to agent</span>
           </label>
           <div class="row" style="justify-content:flex-end;">
-            <button type="submit">Add approved PTO</button>
+            <button type="submit">Add request</button>
           </div>
         </form>
       </div>
@@ -8235,10 +8250,14 @@ function bindEvents() {
     if (currentUser?.role !== 'admin') return;
 
     const formData = new FormData(event.currentTarget);
+    const requestKind = String(formData.get('requestKind') || 'pto').trim();
     const agentId = Number(formData.get('agentId'));
     const unavailableDate = String(formData.get('unavailableDate') || '').trim();
     const unavailableStart = String(formData.get('unavailableStart') || '').trim();
     const unavailableEnd = String(formData.get('unavailableEnd') || '').trim();
+    const recurrenceDay = String(formData.get('recurrenceDay') || '').trim();
+    const recurrenceStartDate = String(formData.get('recurrenceStartDate') || '').trim();
+    const recurrenceEndDate = String(formData.get('recurrenceEndDate') || '').trim();
     const note = String(formData.get('note') || '').trim();
     const shouldSendNotification = formData.get('sendNotification') === 'on';
 
@@ -8247,65 +8266,98 @@ function bindEvents() {
       alert('Select a valid agent.');
       return;
     }
-    if (!getDayFromDate(unavailableDate)) {
-      alert('Enter a valid PTO date.');
-      return;
-    }
+
     if (!unavailableStart || !unavailableEnd || toMinutes(unavailableEnd) <= toMinutes(unavailableStart)) {
       alert('End time must be later than start time.');
       return;
     }
+
+    if (requestKind === 'availability-recurring') {
+      if (!days.includes(recurrenceDay) || !recurrenceStartDate || !recurrenceEndDate) {
+        alert('Recurring availability requires day of week, start date, and end date.');
+        return;
+      }
+    } else if (!getDayFromDate(unavailableDate)) {
+      alert('Enter a valid date.');
+      return;
+    }
+
     if (!note) {
-      alert('Enter a note for this PTO request.');
+      alert('Enter a note for this request.');
       return;
     }
 
     const nowIso = getCurrentIsoTimestamp();
     const requestOwner = getUserByAgentId(agentId);
-    const nextManualPtoRequest = {
+
+    const recurrencePlan = requestKind === 'availability-recurring'
+      ? buildWeeklyRecurringDates(recurrenceStartDate, recurrenceDay, recurrenceEndDate)
+      : { dates: [unavailableDate], truncated: false };
+
+    if (!recurrencePlan.dates.length) {
+      alert('No dates were generated. Check the selected date inputs.');
+      return;
+    }
+
+    const unavailabilityType = requestKind === 'pto' ? 'PTO' : 'Availability';
+    const recurrenceType = requestKind === 'availability-recurring' ? 'weekly' : 'once';
+    const recurrenceGroupId = recurrenceType === 'weekly'
+      ? `admin-weekly-${agentId}-${Date.now()}-${createId()}`
+      : '';
+
+    const nextManualRequests = recurrencePlan.dates.map((dateValue, index) => ({
       id: createId(),
       agentId,
       requesterUserId: requestOwner?.id || null,
       requesterEmail: requestOwner?.email || agent.email || '',
       requesterName: agent.name || requestOwner?.username || 'Agent',
       availability: 'Unavailable',
-      unavailabilityType: 'PTO',
-      unavailableDate,
+      unavailabilityType,
+      unavailableDate: dateValue,
       unavailableStart,
       unavailableEnd,
       note,
-      recurrenceType: 'once',
-      recurrenceDay: '',
-      recurrenceEndDate: '',
-      recurrenceGroupId: '',
-      recurrenceInstance: 1,
-      recurrenceTotal: 1,
+      recurrenceType,
+      recurrenceDay: recurrenceType === 'weekly' ? recurrenceDay : '',
+      recurrenceEndDate: recurrenceType === 'weekly' ? String(recurrenceEndDate).slice(0, 10) : '',
+      recurrenceGroupId,
+      recurrenceInstance: index + 1,
+      recurrenceTotal: recurrencePlan.dates.length,
       requestedAt: nowIso,
       status: 'approved'
-    };
+    }));
 
-    state.agents = state.agents.map((item) => Number(item.id) === agentId
-      ? {
-          ...item,
-          availability: 'Unavailable'
-        }
-      : item);
+    if (requestKind === 'pto') {
+      state.agents = state.agents.map((item) => Number(item.id) === agentId
+        ? {
+            ...item,
+            availability: 'Unavailable'
+          }
+        : item);
+    }
 
-    const nextAvailabilityRequests = [...getAllAvailabilityRequests(), nextManualPtoRequest];
+    const nextAvailabilityRequests = [...getAllAvailabilityRequests(), ...nextManualRequests];
     saveAvailabilityRequests(nextAvailabilityRequests);
     saveState();
 
-    const recipientEmail = nextManualPtoRequest.requesterEmail;
+    const recipientEmail = nextManualRequests[0]?.requesterEmail || '';
     if (shouldSendNotification && recipientEmail) {
+      const requestLabel = requestKind === 'availability-recurring'
+        ? `recurring weekly availability (${recurrenceDay})`
+        : (requestKind === 'availability-once' ? 'availability' : 'PTO');
+      const dateLabel = requestKind === 'availability-recurring'
+        ? `${recurrenceStartDate} through ${recurrenceEndDate}`
+        : unavailableDate;
       sendEmailNotification({
         to: recipientEmail,
-        subject: 'PTO added by admin',
-        body: `Hi ${nextManualPtoRequest.requesterName || 'Agent'}, an admin added approved PTO for you.\n\nDate: ${unavailableDate}\nTime: ${formatTimeRange(unavailableStart, unavailableEnd)}\nNote: ${note}`,
+        subject: `${requestLabel} added by admin`,
+        body: `Hi ${nextManualRequests[0]?.requesterName || 'Agent'}, an admin added approved ${requestLabel} for you.\n\nDate: ${dateLabel}\nTime: ${formatTimeRange(unavailableStart, unavailableEnd)}\nNote: ${note}`,
         type: 'availability-admin-added'
       });
     }
 
-    alert('Approved PTO added successfully.');
+    const submittedCount = nextManualRequests.length;
+    alert(`Approved ${requestKind === 'pto' ? 'PTO' : 'availability'} request${submittedCount === 1 ? '' : 's'} added successfully (${submittedCount}).`);
     render();
   });
 
