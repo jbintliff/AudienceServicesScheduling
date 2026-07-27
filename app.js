@@ -3886,6 +3886,9 @@ function saveAgentDetails(agentId, values) {
     return { ok: false, message: 'Unable to save agent details permanently. Please check browser storage settings and try again.' };
   }
 
+  // Push agent/account changes immediately so other tabs/devices see updates right away.
+  void flushLocalSnapshotSync();
+
   return { ok: true };
 }
 
@@ -7642,6 +7645,13 @@ function bindEvents() {
       render();
       return;
     }
+
+    state.ui.agentSearch = '';
+    state.ui.currentAgentId = agentId;
+    saveUiState();
+    // Ensure the new agent is immediately visible in shared state, without waiting for invite flow.
+    void flushLocalSnapshotSync();
+
     const inviteResult = sendAgentInviteEmail(nextUser, name, nextUser.password);
 
     const outboxCount = loadEmailOutbox().length;
