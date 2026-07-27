@@ -4522,6 +4522,7 @@ function renderCalendarPage(currentUser) {
   const locations = getAllLocations();
   const roleItems = getRoleLegendItems();
   const agentNameItems = state.agents.map((agent) => String(agent.name || '').trim()).filter(Boolean).sort((left, right) => left.localeCompare(right));
+  const agentsByName = [...state.agents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
   const isAgentView = isAgentLikeUser(currentUser);
   const isTeamLeadView = isTeamLeadUser(currentUser);
   const canManageCalendar = canManageSchedule(currentUser);
@@ -4625,6 +4626,30 @@ function renderCalendarPage(currentUser) {
               <input name="date" type="date" required />
             </div>
             <button type="submit">Add shift</button>
+          </form>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <h3>Add approved PTO</h3>
+          <div class="muted" style="margin-bottom:8px;">Add PTO directly from Schedule and optionally notify the agent by email.</div>
+          <form id="add-manual-pto-form" class="stack">
+            <div class="row" style="flex-wrap:wrap; gap:8px;">
+              <select name="agentId" required>
+                <option value="">Select agent</option>
+                ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+              </select>
+              <input name="unavailableDate" type="date" required />
+              <input name="unavailableStart" type="time" value="09:00" required />
+              <input name="unavailableEnd" type="time" value="17:00" required />
+            </div>
+            <textarea name="note" rows="3" placeholder="Reason/details for PTO" required></textarea>
+            <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+              <input name="sendNotification" type="checkbox" checked />
+              <span>Send email notification to agent</span>
+            </label>
+            <div class="row" style="justify-content:flex-end;">
+              <button type="submit">Add approved PTO</button>
+            </div>
           </form>
         </div>` : ''}
 
