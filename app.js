@@ -4886,15 +4886,15 @@ function renderCalendarPage(currentUser) {
         <div class="day-row">
           ${days.map((day) => `
             <div class="day-card" data-day="${day}" data-date="${escapeHtml(weekDates[day]?.iso || '')}">
-              <div class="row" style="justify-content:space-between; margin-bottom:6px;">
+              <div class="row" style="margin-bottom:6px;">
                 <div>
                   <h4 style="margin:0;">${day}</h4>
                   <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
+                  ${canManageCalendar ? `<div style="margin-top:6px;"><button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button></div>` : ''}
                   ${canManageCalendar ? getPtoDateMarkers(weekDates[day]?.iso || '') : ''}
                   ${canManageCalendar ? getRecurringAvailabilityDateMarkers(weekDates[day]?.iso || '') : ''}
                 </div>
-                ${canManageCalendar ? `<button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button>` : ''}
               </div>
               ${(() => {
                 const dayShifts = sortedVisibleCalendarShifts.filter((shift) => shift.day === day);
