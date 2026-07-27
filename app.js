@@ -849,8 +849,9 @@ function safeSetLocalStorage(key, value) {
     localStorage.setItem(key, value);
     if (!isApplyingRemoteSnapshot && sharedStorageKeys.includes(key)) {
       pendingSharedWriteKeys.add(key);
+      const waitForSnapshotSync = key === storageKey || key === authUsersKey;
       void pushSharedKeyToBackend(key, value).then((didPush) => {
-        if (didPush) {
+        if (didPush && !waitForSnapshotSync) {
           pendingSharedWriteKeys.delete(key);
         }
       });
@@ -1125,7 +1126,7 @@ async function initializeBackendSync() {
 }
 
 async function pollBackendSync() {
-  if (!backendApiBase || document.hidden) return;
+  if (!backendApiBase || document.hidden || isPushingLocalSnapshot) return;
   const remoteStore = await fetchBackendSnapshot();
   if (!remoteStore) return;
   const nextHash = getSnapshotHash(remoteStore);
@@ -6450,8 +6451,6 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Email:</strong> ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
                   <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(agent.pronouns) || 'Not set')}</div>
-                  <div><strong>Assigned hours:</strong> ${escapeHtml(getAssignedHours(agent.id, currentWeekReference))}</div>
-                  <div><strong>Credit (incl. PTO):</strong> ${escapeHtml(getMinimumHoursCredit(agent.id, currentWeekReference))}</div>
                   <div><strong>Targets:</strong> in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
                 </div>
                 <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
