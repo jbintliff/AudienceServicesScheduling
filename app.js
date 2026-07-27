@@ -2,12 +2,13 @@ const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['In-person', 'WFH', 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
 const teamOptions = ['Audience Services Representative', 'Audience Services Associate', 'Audience Services Management'];
 const agentSkillOptions = [
-  { value: 'single-tickets', label: 'Single tickets' },
-  { value: 'subscrptions', label: 'Subscrptions' },
+  { value: 'single-tickets', label: 'Single Tickets' },
+  { value: 'subscrptions', label: 'Subscriptions' },
+  { value: 'groups', label: 'Groups' },
   { value: 'emails', label: 'Emails' },
-  { value: 'booth-duty', label: 'Booth duty' },
-  { value: 'groups', label: 'Groups' }
+  { value: 'booth-duty', label: 'Booth Duty' }
 ];
+const boothDutySkillValue = 'booth-duty';
 const shiftLocationOptions = ['Academy of Music', 'Kimmel Center', 'Miller Theater'];
 const storageKey = 'agent-scheduler-state-v4';
 const authUsersKey = 'agent-scheduler-users-v1';
@@ -2468,11 +2469,26 @@ function normalizePronouns(value) {
 
 function normalizeAgentSkills(value) {
   const allowedSkills = new Set(agentSkillOptions.map((skill) => skill.value));
+  const skillOrder = new Map(agentSkillOptions.map((skill, index) => [skill.value, index]));
   const source = Array.isArray(value) ? value : [];
   const normalizedSkills = source
     .map((skill) => String(skill || '').trim().toLowerCase())
     .filter((skill) => allowedSkills.has(skill));
-  return Array.from(new Set(normalizedSkills));
+  return Array.from(new Set(normalizedSkills)).sort((left, right) => {
+    const leftIndex = skillOrder.has(left) ? skillOrder.get(left) : Number.MAX_SAFE_INTEGER;
+    const rightIndex = skillOrder.has(right) ? skillOrder.get(right) : Number.MAX_SAFE_INTEGER;
+    return leftIndex - rightIndex;
+  });
+}
+
+function agentHasSkill(agentId, skillValue) {
+  const agentSkills = normalizeAgentSkills(getAgent(agentId)?.skills);
+  return agentSkills.includes(String(skillValue || '').trim().toLowerCase());
+}
+
+function shiftRequiresBoothDutySkill(shift) {
+  const roleText = String(shift?.role || '').trim().toLowerCase();
+  return roleText.includes('booth duty');
 }
 
 function getAgentSkillLabels(skills) {
@@ -2992,6 +3008,7 @@ function canAgentOfferShift(shift, agentId) {
 function canAgentPickUpOfferedShift(shift, agentId) {
   return isShiftOfferedForPickup(shift)
     && Number(shift?.agentId) !== Number(agentId)
+    && (!shiftRequiresBoothDutySkill(shift) || agentHasSkill(agentId, boothDutySkillValue))
     && Number(agentId) > 0;
 }
 
@@ -7926,6 +7943,14 @@ function bindEvents() {
       alert('Swaps with Booth Duty are not allowed.');
       return;
     }
+    if (shiftRequiresBoothDutySkill(toShift) && !agentHasSkill(fromAgentId, boothDutySkillValue)) {
+      alert(`${fromAgent?.name || 'This agent'} cannot pick up a Booth Duty shift without the Booth Duty skill.`);
+      return;
+    }
+    if (shiftRequiresBoothDutySkill(fromShift) && !agentHasSkill(toAgentId, boothDutySkillValue)) {
+      alert(`${toAgent?.name || 'That agent'} cannot pick up a Booth Duty shift without the Booth Duty skill.`);
+      return;
+    }
     const projectedFromHours = getProjectedSwapHours(fromAgentId, fromShift, toShift);
     const projectedToHours = getProjectedSwapHours(toAgentId, toShift, fromShift);
     const projectedFromInOffice = getProjectedSwapInOfficeShiftCount(fromAgentId, fromShift, toShift);
@@ -8926,6 +8951,24 @@ function bindEvents() {
             ? { ...request, status: 'rejected', rejectedBy: currentAgentId, rejectedAt: new Date().toISOString() }
             : request);
           alert('Swaps with Booth Duty are not allowed.');
+          saveState();
+          render();
+          return;
+        }
+        if (fromShift && toShift && shiftRequiresBoothDutySkill(toShift) && !agentHasSkill(updatedRequest.fromAgentId, boothDutySkillValue)) {
+          state.swapRequests = state.swapRequests.map((request) => request.id === id
+            ? { ...request, status: 'rejected', rejectedBy: currentAgentId, rejectedAt: new Date().toISOString() }
+            : request);
+          alert(`${fromAgent?.name || 'This agent'} cannot pick up a Booth Duty shift without the Booth Duty skill.`);
+          saveState();
+          render();
+          return;
+        }
+        if (fromShift && toShift && shiftRequiresBoothDutySkill(fromShift) && !agentHasSkill(updatedRequest.toAgentId, boothDutySkillValue)) {
+          state.swapRequests = state.swapRequests.map((request) => request.id === id
+            ? { ...request, status: 'rejected', rejectedBy: currentAgentId, rejectedAt: new Date().toISOString() }
+            : request);
+          alert(`${toAgent?.name || 'This agent'} cannot pick up a Booth Duty shift without the Booth Duty skill.`);
           saveState();
           render();
           return;
