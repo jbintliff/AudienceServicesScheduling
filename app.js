@@ -464,6 +464,7 @@ const pageMode = (() => {
   if (queryMode === 'profile') return 'profile';
   if (queryMode === 'email-outbox') return 'email-outbox';
   if (queryMode === 'availability-requests') return 'availability-requests';
+  if (queryMode === 'public-availability-request') return 'public-availability-request';
   if (queryMode === 'admin-options') return 'admin-options';
   if (queryMode === 'policies') return 'policies';
   const mode = document.body?.dataset?.page;
@@ -474,6 +475,7 @@ const pageMode = (() => {
   if (mode === 'profile') return 'profile';
   if (mode === 'email-outbox') return 'email-outbox';
   if (mode === 'availability-requests') return 'availability-requests';
+  if (mode === 'public-availability-request') return 'public-availability-request';
   if (mode === 'admin-options') return 'admin-options';
   if (mode === 'policies') return 'policies';
   return 'dashboard';
@@ -1984,6 +1986,25 @@ function getAppLoginUrl() {
   }
 }
 
+function getPublicAvailabilityRequestUrl(agentId = '') {
+  const normalizedAgentId = Number(agentId);
+  try {
+    const url = new URL(getAppLoginUrl());
+    url.searchParams.set('view', 'public-availability-request');
+    if (Number.isFinite(normalizedAgentId) && normalizedAgentId > 0) {
+      url.searchParams.set('agentId', String(normalizedAgentId));
+    } else {
+      url.searchParams.delete('agentId');
+    }
+    return url.toString();
+  } catch {
+    const agentParam = Number.isFinite(normalizedAgentId) && normalizedAgentId > 0
+      ? `&agentId=${encodeURIComponent(String(normalizedAgentId))}`
+      : '';
+    return `${getAppLoginUrl()}?view=public-availability-request${agentParam}`;
+  }
+}
+
 function createResetToken() {
   return `reset-${createId()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -2506,6 +2527,17 @@ function agentHasSkill(agentId, skillValue) {
 function shiftRequiresBoothDutySkill(shift) {
   const roleText = String(shift?.role || '').trim().toLowerCase();
   return roleText.includes('booth duty');
+}
+
+function canAssignAgentToShiftRole(agentId, role) {
+  const normalizedAgentId = Number(agentId);
+  if (!Number.isFinite(normalizedAgentId) || normalizedAgentId <= 0) {
+    return true;
+  }
+  if (!shiftRequiresBoothDutySkill({ role })) {
+    return true;
+  }
+  return agentHasSkill(normalizedAgentId, boothDutySkillValue);
 }
 
 function getAgentSkillLabels(skills) {
@@ -3723,6 +3755,11 @@ async function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, en
   const targetAgent = getAgent(agentId);
 
   const roleToEvaluate = requestedRole || targetAgent?.role || getPrimaryRole();
+  if (!canAssignAgentToShiftRole(agentId, roleToEvaluate)) {
+    alert(`${targetAgent?.name || 'This agent'} cannot be scheduled for Booth Duty without the Booth Duty skill.`);
+    return false;
+  }
+
   if (isInOfficeRole(roleToEvaluate)) {
     const maxInOfficeShifts = normalizeMaxInOfficeShifts(targetAgent?.maxInOfficeShifts);
     if (Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts >= 0) {
@@ -6888,6 +6925,7 @@ function renderAvailabilityRequestsPage(currentUser) {
     .filter((dateValue) => String(dateValue || '').startsWith(`${selectedMonth}-`))
     .sort((left, right) => left.localeCompare(right));
   const agentsByName = [...state.agents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
+  const publicAvailabilityLink = getPublicAvailabilityRequestUrl();
 
   root.innerHTML = `
     <div class="app">
@@ -6901,6 +6939,20 @@ function renderAvailabilityRequestsPage(currentUser) {
           ${renderUserNavChip(currentUser)}
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px;">
+        <h2>Share public request form</h2>
+        <p class="muted">Share this link so agents can submit availability and PTO requests without logging in.</p>
+        <div class="row" style="flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+          <select id="availability-public-link-agent" style="max-width:260px;">
+            <option value="">All agents</option>
+            ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+          </select>
+          <button id="availability-public-link-copy" class="secondary" type="button">Copy link</button>
+          <a id="availability-public-link-open" href="${escapeHtml(publicAvailabilityLink)}" target="_blank" rel="noopener" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open form</button></a>
+        </div>
+        <input id="availability-public-link" type="text" value="${escapeHtml(publicAvailabilityLink)}" readonly />
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
@@ -7137,6 +7189,10 @@ function renderAvailabilityRequestsPage(currentUser) {
 function render() {
   syncFromStorage();
   bindAvailabilitySubmitFallback();
+  if (pageMode === 'public-availability-request') {
+    renderPublicAvailabilityRequestPage();
+    return;
+  }
   const currentUser = getCurrentUser();
   if (!currentUser) {
     renderLoginPage();
@@ -7611,6 +7667,359 @@ function render() {
   `;
 
   bindEvents();
+}
+
+function renderPublicAvailabilityRequestPage() {
+  const query = new URLSearchParams(window.location.search);
+  const requestedAgentId = Number(query.get('agentId'));
+  const sortedAgents = [...state.agents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
+  const preselectedAgentId = sortedAgents.some((agent) => Number(agent.id) === requestedAgentId) ? requestedAgentId : 0;
+  const blackoutDates = normalizeBlackoutDates(state.blackoutDates);
+
+  root.innerHTML = `
+    <div class="app">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div>
+          <h1>Availability and PTO request form</h1>
+          <p class="muted">Submit a scheduling request without signing in. Your request is sent directly to the admin availability queue.</p>
+        </div>
+        <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin login</button></a>
+      </div>
+
+      ${blackoutDates.length > 0 ? `
+      <div class="panel" style="margin-bottom:16px;">
+        <h3 style="margin:0 0 8px;">Blackout dates</h3>
+        <div class="row" style="gap:6px; flex-wrap:wrap;">
+          ${blackoutDates.map((dateValue) => `<span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}
+        </div>
+      </div>` : ''}
+
+      <div class="panel">
+        <form id="public-availability-form" class="stack">
+          <div class="row" style="flex-wrap:wrap; gap:8px;">
+            <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+              <span>Agent</span>
+              <select name="agentId" required>
+                <option value="">Select agent</option>
+                ${sortedAgents.map((agent) => `<option value="${agent.id}" ${Number(agent.id) === preselectedAgentId ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+              </select>
+            </label>
+            <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+              <span>Your name</span>
+              <input name="requesterName" type="text" placeholder="Your name" required />
+            </label>
+            <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+              <span>Your email (optional)</span>
+              <input name="requesterEmail" type="email" placeholder="name@example.com" />
+            </label>
+          </div>
+
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Request type</span>
+            <select id="public-request-kind" name="requestKind" required>
+              <option value="one-time-availability">One-time availability</option>
+              <option value="repeating-availability">Repeating availability</option>
+              <option value="vacation-time">PTO / Vacation time</option>
+            </select>
+          </label>
+
+          <div id="public-one-time-fields" class="stack">
+            <div class="row" style="flex-wrap:wrap;">
+              <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                <span>Date</span>
+                <input name="oneTimeDate" type="date" />
+              </label>
+              <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                <span>Start time</span>
+                <input name="oneTimeStart" type="time" />
+              </label>
+              <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                <span>End time</span>
+                <input name="oneTimeEnd" type="time" />
+              </label>
+            </div>
+          </div>
+
+          <div id="public-repeating-fields" class="stack" style="display:none;">
+            <div class="row" style="flex-wrap:wrap;">
+              <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                <span>Day of week</span>
+                <select name="repeatingDay">
+                  <option value="">Select day</option>
+                  ${days.map((day) => `<option value="${day}">${day}</option>`).join('')}
+                </select>
+              </label>
+              <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                <span>Start date</span>
+                <input name="repeatingStartDate" type="date" />
+              </label>
+              <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                <span>End date</span>
+                <input name="repeatingEndDate" type="date" />
+              </label>
+              <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                <span>Start time</span>
+                <input name="repeatingStartTime" type="time" />
+              </label>
+              <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                <span>End time</span>
+                <input name="repeatingEndTime" type="time" />
+              </label>
+            </div>
+          </div>
+
+          <div id="public-vacation-fields" class="stack" style="display:none;">
+            <label style="display:flex; flex-direction:column; gap:6px;">
+              <span>PTO request type</span>
+              <select id="public-vacation-mode" name="vacationMode">
+                <option value="single-date">Single date</option>
+                <option value="date-range">Date range</option>
+              </select>
+            </label>
+
+            <div id="public-vacation-single-fields" class="stack">
+              <div class="row" style="flex-wrap:wrap;">
+                <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                  <span>Date</span>
+                  <input name="vacationSingleDate" type="date" />
+                </label>
+                <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                  <span>Start time</span>
+                  <input name="vacationSingleStart" type="time" />
+                </label>
+                <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                  <span>End time</span>
+                  <input name="vacationSingleEnd" type="time" />
+                </label>
+              </div>
+            </div>
+
+            <div id="public-vacation-range-fields" class="stack" style="display:none;">
+              <div class="row" style="flex-wrap:wrap;">
+                <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                  <span>Start date</span>
+                  <input name="vacationRangeStartDate" type="date" />
+                </label>
+                <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                  <span>End date</span>
+                  <input name="vacationRangeEndDate" type="date" />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Reason or note</span>
+            <input name="note" placeholder="Reason or note" required />
+          </label>
+
+          <div class="row" style="justify-content:flex-end;">
+            <button type="submit">Submit request</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+
+  bindEvents();
+}
+
+function submitPublicAvailabilityRequest(formElement) {
+  const formData = new FormData(formElement);
+  const currentId = Number(formData.get('agentId'));
+  if (!Number.isFinite(currentId) || !getAgent(currentId)) {
+    alert('Select a valid agent.');
+    return false;
+  }
+
+  const requesterName = String(formData.get('requesterName') || '').trim();
+  const requesterEmail = normalizeEmail(formData.get('requesterEmail'));
+  if (!requesterName) {
+    alert('Please enter your name before submitting your request.');
+    return false;
+  }
+
+  const requestKind = String(formData.get('requestKind') || 'one-time-availability');
+  const note = formData.get('note')?.toString().trim() || '';
+  if (!note) {
+    alert('Please add a note before submitting your request.');
+    return false;
+  }
+
+  let unavailabilityType = 'Availability';
+  let unavailableStart = '00:00';
+  let unavailableEnd = '23:59';
+  let recurrenceType = 'once';
+  let recurrenceDay = '';
+  let recurrenceEndDate = '';
+  let recurrenceGroupId = '';
+  let recurrencePlan = { dates: [], truncated: false };
+
+  if (requestKind === 'one-time-availability') {
+    const oneTimeDate = String(formData.get('oneTimeDate') || '').trim();
+    const oneTimeStart = String(formData.get('oneTimeStart') || '').trim();
+    const oneTimeEnd = String(formData.get('oneTimeEnd') || '').trim();
+    if (!oneTimeDate || !oneTimeStart || !oneTimeEnd) {
+      alert('One-time availability requires a date, start time, and end time.');
+      return false;
+    }
+    if (toMinutes(oneTimeEnd) <= toMinutes(oneTimeStart)) {
+      alert('End time must be later than start time.');
+      return false;
+    }
+    unavailableStart = oneTimeStart;
+    unavailableEnd = oneTimeEnd;
+    recurrencePlan = { dates: [oneTimeDate], truncated: false };
+  } else if (requestKind === 'repeating-availability') {
+    const repeatingDay = String(formData.get('repeatingDay') || '').trim();
+    const repeatingStartDate = String(formData.get('repeatingStartDate') || '').trim();
+    const repeatingEndDate = String(formData.get('repeatingEndDate') || '').trim();
+    const repeatingStartTime = String(formData.get('repeatingStartTime') || '').trim();
+    const repeatingEndTime = String(formData.get('repeatingEndTime') || '').trim();
+    if (!repeatingDay || !repeatingStartDate || !repeatingEndDate || !repeatingStartTime || !repeatingEndTime) {
+      alert('Repeating availability requires a day of week, start/end date range, and start/end time.');
+      return false;
+    }
+    if (!days.includes(repeatingDay)) {
+      alert('Select a valid day of the week for repeating availability.');
+      return false;
+    }
+    if (toMinutes(repeatingEndTime) <= toMinutes(repeatingStartTime)) {
+      alert('End time must be later than start time.');
+      return false;
+    }
+    unavailableStart = repeatingStartTime;
+    unavailableEnd = repeatingEndTime;
+    recurrenceType = 'weekly';
+    recurrenceDay = repeatingDay;
+    recurrenceEndDate = repeatingEndDate;
+    recurrencePlan = buildWeeklyRecurringDates(repeatingStartDate, repeatingDay, repeatingEndDate);
+    recurrenceGroupId = `weekly-${currentId}-${Date.now()}-${createId()}`;
+  } else if (requestKind === 'vacation-time') {
+    const vacationMode = String(formData.get('vacationMode') || 'single-date').trim();
+    unavailabilityType = 'PTO';
+    if (vacationMode === 'date-range') {
+      const vacationRangeStartDate = String(formData.get('vacationRangeStartDate') || '').trim();
+      const vacationRangeEndDate = String(formData.get('vacationRangeEndDate') || '').trim();
+      if (!vacationRangeStartDate || !vacationRangeEndDate) {
+        alert('Vacation date range requires a start date and end date.');
+        return false;
+      }
+      recurrencePlan = buildDateRangeDates(vacationRangeStartDate, vacationRangeEndDate);
+      recurrenceGroupId = `range-${currentId}-${Date.now()}-${createId()}`;
+    } else {
+      const vacationSingleDate = String(formData.get('vacationSingleDate') || '').trim();
+      const vacationSingleStart = String(formData.get('vacationSingleStart') || '').trim();
+      const vacationSingleEnd = String(formData.get('vacationSingleEnd') || '').trim();
+      if (!vacationSingleDate || !vacationSingleStart || !vacationSingleEnd) {
+        alert('Vacation single date requires a date, start time, and end time.');
+        return false;
+      }
+      if (toMinutes(vacationSingleEnd) <= toMinutes(vacationSingleStart)) {
+        alert('End time must be later than start time.');
+        return false;
+      }
+      unavailableStart = vacationSingleStart;
+      unavailableEnd = vacationSingleEnd;
+      recurrencePlan = { dates: [vacationSingleDate], truncated: false };
+    }
+  } else {
+    alert('Select a valid request type.');
+    return false;
+  }
+
+  if (!recurrencePlan.dates.length) {
+    alert('No dates were generated. Make sure your selected date or date range is valid.');
+    return false;
+  }
+
+  const blockedBlackoutDates = recurrencePlan.dates.filter((dateValue) => isBlackoutDate(dateValue));
+  if (blockedBlackoutDates.length > 0) {
+    alert('Cannot submit due to blackout dates. Please check in with your manager directly.');
+    return false;
+  }
+
+  const requestTimestamp = new Date().toISOString();
+  const nextRequests = recurrencePlan.dates.map((dateValue, index) => ({
+    id: createId(),
+    agentId: currentId,
+    requesterUserId: null,
+    requesterEmail,
+    requesterName,
+    availability: 'Unavailable',
+    unavailabilityType,
+    unavailableDate: dateValue,
+    unavailableStart,
+    unavailableEnd,
+    note,
+    recurrenceType,
+    recurrenceDay,
+    recurrenceEndDate: recurrenceType === 'weekly' ? String(recurrenceEndDate).slice(0, 10) : '',
+    recurrenceGroupId,
+    recurrenceInstance: index + 1,
+    recurrenceTotal: recurrencePlan.dates.length,
+    requestedAt: requestTimestamp,
+    status: 'pending'
+  }));
+
+  const nextAvailabilityRequests = [...getAllAvailabilityRequests(), ...nextRequests];
+  saveAvailabilityRequests(nextAvailabilityRequests);
+  saveState();
+
+  if (requesterEmail) {
+    sendEmailNotification({
+      to: requesterEmail,
+      subject: 'Availability request received',
+      body: `Hi ${requesterName}, your request has been submitted and is pending admin review.`,
+      type: 'availability-public-submitted'
+    });
+  }
+
+  const submittedCount = nextRequests.length;
+  const truncationNote = recurrencePlan.truncated
+    ? ' For safety, large recurring/date-range requests are capped per submission.'
+    : '';
+  alert(`${submittedCount} request${submittedCount === 1 ? '' : 's'} submitted successfully.${truncationNote}`);
+  formElement.reset();
+  render();
+  return true;
+}
+
+function bindPublicAvailabilityFormConditionalFields() {
+  const form = document.getElementById('public-availability-form');
+  if (!(form instanceof HTMLFormElement)) return;
+
+  const requestKindSelect = form.querySelector('select[name="requestKind"]');
+  const vacationModeSelect = form.querySelector('select[name="vacationMode"]');
+  const oneTimeFields = form.querySelector('#public-one-time-fields');
+  const repeatingFields = form.querySelector('#public-repeating-fields');
+  const vacationFields = form.querySelector('#public-vacation-fields');
+  const vacationSingleFields = form.querySelector('#public-vacation-single-fields');
+  const vacationRangeFields = form.querySelector('#public-vacation-range-fields');
+
+  const updateVisibility = () => {
+    const requestKind = requestKindSelect?.value || 'one-time-availability';
+    if (oneTimeFields instanceof HTMLElement) {
+      oneTimeFields.style.display = requestKind === 'one-time-availability' ? '' : 'none';
+    }
+    if (repeatingFields instanceof HTMLElement) {
+      repeatingFields.style.display = requestKind === 'repeating-availability' ? '' : 'none';
+    }
+    if (vacationFields instanceof HTMLElement) {
+      vacationFields.style.display = requestKind === 'vacation-time' ? '' : 'none';
+    }
+    const vacationMode = vacationModeSelect?.value || 'single-date';
+    if (vacationSingleFields instanceof HTMLElement) {
+      vacationSingleFields.style.display = vacationMode === 'single-date' ? '' : 'none';
+    }
+    if (vacationRangeFields instanceof HTMLElement) {
+      vacationRangeFields.style.display = vacationMode === 'date-range' ? '' : 'none';
+    }
+  };
+
+  requestKindSelect?.addEventListener('change', updateVisibility);
+  vacationModeSelect?.addEventListener('change', updateVisibility);
+  updateVisibility();
 }
 
 window.addEventListener('storage', (event) => {
@@ -9081,7 +9490,42 @@ function bindEvents() {
     formElement.dataset.availabilityHandled = '1';
     submitAvailabilityRequest(formElement);
   });
+
+  document.getElementById('public-availability-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    if (!(formElement instanceof HTMLFormElement)) return;
+    submitPublicAvailabilityRequest(formElement);
+  });
+
+  const publicLinkInput = document.getElementById('availability-public-link');
+  const publicLinkAgentSelect = document.getElementById('availability-public-link-agent');
+  const publicLinkOpen = document.getElementById('availability-public-link-open');
+  const updatePublicAvailabilityLink = () => {
+    const selectedAgentId = Number(publicLinkAgentSelect?.value || 0);
+    const nextLink = getPublicAvailabilityRequestUrl(selectedAgentId);
+    if (publicLinkInput instanceof HTMLInputElement) {
+      publicLinkInput.value = nextLink;
+    }
+    if (publicLinkOpen instanceof HTMLAnchorElement) {
+      publicLinkOpen.href = nextLink;
+    }
+  };
+
+  publicLinkAgentSelect?.addEventListener('change', updatePublicAvailabilityLink);
+  document.getElementById('availability-public-link-copy')?.addEventListener('click', async () => {
+    updatePublicAvailabilityLink();
+    const targetValue = publicLinkInput instanceof HTMLInputElement ? publicLinkInput.value : '';
+    const didCopy = await copyTextValue(targetValue);
+    if (didCopy) {
+      alert('Public request form link copied.');
+      return;
+    }
+    alert('Unable to copy automatically. Please copy the URL manually.');
+  });
+
   bindAgentAvailabilityFormConditionalFields();
+  bindPublicAvailabilityFormConditionalFields();
 
   document.querySelectorAll('[data-remove-shift]').forEach((button) => {
     button.addEventListener('click', () => {
