@@ -5282,7 +5282,7 @@ function renderCalendarPage(currentUser) {
                 <input name="unavailableStart" type="time" value="09:00" required />
                 <input name="unavailableEnd" type="time" value="17:00" required />
               </div>
-              <textarea name="note" rows="3" placeholder="Reason/details for PTO" required></textarea>
+              <input name="note" type="text" placeholder="Reason/details for PTO" required />
               <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
                 <input name="sendNotification" type="checkbox" checked />
                 <span>Send email notification to agent</span>
