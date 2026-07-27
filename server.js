@@ -253,6 +253,7 @@ function buildAgentCalendarFeed(store, token) {
   const shifts = Array.isArray(parsedState?.shifts) ? parsedState.shifts : [];
   const agentShifts = shifts
     .filter((shift) => Number(shift?.agentId) === Number(agentUser.agentId))
+    .filter((shift) => String(shift?.status || 'draft') === 'published')
     .map((shift) => {
       const normalizedFeedDate = getShiftFeedDate(shift);
       return normalizedFeedDate
