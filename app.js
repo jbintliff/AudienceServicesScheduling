@@ -2946,6 +2946,87 @@ function filterAvailabilityRequestsForAdminList(requests, filters = {}) {
   });
 }
 
+function getAvailabilityRecurringSeriesKey(request) {
+  const isRecurringAvailability = String(request?.unavailabilityType || '').trim() === 'Availability'
+    && String(request?.recurrenceType || '').trim().toLowerCase() === 'weekly';
+  if (!isRecurringAvailability) return '';
+
+  const recurrenceDay = days.includes(String(request?.recurrenceDay || ''))
+    ? String(request.recurrenceDay)
+    : getDayFromDate(String(request?.unavailableDate || '').slice(0, 10));
+  const recurrenceEndDate = String(request?.recurrenceEndDate || request?.unavailableDate || '').slice(0, 10);
+  return String(request?.recurrenceGroupId || `${request?.agentId || 'agent'}-${recurrenceDay}-${request?.unavailableStart || ''}-${request?.unavailableEnd || ''}-${recurrenceEndDate}`);
+}
+
+function getAvailabilityRecurringSeriesRequestIds(seedRequest, requests = getAllAvailabilityRequests()) {
+  const seriesKey = getAvailabilityRecurringSeriesKey(seedRequest);
+  if (!seriesKey) {
+    const singleId = Number(seedRequest?.id);
+    return Number.isFinite(singleId) ? [singleId] : [];
+  }
+  return (Array.isArray(requests) ? requests : [])
+    .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+    .filter((request) => getAvailabilityRecurringSeriesKey(request) === seriesKey)
+    .map((request) => Number(request?.id))
+    .filter((id) => Number.isFinite(id));
+}
+
+function deleteAvailabilityRequestsByIds(requestIds, options = {}) {
+  const ids = Array.from(new Set((Array.isArray(requestIds) ? requestIds : [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value))));
+  if (ids.length === 0) return false;
+
+  const allAvailabilityRequests = getAllAvailabilityRequests();
+  const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
+  if (targetRequests.length === 0) return false;
+  const primaryRequest = targetRequests[0];
+
+  const agentName = getAgent(primaryRequest.agentId)?.name || primaryRequest.requesterName || 'this agent';
+  const requestLabel = targetRequests.length > 1
+    ? `${targetRequests.length} recurring availability submissions`
+    : `${String(primaryRequest.unavailabilityType || '').trim() || 'availability'} submission`;
+  const defaultConfirmMessage = `Delete ${requestLabel} for ${agentName}${targetRequests.length > 1 ? '' : ` on ${primaryRequest.unavailableDate || 'the selected date'}`}?`;
+  const shouldDelete = confirm(String(options.confirmMessage || defaultConfirmMessage));
+  if (!shouldDelete) return false;
+
+  const nextAvailabilityRequests = allAvailabilityRequests.map((item) => ids.includes(Number(item.id))
+    ? {
+        ...item,
+        status: 'deleted',
+        deletedAt: getCurrentIsoTimestamp()
+      }
+    : item);
+  saveAvailabilityRequests(nextAvailabilityRequests);
+  saveState();
+
+  const requestOwner = getUserByAgentId(primaryRequest.agentId);
+  const recipientEmail = primaryRequest.requesterEmail || requestOwner?.email || '';
+  const recipientName = primaryRequest.requesterName || requestOwner?.username || agentName || 'Agent';
+  if (recipientEmail) {
+    sendEmailNotification({
+      to: recipientEmail,
+      subject: 'Unavailability submission deleted',
+      body: `Hi ${recipientName}, an admin deleted your ${targetRequests.length > 1 ? `${targetRequests.length} recurring availability submissions` : `${String(primaryRequest.unavailabilityType || '').trim() || 'availability'} submission`}.
+
+Date: ${primaryRequest.unavailableDate || 'Not set'}
+Time: ${formatTimeRange(primaryRequest.unavailableStart, primaryRequest.unavailableEnd)}
+Status at deletion: ${primaryRequest.status || 'pending'}
+
+If this was unexpected, contact your manager.`,
+      type: 'availability-deleted'
+    });
+  }
+
+  const outboxCount = loadEmailOutbox().length;
+  const emailStatus = recipientEmail
+    ? ` Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`
+    : ' No agent email was found, so no notification email was queued.';
+  alert(`Submission${targetRequests.length === 1 ? '' : 's'} deleted.${emailStatus}`);
+  render();
+  return true;
+}
+
 function groupAvailabilityRequestsForAdminList(requests) {
   const entries = [];
   const recurringGroups = new Map();
@@ -2970,11 +3051,7 @@ function groupAvailabilityRequestsForAdminList(requests) {
       return;
     }
 
-    const recurrenceDay = days.includes(String(request?.recurrenceDay || ''))
-      ? String(request.recurrenceDay)
-      : getDayFromDate(String(request?.unavailableDate || '').slice(0, 10));
-    const recurrenceEndDate = String(request?.recurrenceEndDate || request?.unavailableDate || '').slice(0, 10);
-    const groupKey = String(request?.recurrenceGroupId || `${request?.agentId || 'agent'}-${recurrenceDay}-${request?.unavailableStart || ''}-${request?.unavailableEnd || ''}-${recurrenceEndDate}`);
+    const groupKey = getAvailabilityRecurringSeriesKey(request);
     const requestDate = String(request?.unavailableDate || '').slice(0, 10);
 
     if (!recurringGroups.has(groupKey)) {
@@ -4219,6 +4296,9 @@ function openAvailabilityRequestDetailsModal(request) {
   const statusStyles = getAvailabilityStatusStyles(statusValue);
   const recurrenceLabel = getAvailabilityRecurrenceLabel(request);
   const agentName = getAgent(request?.agentId)?.name || request?.requesterName || 'Unknown';
+  const isRecurringAvailability = String(request?.unavailabilityType || '').trim() === 'Availability'
+    && String(request?.recurrenceType || '').trim().toLowerCase() === 'weekly';
+  const recurringSeriesRequestIds = isRecurringAvailability ? getAvailabilityRecurringSeriesRequestIds(request) : [];
 
   const overlay = document.createElement('div');
   overlay.id = 'availability-request-details-modal-overlay';
@@ -4267,6 +4347,16 @@ function openAvailabilityRequestDetailsModal(request) {
       </div>
 
       ${request?.note ? `<div class="card" style="padding:10px; margin-top:10px;"><strong>Note</strong><div class="muted" style="margin-top:4px; white-space:pre-wrap;">${escapeHtml(request.note)}</div></div>` : ''}
+
+      <div class="row" style="justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:12px;">
+        ${isRecurringAvailability ? `
+          <span class="muted" style="margin-right:auto;">Recurring request: choose whether to delete one date or the full series.</span>
+          <button type="button" id="availability-request-details-delete-one" class="danger">Delete this date</button>
+          <button type="button" id="availability-request-details-delete-series" class="danger">Delete full recurring request</button>
+        ` : `
+          <button type="button" id="availability-request-details-delete-single" class="danger">Delete request</button>
+        `}
+      </div>
     </div>
   `;
 
@@ -4289,6 +4379,27 @@ function openAvailabilityRequestDetailsModal(request) {
 
   overlay.querySelector('#availability-request-details-close')?.addEventListener('click', () => {
     closeModal();
+  });
+
+  overlay.querySelector('#availability-request-details-delete-single')?.addEventListener('click', () => {
+    closeModal();
+    deleteAvailabilityRequestsByIds([request.id], {
+      confirmMessage: `Delete this ${String(request.unavailabilityType || '').trim() || 'availability'} submission for ${agentName} on ${request.unavailableDate || 'the selected date'}?`
+    });
+  });
+
+  overlay.querySelector('#availability-request-details-delete-one')?.addEventListener('click', () => {
+    closeModal();
+    deleteAvailabilityRequestsByIds([request.id], {
+      confirmMessage: `Delete this recurring availability date for ${agentName} on ${request.unavailableDate || 'the selected date'}?`
+    });
+  });
+
+  overlay.querySelector('#availability-request-details-delete-series')?.addEventListener('click', () => {
+    closeModal();
+    deleteAvailabilityRequestsByIds(recurringSeriesRequestIds, {
+      confirmMessage: `Delete the full recurring availability request for ${agentName} (${recurringSeriesRequestIds.length} date${recurringSeriesRequestIds.length === 1 ? '' : 's'})?`
+    });
   });
 
   document.addEventListener('keydown', onEscape);
@@ -6793,67 +6904,6 @@ function renderAvailabilityRequestsPage(currentUser) {
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
-        <div class="row" style="margin-bottom:8px;">
-          <input id="availability-from-filter" type="date" value="${escapeHtml(state.ui.availabilityFrom || '')}" />
-          <input id="availability-to-filter" type="date" value="${escapeHtml(state.ui.availabilityTo || '')}" />
-          <button id="availability-filters-apply" type="button">Apply filters</button>
-          <button id="availability-filters-reset" class="secondary" type="button">Reset filters</button>
-        </div>
-        <div class="muted">Total requests loaded: ${allAvailabilityRequests.length}</div>
-        <div class="muted">Visible requests: ${visibleAvailabilityRequests.length} (${pendingCount} pending)</div>
-        <div class="muted">Swap requests: ${visibleSwapRequests.length} (${pendingSwapCount} pending)</div>
-        <div class="row" style="margin-top:8px; gap:12px; flex-wrap:wrap;">
-          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
-            <input id="availability-hide-all-requests" type="checkbox" ${hideAllRequests ? 'checked' : ''} />
-            <span>Hide All requests</span>
-          </label>
-          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
-            <input id="availability-hide-swap-requests" type="checkbox" ${hideSwapRequests ? 'checked' : ''} />
-            <span>Hide Swap requests</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="panel" style="margin-bottom:16px;">
-        <h2>Add availability or PTO manually</h2>
-        <p class="muted">Create approved PTO, one-time availability, or recurring weekly availability entries directly for an agent.</p>
-        <form id="add-manual-pto-form" class="stack" style="margin-top:10px;">
-          <div class="row" style="flex-wrap:wrap; gap:8px;">
-            <select name="requestKind" required>
-              <option value="pto">Approved PTO</option>
-              <option value="availability-once">One-time availability</option>
-              <option value="availability-recurring">Recurring availability (weekly)</option>
-            </select>
-          </div>
-          <div class="row" style="flex-wrap:wrap; gap:8px;">
-            <select name="agentId" required>
-              <option value="">Select agent</option>
-              ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
-            </select>
-            <input name="unavailableDate" type="date" required />
-            <input name="unavailableStart" type="time" value="09:00" required />
-            <input name="unavailableEnd" type="time" value="17:00" required />
-          </div>
-          <div class="row" style="flex-wrap:wrap; gap:8px;">
-            <select name="recurrenceDay">
-              <option value="">Recurring day (weekly only)</option>
-              ${days.map((day) => `<option value="${day}">${day}</option>`).join('')}
-            </select>
-            <input name="recurrenceStartDate" type="date" placeholder="Recurring start date" />
-            <input name="recurrenceEndDate" type="date" placeholder="Recurring end date" />
-          </div>
-          <textarea name="note" rows="3" placeholder="Reason/details for PTO" required></textarea>
-          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
-            <input name="sendNotification" type="checkbox" checked />
-            <span>Send email notification to agent</span>
-          </label>
-          <div class="row" style="justify-content:flex-end;">
-            <button type="submit">Add request</button>
-          </div>
-        </form>
-      </div>
-
-      <div class="panel" style="margin-bottom:16px;">
         <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px;">
           <h2 style="margin:0;">Request calendar (${escapeHtml(calendarData.label)})</h2>
           <input id="availability-calendar-month" type="month" value="${escapeHtml(selectedMonth)}" />
@@ -6905,6 +6955,67 @@ function renderAvailabilityRequestsPage(currentUser) {
               ? `${monthBlackoutDates.slice(0, 8).map((dateValue) => `<span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}${monthBlackoutDates.length > 8 ? `<span class="chip" style="background:rgba(23,56,59,0.08); border:1px solid rgba(23,56,59,0.2);">+${monthBlackoutDates.length - 8} more</span>` : ''}`
               : '<span class="muted">No blackout dates in this month.</span>'}
           </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px;">
+        <h2>Add availability or PTO manually</h2>
+        <p class="muted">Create approved PTO, one-time availability, or recurring weekly availability entries directly for an agent.</p>
+        <form id="add-manual-pto-form" class="stack" style="margin-top:10px;">
+          <div class="row" style="flex-wrap:wrap; gap:8px;">
+            <select name="requestKind" required>
+              <option value="pto">Approved PTO</option>
+              <option value="availability-once">One-time availability</option>
+              <option value="availability-recurring">Recurring availability (weekly)</option>
+            </select>
+          </div>
+          <div class="row" style="flex-wrap:wrap; gap:8px;">
+            <select name="agentId" required>
+              <option value="">Select agent</option>
+              ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+            </select>
+            <input name="unavailableDate" type="date" required />
+            <input name="unavailableStart" type="time" value="09:00" required />
+            <input name="unavailableEnd" type="time" value="17:00" required />
+          </div>
+          <div class="row" style="flex-wrap:wrap; gap:8px;">
+            <select name="recurrenceDay">
+              <option value="">Recurring day (weekly only)</option>
+              ${days.map((day) => `<option value="${day}">${day}</option>`).join('')}
+            </select>
+            <input name="recurrenceStartDate" type="date" placeholder="Recurring start date" />
+            <input name="recurrenceEndDate" type="date" placeholder="Recurring end date" />
+          </div>
+          <textarea name="note" rows="3" placeholder="Reason/details for PTO" required></textarea>
+          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+            <input name="sendNotification" type="checkbox" checked />
+            <span>Send email notification to agent</span>
+          </label>
+          <div class="row" style="justify-content:flex-end;">
+            <button type="submit">Add request</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px;">
+        <div class="row" style="margin-bottom:8px;">
+          <input id="availability-from-filter" type="date" value="${escapeHtml(state.ui.availabilityFrom || '')}" />
+          <input id="availability-to-filter" type="date" value="${escapeHtml(state.ui.availabilityTo || '')}" />
+          <button id="availability-filters-apply" type="button">Apply filters</button>
+          <button id="availability-filters-reset" class="secondary" type="button">Reset filters</button>
+        </div>
+        <div class="muted">Total requests loaded: ${allAvailabilityRequests.length}</div>
+        <div class="muted">Visible requests: ${visibleAvailabilityRequests.length} (${pendingCount} pending)</div>
+        <div class="muted">Swap requests: ${visibleSwapRequests.length} (${pendingSwapCount} pending)</div>
+        <div class="row" style="margin-top:8px; gap:12px; flex-wrap:wrap;">
+          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+            <input id="availability-hide-all-requests" type="checkbox" ${hideAllRequests ? 'checked' : ''} />
+            <span>Hide All requests</span>
+          </label>
+          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+            <input id="availability-hide-swap-requests" type="checkbox" ${hideSwapRequests ? 'checked' : ''} />
+            <span>Hide Swap requests</span>
+          </label>
         </div>
       </div>
 
@@ -9313,6 +9424,8 @@ function bindEvents() {
         .map((value) => Number(value))
         .filter((value) => Number.isFinite(value));
       if (ids.length === 0) return;
+      deleteAvailabilityRequestsByIds(ids);
+      return;
       const allAvailabilityRequests = getAllAvailabilityRequests();
       const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
       if (targetRequests.length === 0) return;
