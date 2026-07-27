@@ -6480,6 +6480,30 @@ function getAvailabilityStatusStyles(status) {
   return 'background:#FDD592; color:#4B3A1F;';
 }
 
+function getAvailabilityRequestTypeMeta(request) {
+  const unavailabilityType = String(request?.unavailabilityType || '').trim();
+  const recurrenceType = String(request?.recurrenceType || '').trim().toLowerCase();
+  if (unavailabilityType === 'PTO') {
+    return {
+      key: 'pto',
+      label: 'PTO',
+      style: 'background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);'
+    };
+  }
+  if (recurrenceType === 'weekly') {
+    return {
+      key: 'availability-recurring',
+      label: 'Recurring availability',
+      style: 'background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);'
+    };
+  }
+  return {
+    key: 'availability-once',
+    label: 'One-time availability',
+    style: 'background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);'
+  };
+}
+
 function getAvailabilityCalendarCells(monthValue, requests) {
   const normalizedMonth = monthValue || getCurrentLocalMonthValue();
   const monthStart = new Date(`${normalizedMonth}-01T00:00:00`);
@@ -6667,6 +6691,9 @@ function renderAvailabilityRequestsPage(currentUser) {
           <span class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(0,0,0,0.2);">Pending</span>
           <span class="chip" style="background:#7AACAF; color:#17383B; border:1px solid rgba(255,255,255,0.2);">Approved</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
+          <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">PTO</span>
+          <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
+          <span class="chip" style="background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);">Recurring availability</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
         </div>
         <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
@@ -6683,11 +6710,14 @@ function renderAvailabilityRequestsPage(currentUser) {
                 <div style="font-weight:600; margin-bottom:6px;">${cell.day}</div>
                 ${blackoutDate ? '<div class="chip" style="margin-bottom:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>' : ''}
                 <div style="display:flex; flex-direction:column; gap:4px;">
-                  ${(cell.requests || []).slice(0, 3).map((request) => `
-                    <div title="${escapeHtml((getAgent(request.agentId)?.name || 'Unknown'))} - ${escapeHtml(request.status || 'pending')}" style="padding:3px 6px; border-radius:999px; font-size:12px; ${getAvailabilityStatusStyles(request.status || 'pending')}">
-                      ${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')} • ${escapeHtml(request.status || 'pending')}
+                  ${(cell.requests || []).slice(0, 3).map((request) => {
+                    const typeMeta = getAvailabilityRequestTypeMeta(request);
+                    return `
+                    <div title="${escapeHtml((getAgent(request.agentId)?.name || 'Unknown'))} - ${escapeHtml(typeMeta.label)}" style="padding:3px 6px; border-radius:999px; font-size:12px; ${typeMeta.style}">
+                      ${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')} • ${escapeHtml(typeMeta.label)}
                     </div>
-                  `).join('')}
+                  `;
+                  }).join('')}
                   ${(cell.requests || []).length > 3 ? `<div class="muted">+${(cell.requests || []).length - 3} more</div>` : ''}
                 </div>
               </div>
@@ -6733,9 +6763,12 @@ function renderAvailabilityRequestsPage(currentUser) {
             <div class="card" style="border-left:4px solid ${request.status === 'approved' ? '#7AACAF' : request.status === 'rejected' ? '#AB5C57' : '#FDD592'}; padding:10px 12px;">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px;">
                 <div>
+                  ${(() => {
+                    const typeMeta = getAvailabilityRequestTypeMeta(request);
+                    return `<div style="margin-bottom:4px;"><span class="chip" style="${typeMeta.style}">${escapeHtml(typeMeta.label)}</span></div>`;
+                  })()}
                   <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:2px;">
                     <strong>${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')}</strong>
-                    <span class="muted">${escapeHtml(request.unavailabilityType || 'Availability')}</span>
                   </div>
                   <div class="muted">${escapeHtml(request.unavailableDate || 'Not set')} • ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')} • ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
                   <div class="muted">Submitted ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
