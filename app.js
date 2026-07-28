@@ -4018,15 +4018,17 @@ function saveAgentDetails(agentId, values) {
   const skills = normalizeAgentSkills(values?.skills);
   const maxInOfficeShifts = normalizeMaxInOfficeShifts(values?.maxInOfficeShifts);
 
-  if (!name || !email) {
-    return { ok: false, message: 'Name and email are required for each agent.' };
+  if (!name) {
+    return { ok: false, message: 'Name is required for each agent.' };
   }
   if (!Number.isFinite(payRate) || payRate < 0) {
     return { ok: false, message: 'Pay rate must be a valid non-negative amount (example: $15.45).' };
   }
-  const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email && Number(user.agentId) !== id);
-  if (emailInUse) {
-    return { ok: false, message: 'That email is already in use by another account.' };
+  if (email) {
+    const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email && Number(user.agentId) !== id);
+    if (emailInUse) {
+      return { ok: false, message: 'That email is already in use by another account.' };
+    }
   }
 
   state.agents = state.agents.map((agent) => Number(agent.id) === id
@@ -4113,7 +4115,7 @@ function openAgentEditModal(agent, onSave) {
           </label>
           <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
             <span>Email</span>
-            <input name="email" type="email" value="${escapeHtml(getAgentAccountEmail(agent.id) || '')}" required />
+            <input name="email" type="email" value="${escapeHtml(getAgentAccountEmail(agent.id) || '')}" />
           </label>
         </div>
         <div class="row" style="flex-wrap:wrap;">
