@@ -3173,6 +3173,15 @@ function getAgent(id) {
   return state.agents.find((agent) => Number(agent.id) === normalizedId);
 }
 
+function getAgentCatalogForUi() {
+  const fromState = Array.isArray(state?.agents) ? state.agents : [];
+  const fromDefault = Array.isArray(defaultState?.agents) ? defaultState.agents : [];
+  const baseAgents = fromState.length > 0 ? fromState : fromDefault;
+  return (Array.isArray(baseAgents) ? baseAgents : [])
+    .map((agent) => ({ ...agent }))
+    .filter((agent) => Number.isFinite(Number(agent?.id)) || String(agent?.name || '').trim());
+}
+
 const defaultRoleColorMap = {
   'in-person': '#D0645E',
   wfh: '#608186',
@@ -5179,8 +5188,9 @@ function renderCalendarPage(currentUser) {
   const weekLabel = getCalendarWeekLabel(weekDates);
   const locations = getAllLocations();
   const roleItems = getRoleLegendItems();
-  const agentNameItems = state.agents.map((agent) => String(agent.name || '').trim()).filter(Boolean).sort((left, right) => left.localeCompare(right));
-  const agentsByName = [...state.agents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
+  const agentCatalog = getAgentCatalogForUi();
+  const agentNameItems = agentCatalog.map((agent) => String(agent.name || '').trim()).filter(Boolean).sort((left, right) => left.localeCompare(right));
+  const agentsByName = [...agentCatalog].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
   const isAgentView = isAgentLikeUser(currentUser);
   const isTeamLeadView = isTeamLeadUser(currentUser);
   const canManageCalendar = canManageSchedule(currentUser);
@@ -5226,7 +5236,7 @@ function renderCalendarPage(currentUser) {
           </select>
           <select id="calendar-agent-filter">
             <option value="All" ${calendarFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
-            ${state.agents.map((agent) => `<option value="${agent.id}" ${String(calendarFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+            ${agentCatalog.map((agent) => `<option value="${agent.id}" ${String(calendarFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
           </select>
           <select id="calendar-role-filter">
             <option value="All" ${calendarFilters.role === 'All' ? 'selected' : ''}>All roles</option>
@@ -5269,7 +5279,7 @@ function renderCalendarPage(currentUser) {
                 </select>
                 <select name="agentId">
                   <option value="">Unassigned (optional)</option>
-                  ${[...state.agents].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+                  ${[...agentCatalog].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
                 </select>
                 <select name="role" required>
                   ${getRoleLegendItems().map((role) => `<option value="${role}">${escapeHtml(role)}</option>`).join('')}
@@ -7042,7 +7052,7 @@ function renderAvailabilityRequestsPage(currentUser) {
   const monthBlackoutDates = allBlackoutDates
     .filter((dateValue) => String(dateValue || '').startsWith(`${selectedMonth}-`))
     .sort((left, right) => left.localeCompare(right));
-  const agentsByName = [...state.agents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
+  const agentsByName = [...getAgentCatalogForUi()].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
   const publicAvailabilityLink = getPublicAvailabilityRequestUrl();
 
   root.innerHTML = `
@@ -7775,7 +7785,7 @@ function render() {
                 </select>
                 <select name="toAgentId" required>
                   <option value="">Swap with</option>
-                  ${state.agents.filter((agent) => agent.id !== viewAgent?.id && !isSwapRestrictedAgent(agent)).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+                  ${getAgentCatalogForUi().filter((agent) => agent.id !== viewAgent?.id && !isSwapRestrictedAgent(agent)).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
                 </select>
                 <button type="submit">Request swap</button>
               </form>
@@ -7791,7 +7801,7 @@ function render() {
 function renderPublicAvailabilityRequestPage() {
   const query = new URLSearchParams(window.location.search);
   const requestedAgentId = Number(query.get('agentId'));
-  const sortedAgents = [...state.agents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
+  const sortedAgents = [...getAgentCatalogForUi()].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
   const preselectedAgentId = sortedAgents.some((agent) => Number(agent.id) === requestedAgentId) ? requestedAgentId : 0;
   const blackoutDates = normalizeBlackoutDates(state.blackoutDates);
 
@@ -7824,12 +7834,8 @@ function renderPublicAvailabilityRequestPage() {
               </select>
             </label>
             <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
-              <span>Your name</span>
-              <input name="requesterName" type="text" placeholder="Your name" required />
-            </label>
-            <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
-              <span>Your email (optional)</span>
-              <input name="requesterEmail" type="email" placeholder="name@example.com" />
+              <span>Your email</span>
+              <input name="requesterEmail" type="email" placeholder="name@example.com" required />
             </label>
           </div>
 
@@ -7951,12 +7957,14 @@ function submitPublicAvailabilityRequest(formElement) {
     return false;
   }
 
-  const requesterName = String(formData.get('requesterName') || '').trim();
   const requesterEmail = normalizeEmail(formData.get('requesterEmail'));
-  if (!requesterName) {
-    alert('Please enter your name before submitting your request.');
+  if (!requesterEmail) {
+    alert('Please enter your email address before submitting your request.');
     return false;
   }
+
+  const selectedAgent = getAgent(currentId);
+  const requesterName = String(selectedAgent?.name || 'Agent').trim();
 
   const requestKind = String(formData.get('requestKind') || 'one-time-availability');
   const note = formData.get('note')?.toString().trim() || '';
