@@ -7801,7 +7801,8 @@ function render() {
 function renderPublicAvailabilityRequestPage() {
   const query = new URLSearchParams(window.location.search);
   const requestedAgentId = Number(query.get('agentId'));
-  const sortedAgents = [...getAgentCatalogForUi()].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
+  const visibleAgents = getFilteredAgents();
+  const sortedAgents = [...visibleAgents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
   const preselectedAgentId = sortedAgents.some((agent) => Number(agent.id) === requestedAgentId) ? requestedAgentId : 0;
   const blackoutDates = normalizeBlackoutDates(state.blackoutDates);
 
