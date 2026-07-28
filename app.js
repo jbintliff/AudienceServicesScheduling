@@ -5466,7 +5466,8 @@ function renderCalendarPage(currentUser) {
                 }).join('');
               })()}
             </div>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       </div>
     </div>
