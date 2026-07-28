@@ -2586,6 +2586,17 @@ function getBlackoutDateMarker(dateValue) {
   return '<div class="chip" style="margin-top:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>';
 }
 
+function getClickableAvailabilityMarkerHtml(requests, label, styleValue) {
+  const requestIds = (Array.isArray(requests) ? requests : [])
+    .map((request) => Number(request?.id))
+    .filter((requestId) => Number.isFinite(requestId));
+  if (requestIds.length === 0) {
+    return '';
+  }
+  const idsValue = requestIds.join(',');
+  return `<button type="button" class="chip" data-open-availability-marker="${escapeHtml(idsValue)}" data-open-availability-marker-label="${escapeHtml(label)}" style="${styleValue}; cursor:pointer;" title="View request details">${escapeHtml(label)}</button>`;
+}
+
 function getPtoDateMarkers(dateValue) {
   const normalizedDate = String(dateValue || '').trim().slice(0, 10);
   if (!normalizedDate) {
@@ -2606,16 +2617,19 @@ function getPtoDateMarkers(dateValue) {
     return '';
   }
 
-  const seenLabels = new Set();
-  const markerHtml = approvedPtoRequests.map((request) => {
+  const requestsByLabel = new Map();
+  approvedPtoRequests.forEach((request) => {
     const agentName = String(getAgent(request?.agentId)?.name || request?.requesterName || 'Agent').trim() || 'Agent';
     const label = `${agentName} PTO`;
-    if (seenLabels.has(label)) {
-      return '';
-    }
-    seenLabels.add(label);
-    return `<div class="chip" style="background:#7AACAF; color:#17383B; border:1px solid rgba(23,56,59,0.25);">${escapeHtml(label)}</div>`;
-  }).filter(Boolean).join('');
+    const existing = requestsByLabel.get(label) || [];
+    existing.push(request);
+    requestsByLabel.set(label, existing);
+  });
+
+  const markerHtml = Array.from(requestsByLabel.entries())
+    .map(([label, matchingRequests]) => getClickableAvailabilityMarkerHtml(matchingRequests, label, 'background:#7AACAF; color:#17383B; border:1px solid rgba(23,56,59,0.25);'))
+    .filter(Boolean)
+    .join('');
 
   return markerHtml ? `<div style="display:flex; flex-direction:column; gap:4px; margin-top:6px;">${markerHtml}</div>` : '';
 }
@@ -2658,16 +2672,19 @@ function getRecurringAvailabilityDateMarkers(dateValue) {
     return '';
   }
 
-  const seenLabels = new Set();
-  const markerHtml = recurringAvailabilityRequests.map((request) => {
+  const requestsByLabel = new Map();
+  recurringAvailabilityRequests.forEach((request) => {
     const agentName = String(getAgent(request?.agentId)?.name || request?.requesterName || 'Agent').trim() || 'Agent';
     const label = `${agentName} recurring availability`;
-    if (seenLabels.has(label)) {
-      return '';
-    }
-    seenLabels.add(label);
-    return `<div class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(75,58,31,0.25);">${escapeHtml(label)}</div>`;
-  }).filter(Boolean).join('');
+    const existing = requestsByLabel.get(label) || [];
+    existing.push(request);
+    requestsByLabel.set(label, existing);
+  });
+
+  const markerHtml = Array.from(requestsByLabel.entries())
+    .map(([label, matchingRequests]) => getClickableAvailabilityMarkerHtml(matchingRequests, label, 'background:#FDD592; color:#4B3A1F; border:1px solid rgba(75,58,31,0.25);'))
+    .filter(Boolean)
+    .join('');
 
   return markerHtml ? `<div style="display:flex; flex-direction:column; gap:4px; margin-top:6px;">${markerHtml}</div>` : '';
 }
@@ -5355,12 +5372,20 @@ function renderCalendarPage(currentUser) {
         </div>
         ${canManageCalendar ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
         <div class="day-row">
-          ${days.map((day) => `
-            <div class="day-card" data-day="${day}" data-date="${escapeHtml(weekDates[day]?.iso || '')}">
+          ${days.map((day) => {
+            const dayDate = String(weekDates[day]?.iso || '').slice(0, 10);
+            const dayRequests = getAllAvailabilityRequests()
+              .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+              .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === dayDate);
+            const hasDayRequests = dayRequests.length > 0;
+            return `
+            <div class="day-card" data-day="${day}" data-date="${escapeHtml(dayDate)}">
               <div class="row" style="margin-bottom:6px;">
                 <div>
-                  <h4 style="margin:0;">${day}</h4>
-                  <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
+                  <div ${hasDayRequests ? `data-view-day-availability-requests="${escapeHtml(dayDate)}" style="cursor:pointer;" title="View requests for this date"` : ''}>
+                    <h4 style="margin:0;">${day}</h4>
+                    <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
+                  </div>
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                   ${canManageCalendar ? `<div style="margin-top:6px;"><button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button></div>` : ''}
                   ${canManageCalendar ? getPtoDateMarkers(weekDates[day]?.iso || '') : ''}
@@ -8501,6 +8526,24 @@ function bindEvents() {
   const canManageCalendar = canManageSchedule(activeUser);
   const canMarkAbsence = canMarkShiftAbsences(activeUser);
 
+  document.querySelectorAll('[data-open-availability-marker]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const requestIds = String(button.getAttribute('data-open-availability-marker') || '')
+        .split(',')
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+      const requests = requestIds
+        .map((requestId) => getAllAvailabilityRequests().find((entry) => Number(entry.id) === requestId))
+        .filter(Boolean);
+      if (requests.length === 0) return;
+      if (requests.length === 1) {
+        openAvailabilityRequestDetailsModal(requests[0]);
+        return;
+      }
+      openAvailabilityRequestListModal(requests, button.getAttribute('data-open-availability-marker-label') || 'selected date');
+    });
+  });
+
   document.getElementById('add-agent-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -9931,6 +9974,18 @@ function bindEvents() {
       if (targetRequests.length === 0) return;
       const dateLabel = String(button.getAttribute('data-view-availability-request-list-date') || '').trim();
       openAvailabilityRequestListModal(targetRequests, dateLabel);
+    });
+  });
+
+  document.querySelectorAll('[data-view-day-availability-requests]').forEach((element) => {
+    element.addEventListener('click', () => {
+      const dateValue = String(element.getAttribute('data-view-day-availability-requests') || '').slice(0, 10);
+      if (!dateValue) return;
+      const targetRequests = getAllAvailabilityRequests()
+        .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+        .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === dateValue);
+      if (targetRequests.length === 0) return;
+      openAvailabilityRequestListModal(targetRequests, dateValue);
     });
   });
 
