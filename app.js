@@ -1456,6 +1456,7 @@ function withRequiredEmail(user) {
     email: fallbackEmail,
     phone: normalizedPhone,
     calendarFeedToken,
+    managedTeams: normalizeManagedTeams(user?.managedTeams || []),
     passwordUpdatedAt: normalizePasswordUpdatedAt(user?.passwordUpdatedAt),
     mustChangePassword: Boolean(user?.mustChangePassword),
     isActive: user?.isActive !== false
@@ -2487,6 +2488,40 @@ function normalizeTeamLabel(team) {
   if (!normalizedTeam) return teamOptions[0];
   const matchedTeam = teamOptions.find((item) => item.toLowerCase() === normalizedTeam);
   return matchedTeam || teamOptions[0];
+}
+
+function normalizeManagedTeamValue(value) {
+  const normalizedTeam = String(value || '').trim();
+  if (!normalizedTeam) return '';
+  const matchedTeam = teamOptions.find((item) => item.toLowerCase() === normalizedTeam.toLowerCase());
+  return matchedTeam || '';
+}
+
+function normalizeManagedTeams(value) {
+  const sources = Array.isArray(value) ? value : String(value || '').split(/[,;]+/);
+  const normalizedTeams = sources
+    .map((entry) => normalizeManagedTeamValue(entry))
+    .filter(Boolean);
+  return Array.from(new Set(normalizedTeams));
+}
+
+function getManagedTeamsForUser(user) {
+  return normalizeManagedTeams(user?.managedTeams || []);
+}
+
+function getManagersForTeam(teamName) {
+  const normalizedTeam = normalizeManagedTeamValue(teamName);
+  if (!normalizedTeam) return [];
+  return (Array.isArray(authUsers) ? authUsers : []).filter((user) => {
+    if (!isAdminUser(user) && !isTeamLeadUser(user)) return false;
+    return getManagedTeamsForUser(user).includes(normalizedTeam);
+  });
+}
+
+function getTeamManagerSummary(teamName) {
+  const managers = getManagersForTeam(teamName);
+  if (managers.length === 0) return 'No assigned manager';
+  return managers.map((manager) => String(manager?.name || manager?.username || 'Manager').trim()).join(', ');
 }
 
 function normalizeMaxInOfficeShifts(value) {
@@ -5481,6 +5516,7 @@ function renderProfilePage(currentUser) {
   const isAgentView = isAgentLikeUser(currentUser);
   const isAbsenceManagerView = isTeamLeadUser(currentUser);
   if (isAdminView) {
+    const currentManagedTeams = getManagedTeamsForUser(currentUser);
     const adminUsers = authUsers
       .filter((user) => isAdminUser(user))
       .sort((left, right) => String(left.name || left.username || '').localeCompare(String(right.name || right.username || ''), undefined, { sensitivity: 'base' }));
@@ -5513,6 +5549,7 @@ function renderProfilePage(currentUser) {
                 <div><strong>Job title:</strong> ${escapeHtml(currentUser?.jobTitle || 'Scheduling Administrator')}</div>
                 <div><strong>Email:</strong> ${escapeHtml(currentUser?.email || 'Not set')}</div>
                 <div><strong>Phone:</strong> ${escapeHtml(currentUser?.phone || 'Not set')}</div>
+                <div><strong>Managed teams:</strong> ${escapeHtml(currentManagedTeams.length > 0 ? currentManagedTeams.join(', ') : 'None')}</div>
               </div>
             </div>
 
@@ -5535,6 +5572,12 @@ function renderProfilePage(currentUser) {
                 <input name="jobTitle" placeholder="Job title" value="${escapeHtml(currentUser?.jobTitle || 'Scheduling Administrator')}" required />
                 <input name="email" type="email" placeholder="Email" value="${escapeHtml(currentUser?.email || '')}" required autocomplete="email" />
                 <input name="phone" type="tel" placeholder="Phone" value="${escapeHtml(currentUser?.phone || '')}" required autocomplete="tel" />
+                <label class="stack" style="gap:4px;">
+                  <span class="muted">Managed teams</span>
+                  <select name="managedTeams" multiple size="${Math.min(teamOptions.length, 4)}" style="min-height:90px;">
+                    ${teamOptions.map((team) => `<option value="${escapeHtml(team)}" ${currentManagedTeams.includes(team) ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
+                  </select>
+                </label>
                 <button type="submit">Save profile</button>
               </form>
             </div>
@@ -5555,6 +5598,12 @@ function renderProfilePage(currentUser) {
                 <select name="accessRole" required>
                   <option value="${userRoles.admin}">Admin (full access)</option>
                 </select>
+                <label class="stack" style="gap:4px;">
+                  <span class="muted">Managed teams</span>
+                  <select name="managedTeams" multiple size="${Math.min(teamOptions.length, 4)}" style="min-height:90px;">
+                    ${teamOptions.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join('')}
+                  </select>
+                </label>
                 <button type="submit">Add manager</button>
               </form>
               <div class="request-list" style="margin-top:12px;">
@@ -5578,6 +5627,12 @@ function renderProfilePage(currentUser) {
                           <option value="${userRoles.admin}" ${isAdminUser(adminUser) ? 'selected' : ''}>Admin (full access)</option>
                         </select>
                       </div>
+                      <label class="stack" style="gap:4px;">
+                        <span class="muted">Managed teams</span>
+                        <select name="managedTeams" multiple size="${Math.min(teamOptions.length, 4)}" style="min-height:90px;">
+                          ${teamOptions.map((team) => `<option value="${escapeHtml(team)}" ${getManagedTeamsForUser(adminUser).includes(team) ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
+                        </select>
+                      </label>
                       <div class="row" style="gap:8px; flex-wrap:wrap; justify-content:flex-end;">
                         <button type="submit" class="secondary">Save manager</button>
                         <button type="button" class="secondary" data-resend-admin-invite="${adminUser.id}">Resend invite</button>
@@ -5667,6 +5722,7 @@ function renderProfilePage(currentUser) {
       const jobTitle = formData.get('jobTitle')?.toString().trim() || '';
       const email = normalizeEmail(formData.get('email'));
       const phone = normalizePhone(formData.get('phone'));
+      const managedTeams = normalizeManagedTeams(formData.getAll('managedTeams'));
 
       if (!name || !jobTitle || !email || !phone) {
         alert('All profile fields are required.');
@@ -5686,6 +5742,7 @@ function renderProfilePage(currentUser) {
             jobTitle,
             email,
             phone,
+            managedTeams,
             updatedAt: getCurrentIsoTimestamp(),
             profileUpdatedAt: getCurrentIsoTimestamp()
           }
@@ -5714,6 +5771,7 @@ function renderProfilePage(currentUser) {
       const email = normalizeEmail(formData.get('email'));
       const phone = normalizePhone(formData.get('phone'));
       const accessRole = normalizeUserRole(formData.get('accessRole'));
+      const managedTeams = normalizeManagedTeams(formData.getAll('managedTeams'));
 
       if (!name || !jobTitle || !email || !phone) {
         alert('All manager fields are required.');
@@ -5733,6 +5791,7 @@ function renderProfilePage(currentUser) {
         jobTitle,
         email,
         phone,
+        managedTeams,
         password: createTemporaryPassword(),
         createdAt: getCurrentIsoTimestamp(),
         updatedAt: getCurrentIsoTimestamp(),
@@ -5781,6 +5840,7 @@ function renderProfilePage(currentUser) {
         const email = normalizeEmail(formData.get('email'));
         const phone = normalizePhone(formData.get('phone'));
         const accessRole = normalizeUserRole(formData.get('accessRole'));
+        const managedTeams = normalizeManagedTeams(formData.getAll('managedTeams'));
 
         if (!name || !jobTitle || !email || !phone) {
           alert('All manager fields are required.');
@@ -5809,6 +5869,7 @@ function renderProfilePage(currentUser) {
               jobTitle,
               email,
               phone,
+              managedTeams,
               role: accessRole,
               updatedAt: getCurrentIsoTimestamp(),
               profileUpdatedAt: getCurrentIsoTimestamp()
@@ -6921,6 +6982,7 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Access level:</strong> ${escapeHtml(getUserRoleLabel(getUserByAgentId(agent.id)?.role || userRoles.agent))}</div>
                   <div><strong>Team:</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span></div>
                   <div><strong>Email:</strong> ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
+                  <div><strong>Managed by:</strong> ${escapeHtml(getTeamManagerSummary(agent.team))}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
                   <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(agent.pronouns) || 'Not set')}</div>
                   <div><strong>Targets:</strong> in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
