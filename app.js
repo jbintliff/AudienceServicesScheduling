@@ -1450,9 +1450,10 @@ function withRequiredEmail(user) {
   const normalizedEmail = normalizeEmail(user?.email);
   const normalizedPhone = normalizePhone(user?.phone);
   const calendarFeedToken = normalizeCalendarFeedToken(user?.calendarFeedToken);
+  const fallbackEmail = normalizedEmail || (user?.email === '' ? '' : getFallbackEmail(user));
   return {
     ...user,
-    email: normalizedEmail || getFallbackEmail(user),
+    email: fallbackEmail,
     phone: normalizedPhone,
     calendarFeedToken,
     passwordUpdatedAt: normalizePasswordUpdatedAt(user?.passwordUpdatedAt),
@@ -2751,7 +2752,7 @@ function reconcileAgentEmailsWithAuthUsers() {
     const agentEmail = normalizeEmail(agent.email || '');
     const linkedUserEmail = normalizeEmail(linkedUser?.email || '');
 
-    if (linkedUser && linkedUserEmail && linkedUserEmail !== agentEmail) {
+    if (linkedUser && linkedUserEmail !== agentEmail) {
       didChange = true;
       return { ...agent, email: linkedUserEmail };
     }
