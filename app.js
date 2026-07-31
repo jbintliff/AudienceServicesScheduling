@@ -5668,36 +5668,6 @@ function renderProfilePage(currentUser) {
             </div>
 
             <div class="panel">
-              <h2>Email delivery</h2>
-              <p class="muted">Control outgoing email and configure webhook delivery. When outgoing email is off, notifications stay local in Email outbox.</p>
-              <form id="admin-email-delivery-form" class="stack" style="margin-top:10px;">
-                <label class="row" style="align-items:center; justify-content:flex-start; gap:8px;">
-                  <input name="outgoingEnabled" type="checkbox" ${emailDeliverySettings.outgoingEnabled !== false ? 'checked' : ''} />
-                  <span>Enable outgoing emails</span>
-                </label>
-                <label class="row" style="align-items:center; justify-content:flex-start; gap:8px;">
-                  <input name="enabled" type="checkbox" ${emailDeliverySettings.enabled ? 'checked' : ''} />
-                  <span>Enable webhook delivery</span>
-                </label>
-                <select name="provider">
-                  <option value="generic" ${emailDeliverySettings.provider === 'generic' ? 'selected' : ''}>Generic webhook JSON</option>
-                  <option value="sendgrid" ${emailDeliverySettings.provider === 'sendgrid' ? 'selected' : ''}>SendGrid API payload</option>
-                  <option value="mailgun" ${emailDeliverySettings.provider === 'mailgun' ? 'selected' : ''}>Mailgun API payload</option>
-                </select>
-                <input name="webhookUrl" type="url" placeholder="Webhook URL (https://...)" value="${escapeHtml(emailDeliverySettings.webhookUrl || '')}" />
-                <input name="authToken" type="password" placeholder="Auth token (supports Bearer/BASIC prefix)" value="${escapeHtml(emailDeliverySettings.authToken || '')}" autocomplete="off" />
-                <input name="fromEmail" type="email" placeholder="From email" value="${escapeHtml(emailDeliverySettings.fromEmail || '')}" />
-                <input name="fromName" value="${escapeHtml(fixedEmailSenderName)}" readonly />
-                <div class="muted">Sender name is fixed to ${escapeHtml(fixedEmailSenderName)} for all outgoing emails.</div>
-                <div class="row">
-                  <button type="submit">Save email settings</button>
-                  <button type="button" id="send-test-email" class="secondary">Send test email</button>
-                  <button type="button" id="retry-undelivered-email" class="secondary">Retry undelivered emails</button>
-                </div>
-              </form>
-            </div>
-
-            <div class="panel">
               <h2>Backend sync</h2>
               <p class="muted">Use a shared API URL so admin and agent data stays synchronized across devices.</p>
               <form id="admin-backend-sync-form" class="stack" style="margin-top:10px;">
@@ -5830,7 +5800,7 @@ function renderProfilePage(currentUser) {
       if (isEmailQueuedWithoutWebhookDelivery(inviteResult?.deliveryStatus)) {
         adminManagerNotice = {
           type: 'success',
-          text: 'Manager added. Invite was queued in Email outbox because outgoing email or webhook delivery is disabled. Configure Admin Profile > Email delivery to send real emails.',
+          text: 'Manager added. Invite was queued in Email outbox because outgoing email or webhook delivery is disabled. Configure Admin options > Email delivery to send real emails.',
           resetLink: inviteResult.resetLink
         };
       } else {
@@ -5942,95 +5912,6 @@ function renderProfilePage(currentUser) {
       render();
     });
 
-    document.getElementById('admin-email-delivery-form')?.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const formData = new FormData(event.currentTarget);
-      const outgoingEnabled = formData.get('outgoingEnabled') === 'on';
-      const enabled = formData.get('enabled') === 'on';
-      const provider = String(formData.get('provider') || 'generic').toLowerCase();
-      const webhookUrl = normalizeWebhookUrl(formData.get('webhookUrl'));
-      const authToken = formData.get('authToken')?.toString() || '';
-      const fromEmail = normalizeEmail(formData.get('fromEmail'));
-
-      if (outgoingEnabled && enabled && !webhookUrl) {
-        alert('Webhook URL is required when delivery is enabled.');
-        return;
-      }
-      if (outgoingEnabled && enabled && !fromEmail) {
-        alert('From email is required when delivery is enabled.');
-        return;
-      }
-      if (outgoingEnabled && enabled && (provider === 'sendgrid' || provider === 'mailgun') && !authToken.trim()) {
-        alert('Auth token is recommended for SendGrid and Mailgun modes.');
-        return;
-      }
-
-      saveEmailDeliverySettings({
-        outgoingEnabled,
-        enabled,
-        provider,
-        webhookUrl,
-        authToken,
-        fromEmail,
-        fromName: fixedEmailSenderName
-      });
-      const retryResult = retryUndeliveredOutboxEmails();
-      if (retryResult.skipped) {
-        if (retryResult.reason === 'outgoing-disabled') {
-          alert('Email delivery settings saved. Outgoing emails are turned off, so queued emails remain local-only.');
-        } else {
-          alert('Email delivery settings saved. Webhook delivery is disabled or missing a webhook URL, so queued emails remain local-only.');
-        }
-      } else if (retryResult.attempted > 0) {
-        alert(`Email delivery settings saved. Retrying ${retryResult.attempted} undelivered email${retryResult.attempted === 1 ? '' : 's'}. Check Email outbox for results.`);
-      } else {
-        alert('Email delivery settings saved. There were no undelivered emails to retry.');
-      }
-      render();
-    });
-
-    document.getElementById('send-test-email')?.addEventListener('click', () => {
-      const settings = loadEmailDeliverySettings();
-      if (settings.outgoingEnabled === false) {
-        alert('Outgoing emails are turned off. Enable outgoing emails first.');
-        return;
-      }
-      if (!settings.enabled || !settings.webhookUrl) {
-        alert('Webhook delivery is not enabled. Save Email delivery settings with a valid webhook URL first.');
-        return;
-      }
-      const activeUser = getCurrentUser();
-      if (!activeUser?.email) {
-        alert('No admin email is set for this account.');
-        return;
-      }
-      sendEmailNotification({
-        to: activeUser.email,
-        subject: 'Test email from Agent Scheduler',
-        body: `Test email sent at ${new Date().toLocaleString()}.`,
-        type: 'test-email'
-      });
-      alert('Test email queued. Check Email outbox for delivery status.');
-    });
-
-    document.getElementById('retry-undelivered-email')?.addEventListener('click', () => {
-      const retryResult = retryUndeliveredOutboxEmails();
-      if (retryResult.skipped) {
-        if (retryResult.reason === 'outgoing-disabled') {
-          alert('Outgoing emails are turned off. Enable outgoing emails first.');
-        } else {
-          alert('Webhook delivery is not enabled. Save Email delivery settings with a valid webhook URL first.');
-        }
-        return;
-      }
-      if (retryResult.attempted === 0) {
-        alert('No undelivered emails were found to retry.');
-        return;
-      }
-      alert(`Retry started for ${retryResult.attempted} undelivered email${retryResult.attempted === 1 ? '' : 's'}. Check Email outbox for updated status.`);
-      render();
-    });
-
     document.querySelectorAll('[data-resend-admin-invite]').forEach((button) => {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-resend-admin-invite'));
@@ -6044,7 +5925,7 @@ function renderProfilePage(currentUser) {
         if (isEmailQueuedWithoutWebhookDelivery(inviteResult?.deliveryStatus)) {
           adminManagerNotice = {
             type: 'success',
-            text: 'Invite was queued in Email outbox because outgoing email or webhook delivery is disabled. Configure Admin Profile > Email delivery to send real emails.',
+            text: 'Invite was queued in Email outbox because outgoing email or webhook delivery is disabled. Configure Admin options > Email delivery to send real emails.',
             resetLink: inviteResult.resetLink
           };
         } else {
@@ -6650,9 +6531,128 @@ function renderAdminOptionsPage(currentUser) {
             `).join('')}
           </div>
         </div>
+
+        <div class="panel">
+          <h2>Email delivery</h2>
+          <p class="muted">Control outgoing email and configure webhook delivery. When outgoing email is off, notifications stay local in Email outbox.</p>
+          <form id="admin-email-delivery-form" class="stack" style="margin-top:10px;">
+            <label class="row" style="align-items:center; justify-content:flex-start; gap:8px;">
+              <input name="outgoingEnabled" type="checkbox" ${emailDeliverySettings.outgoingEnabled !== false ? 'checked' : ''} />
+              <span>Enable outgoing emails</span>
+            </label>
+            <label class="row" style="align-items:center; justify-content:flex-start; gap:8px;">
+              <input name="enabled" type="checkbox" ${emailDeliverySettings.enabled ? 'checked' : ''} />
+              <span>Enable webhook delivery</span>
+            </label>
+            <select name="provider">
+              <option value="generic" ${emailDeliverySettings.provider === 'generic' ? 'selected' : ''}>Generic webhook JSON</option>
+              <option value="sendgrid" ${emailDeliverySettings.provider === 'sendgrid' ? 'selected' : ''}>SendGrid API payload</option>
+              <option value="mailgun" ${emailDeliverySettings.provider === 'mailgun' ? 'selected' : ''}>Mailgun API payload</option>
+            </select>
+            <input name="webhookUrl" type="url" placeholder="Webhook URL (https://...)" value="${escapeHtml(emailDeliverySettings.webhookUrl || '')}" />
+            <input name="authToken" type="password" placeholder="Auth token (supports Bearer/BASIC prefix)" value="${escapeHtml(emailDeliverySettings.authToken || '')}" autocomplete="off" />
+            <input name="fromEmail" type="email" placeholder="From email" value="${escapeHtml(emailDeliverySettings.fromEmail || '')}" />
+            <input name="fromName" value="${escapeHtml(fixedEmailSenderName)}" readonly />
+            <div class="muted">Sender name is fixed to ${escapeHtml(fixedEmailSenderName)} for all outgoing emails.</div>
+            <div class="row">
+              <button type="submit">Save email settings</button>
+              <button type="button" id="send-test-email" class="secondary">Send test email</button>
+              <button type="button" id="retry-undelivered-email" class="secondary">Retry undelivered emails</button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   `;
+
+  document.getElementById('admin-email-delivery-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const outgoingEnabled = formData.get('outgoingEnabled') === 'on';
+    const enabled = formData.get('enabled') === 'on';
+    const provider = String(formData.get('provider') || 'generic').toLowerCase();
+    const webhookUrl = normalizeWebhookUrl(formData.get('webhookUrl'));
+    const authToken = formData.get('authToken')?.toString() || '';
+    const fromEmail = normalizeEmail(formData.get('fromEmail'));
+
+    if (outgoingEnabled && enabled && !webhookUrl) {
+      alert('Webhook URL is required when delivery is enabled.');
+      return;
+    }
+    if (outgoingEnabled && enabled && !fromEmail) {
+      alert('From email is required when delivery is enabled.');
+      return;
+    }
+    if (outgoingEnabled && enabled && (provider === 'sendgrid' || provider === 'mailgun') && !authToken.trim()) {
+      alert('Auth token is recommended for SendGrid and Mailgun modes.');
+      return;
+    }
+
+    saveEmailDeliverySettings({
+      outgoingEnabled,
+      enabled,
+      provider,
+      webhookUrl,
+      authToken,
+      fromEmail,
+      fromName: fixedEmailSenderName
+    });
+    const retryResult = retryUndeliveredOutboxEmails();
+    if (retryResult.skipped) {
+      if (retryResult.reason === 'outgoing-disabled') {
+        alert('Email delivery settings saved. Outgoing emails are turned off, so queued emails remain local-only.');
+      } else {
+        alert('Email delivery settings saved. Webhook delivery is disabled or missing a webhook URL, so queued emails remain local-only.');
+      }
+    } else if (retryResult.attempted > 0) {
+      alert(`Email delivery settings saved. Retrying ${retryResult.attempted} undelivered email${retryResult.attempted === 1 ? '' : 's'}. Check Email outbox for results.`);
+    } else {
+      alert('Email delivery settings saved. There were no undelivered emails to retry.');
+    }
+    render();
+  });
+
+  document.getElementById('send-test-email')?.addEventListener('click', () => {
+    const settings = loadEmailDeliverySettings();
+    if (settings.outgoingEnabled === false) {
+      alert('Outgoing emails are turned off. Enable outgoing emails first.');
+      return;
+    }
+    if (!settings.enabled || !settings.webhookUrl) {
+      alert('Webhook delivery is not enabled. Save Email delivery settings with a valid webhook URL first.');
+      return;
+    }
+    const activeUser = getCurrentUser();
+    if (!activeUser?.email) {
+      alert('No admin email is set for this account.');
+      return;
+    }
+    sendEmailNotification({
+      to: activeUser.email,
+      subject: 'Test email from Agent Scheduler',
+      body: `Test email sent at ${new Date().toLocaleString()}.`,
+      type: 'test-email'
+    });
+    alert('Test email queued. Check Email outbox for delivery status.');
+  });
+
+  document.getElementById('retry-undelivered-email')?.addEventListener('click', () => {
+    const retryResult = retryUndeliveredOutboxEmails();
+    if (retryResult.skipped) {
+      if (retryResult.reason === 'outgoing-disabled') {
+        alert('Outgoing emails are turned off. Enable outgoing emails first.');
+      } else {
+        alert('Webhook delivery is not enabled. Save Email delivery settings with a valid webhook URL first.');
+      }
+      return;
+    }
+    if (retryResult.attempted === 0) {
+      alert('No undelivered emails were found to retry.');
+      return;
+    }
+    alert(`Retry started for ${retryResult.attempted} undelivered email${retryResult.attempted === 1 ? '' : 's'}. Check Email outbox for updated status.`);
+    render();
+  });
 
   bindEvents();
 }
@@ -8711,7 +8711,7 @@ function bindEvents() {
 
     const outboxCount = loadEmailOutbox().length;
     if (isEmailQueuedWithoutWebhookDelivery(inviteResult?.deliveryStatus)) {
-      alert(`Agent added. Invite was queued in Email outbox because outgoing email or webhook delivery is disabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || '(not available)'}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}`);
+      alert(`Agent added. Invite was queued in Email outbox because outgoing email or webhook delivery is disabled. Configure Admin options > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || '(not available)'}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}`);
     } else {
       alert(`Agent added and invitation email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
     }
@@ -9739,7 +9739,7 @@ function bindEvents() {
       const inviteResult = sendAgentInviteEmail(refreshedAgentUser, agent.name, temporaryPassword);
       const outboxCount = loadEmailOutbox().length;
       if (isEmailQueuedWithoutWebhookDelivery(inviteResult?.deliveryStatus)) {
-        alert(`Invite was queued in Email outbox because outgoing email or webhook delivery is disabled. Configure Admin Profile > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || temporaryPassword}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}`);
+        alert(`Invite was queued in Email outbox because outgoing email or webhook delivery is disabled. Configure Admin options > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || temporaryPassword}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}`);
       } else {
         alert(`Invite email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
       }
