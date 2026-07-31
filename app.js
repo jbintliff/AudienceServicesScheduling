@@ -693,6 +693,7 @@ function getDefaultUiState() {
     availabilitySwapRequestsHidden: false,
     availabilityDebugToolsVisible: false,
     availabilityDebugAgentId: '',
+    adminOptionsCollapsedPanels: {},
     accessMode: 'admin',
     currentAgentId: defaultState.agents[0]?.id ?? null,
     calendar: {
@@ -710,6 +711,14 @@ function getDefaultUiState() {
 
 function normalizeUiState(source) {
   const defaults = getDefaultUiState();
+  const sourceAdminOptionsCollapsedPanels = source?.adminOptionsCollapsedPanels;
+  const normalizedAdminOptionsCollapsedPanels = (!sourceAdminOptionsCollapsedPanels || typeof sourceAdminOptionsCollapsedPanels !== 'object' || Array.isArray(sourceAdminOptionsCollapsedPanels))
+    ? {}
+    : Object.fromEntries(
+        Object.entries(sourceAdminOptionsCollapsedPanels)
+          .map(([key, value]) => [String(key || '').trim(), Boolean(value)])
+          .filter(([key]) => Boolean(key))
+      );
   return {
     agentSearch: source?.agentSearch || defaults.agentSearch,
     agentSort: source?.agentSort || defaults.agentSort,
@@ -737,6 +746,7 @@ function normalizeUiState(source) {
     availabilitySwapRequestsHidden: Boolean(source?.availabilitySwapRequestsHidden),
     availabilityDebugToolsVisible: Boolean(source?.availabilityDebugToolsVisible),
     availabilityDebugAgentId: source?.availabilityDebugAgentId || defaults.availabilityDebugAgentId,
+    adminOptionsCollapsedPanels: normalizedAdminOptionsCollapsedPanels,
     swapRequestToAgentId: source?.swapRequestToAgentId || defaults.swapRequestToAgentId,
     swapRequestToShiftId: source?.swapRequestToShiftId || defaults.swapRequestToShiftId,
     accessMode: source?.accessMode || defaults.accessMode,
@@ -6369,6 +6379,77 @@ function renderProfilePage(currentUser) {
   bindEvents();
 }
 
+function initializeAdminOptionsCollapsiblePanels() {
+  const panelCollapseState = (!state.ui?.adminOptionsCollapsedPanels || typeof state.ui.adminOptionsCollapsedPanels !== 'object' || Array.isArray(state.ui.adminOptionsCollapsedPanels))
+    ? {}
+    : state.ui.adminOptionsCollapsedPanels;
+  const panels = Array.from(root.querySelectorAll('.grid > .panel'));
+
+  panels.forEach((panel, index) => {
+    const firstChild = panel.firstElementChild;
+    if (!firstChild) return;
+
+    let headerContainer = null;
+    if (firstChild.matches('h2')) {
+      const headerRow = document.createElement('div');
+      headerRow.className = 'row';
+      headerRow.style.justifyContent = 'space-between';
+      headerRow.style.alignItems = 'center';
+      headerRow.style.marginBottom = '8px';
+      panel.insertBefore(headerRow, firstChild);
+      headerRow.appendChild(firstChild);
+      firstChild.style.margin = '0';
+      headerContainer = headerRow;
+    } else if (firstChild.querySelector('h2')) {
+      headerContainer = firstChild;
+    } else {
+      return;
+    }
+
+    const titleText = String(headerContainer.querySelector('h2')?.textContent || `Section ${index + 1}`)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const panelKey = `admin-options-${titleText || 'section'}-${index}`;
+
+    if (headerContainer.querySelector('[data-admin-options-panel-toggle]')) {
+      return;
+    }
+
+    const toggleButton = document.createElement('button');
+    toggleButton.type = 'button';
+    toggleButton.className = 'secondary';
+    toggleButton.setAttribute('data-admin-options-panel-toggle', panelKey);
+
+    headerContainer.appendChild(toggleButton);
+
+    const contentNodes = Array.from(panel.children).filter((child) => child !== headerContainer);
+    let isCollapsed = Boolean(panelCollapseState[panelKey]);
+
+    const applyCollapsedState = () => {
+      contentNodes.forEach((child) => {
+        child.style.display = isCollapsed ? 'none' : '';
+      });
+      toggleButton.textContent = isCollapsed ? 'Expand' : 'Collapse';
+      panel.setAttribute('data-collapsed', isCollapsed ? 'true' : 'false');
+    };
+
+    toggleButton.addEventListener('click', () => {
+      isCollapsed = !isCollapsed;
+      panelCollapseState[panelKey] = isCollapsed;
+      state.ui.adminOptionsCollapsedPanels = {
+        ...panelCollapseState,
+        [panelKey]: isCollapsed
+      };
+      saveUiState();
+      applyCollapsedState();
+    });
+
+    applyCollapsedState();
+  });
+}
+
 function renderAdminOptionsPage(currentUser) {
   const isAdminView = currentUser.role === 'admin';
   if (!isAdminView) {
@@ -6564,6 +6645,8 @@ function renderAdminOptionsPage(currentUser) {
       </div>
     </div>
   `;
+
+  initializeAdminOptionsCollapsiblePanels();
 
   document.getElementById('admin-email-delivery-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
