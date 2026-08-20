@@ -2276,20 +2276,35 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     </div>
   `;
 
+  const findUsersForLoginEmail = (targetEmail) => {
+    const normalizedTarget = normalizeEmail(targetEmail);
+    if (!normalizedTarget) return [];
+
+    const directMatches = authUsers.filter((user) => normalizeEmail(user?.email) === normalizedTarget);
+    const linkedAgent = state.agents.find((agent) => normalizeEmail(agent?.email) === normalizedTarget);
+    const linkedUser = linkedAgent ? getUserByAgentId(linkedAgent.id) : null;
+
+    const users = [...directMatches];
+    if (linkedUser && !users.some((user) => Number(user?.id) === Number(linkedUser.id))) {
+      users.push(linkedUser);
+    }
+    return users;
+  };
+
   document.getElementById('login-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const email = normalizeEmail(formData.get('email'));
     const password = formData.get('password')?.toString() || '';
     const shouldRememberLogin = Boolean(formData.get('savePassword'));
-    let foundUser = authUsers.find((user) => normalizeEmail(user.email) === email && user.password === password);
+    let foundUser = findUsersForLoginEmail(email).find((user) => user.password === password);
     if (!foundUser && backendApiBase) {
       // If local auth data is stale, refresh once from backend before failing login.
       const remoteStore = await fetchBackendSnapshot();
       if (remoteStore) {
         applyRemoteSnapshot(remoteStore);
         syncFromStorage();
-        foundUser = authUsers.find((user) => normalizeEmail(user.email) === email && user.password === password);
+        foundUser = findUsersForLoginEmail(email).find((user) => user.password === password);
       }
     }
     if (!foundUser) {
@@ -2321,19 +2336,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const email = normalizeEmail(formData.get('email'));
-    const findRecoverableUser = (targetEmail) => {
-      const normalizedTarget = normalizeEmail(targetEmail);
-      if (!normalizedTarget) return null;
-
-      const directMatch = authUsers.find((user) => normalizeEmail(user.email) === normalizedTarget);
-      if (directMatch) return directMatch;
-
-      const linkedAgent = state.agents.find((agent) => normalizeEmail(agent?.email) === normalizedTarget);
-      if (!linkedAgent) return null;
-      return getUserByAgentId(linkedAgent.id);
-    };
-
-    let foundUser = findRecoverableUser(email);
+    let foundUser = findUsersForLoginEmail(email)[0] || null;
 
     if (!foundUser && backendApiBase) {
       // Match login behavior: refresh once from shared backend before treating the email as unknown.
@@ -2341,7 +2344,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       if (remoteStore) {
         applyRemoteSnapshot(remoteStore);
         syncFromStorage();
-        foundUser = findRecoverableUser(email);
+        foundUser = findUsersForLoginEmail(email)[0] || null;
       }
     }
 
