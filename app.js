@@ -503,6 +503,12 @@ const defaultState = {
   ],
   swapRequests: [],
   availabilityRequests: [],
+  dashboardMessageBoard: {
+    text: '',
+    selectedTeams: [],
+    updatedAt: '',
+    updatedBy: ''
+  },
   policies: [],
   blackoutDates: [],
   roleColors: {},
@@ -2263,9 +2269,9 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
         ${shouldPrefillRememberedLogin ? '<button id="clear-saved-login" type="button" class="secondary" style="margin-top:10px;">Clear saved password on this device</button>' : ''}
         <form id="forgot-password-form" class="stack" style="margin-top:10px;">
           <input name="email" type="email" placeholder="Forgot password? Enter your email" required autocomplete="email" />
-          <button type="submit" class="secondary">Get reset link</button>
+          <button type="submit" class="secondary">Get temporary password</button>
         </form>
-        <div class="muted" style="margin-top:8px;">Enter your agent email to send a password reset link.</div>
+        <div class="muted" style="margin-top:8px;">Enter your email to receive a temporary password in this browser.</div>
       </div>
     </div>
   `;
@@ -2327,46 +2333,28 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       }
     }
 
-    const linkedAgent = foundUser ? state.agents.find((agent) => Number(agent.id) === Number(foundUser.agentId)) : null;
-    const isAssociatedAgentEmail = Boolean(foundUser && isAgentLikeUser(foundUser) && linkedAgent);
-
-    if (!isAssociatedAgentEmail) {
-      renderLoginPage('', 'If an agent account exists for that email, a reset link will appear here.');
+    if (!foundUser) {
+      renderLoginPage('Email not recognized. Please check the address or contact an admin for help.');
       return;
     }
 
-    const passwordResetRequests = loadPasswordResetRequests();
-    const token = createResetToken();
-    const resetLink = getResetLink(token);
-    const expiresAt = new Date(Date.now() + (60 * 60 * 1000)).toISOString();
-    const updatedRequests = [
-      ...passwordResetRequests,
-      {
-        id: createId(),
-        token,
-        userId: foundUser.id,
-        email,
-        createdAt: new Date().toISOString(),
-        expiresAt,
-        used: false
-      }
-    ];
-    savePasswordResetRequests(updatedRequests);
+    const temporaryPassword = createTemporaryPassword();
+    const passwordUpdatedAt = getCurrentIsoTimestamp();
+    authUsers = authUsers.map((user) => user.id === foundUser.id
+      ? {
+          ...user,
+          password: temporaryPassword,
+          passwordUpdatedAt,
+          mustChangePassword: isAgentLikeUser(user) ? true : Boolean(user.mustChangePassword)
+        }
+      : user);
+    const didSaveAuthUsers = saveAuthUsers();
+    if (!didSaveAuthUsers) {
+      renderLoginPage('Unable to generate a temporary password right now. Please try again or contact an admin.');
+      return;
+    }
 
-    const agentName = linkedAgent?.name || foundUser.name || foundUser.username || 'Agent';
-    const resetEmailMessage = sendEmailNotification({
-      to: email,
-      subject: 'Password reset link',
-      body: `Hi ${agentName}, use this link to reset your password: ${resetLink}\n\nThis link expires in 1 hour. If you did not request this, you can ignore this message.`,
-      type: 'agent-password-reset'
-    });
-    const outboxCount = loadEmailOutbox().length;
-    const showResetLinkFallback = isEmailQueuedWithoutWebhookDelivery(resetEmailMessage?.deliveryStatus);
-    const deliveryMessage = showResetLinkFallback
-      ? 'Outgoing email or webhook delivery is disabled, so the reset email was saved locally in Email outbox. Use the reset link below.'
-      : `Reset email queued. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`;
-
-    renderLoginPage('', `If an agent account exists for that email, a reset link email has been prepared. ${deliveryMessage}`, showResetLinkFallback ? resetLink : '');
+    renderLoginPage('', `Email confirmed. Temporary password: ${temporaryPassword}  Use this password to sign in now.`);
   });
 }
 
@@ -2477,6 +2465,10 @@ function createDefaultState() {
     shifts: defaultState.shifts.map((shift) => ({ ...shift })),
     swapRequests: defaultState.swapRequests.map((request) => ({ ...request })),
     availabilityRequests: defaultState.availabilityRequests.map((request) => ({ ...request })),
+    dashboardMessageBoard: {
+      ...(defaultState.dashboardMessageBoard || {}),
+      selectedTeams: [...(defaultState.dashboardMessageBoard?.selectedTeams || [])]
+    },
     policies: defaultState.policies.map((policy) => ({ ...policy })),
     blackoutDates: [...defaultState.blackoutDates],
     roleColors: { ...defaultState.roleColors },
@@ -2525,6 +2517,50 @@ function normalizeManagedTeams(value) {
     .map((entry) => normalizeManagedTeamValue(entry))
     .filter(Boolean);
   return Array.from(new Set(normalizedTeams));
+}
+
+function normalizeDashboardMessageBoard(value) {
+  const normalizedText = String(value?.text || '').trim();
+  return {
+    text: normalizedText,
+    selectedTeams: normalizeManagedTeams(value?.selectedTeams || []),
+    updatedAt: String(value?.updatedAt || '').trim(),
+    updatedBy: String(value?.updatedBy || '').trim()
+  };
+}
+
+function getDashboardMessageBoardState() {
+  const normalized = normalizeDashboardMessageBoard(state.dashboardMessageBoard || {});
+  state.dashboardMessageBoard = normalized;
+  return normalized;
+}
+
+function getDashboardMessageRecipientEmails(selectedTeams) {
+  const normalizedTeams = normalizeManagedTeams(selectedTeams);
+  if (normalizedTeams.length === 0) {
+    return [];
+  }
+  const allowedTeamSet = new Set(normalizedTeams);
+  const emails = state.agents
+    .filter((agent) => allowedTeamSet.has(normalizeTeamLabel(agent?.team)))
+    .map((agent) => getAgentAccountEmail(agent?.id))
+    .map((email) => normalizeEmail(email))
+    .filter(Boolean);
+  return Array.from(new Set(emails));
+}
+
+function canUserViewDashboardMessage(user, messageBoardState) {
+  if (!messageBoardState?.text) return false;
+  const selectedTeams = normalizeManagedTeams(messageBoardState.selectedTeams || []);
+  if (selectedTeams.length === 0) return true;
+  if (isAdminUser(user)) return true;
+  if (isTeamLeadUser(user)) {
+    const managedTeams = getManagedTeamsForUser(user);
+    return managedTeams.some((team) => selectedTeams.includes(team));
+  }
+  const currentAgentTeam = normalizeManagedTeamValue(getAgent(Number(user?.agentId))?.team || '');
+  if (!currentAgentTeam) return false;
+  return selectedTeams.includes(currentAgentTeam);
 }
 
 function getManagedTeamsForUser(user) {
@@ -2974,6 +3010,7 @@ function loadState() {
       availabilityRequests: mergeAvailabilityRequests(
         Array.isArray(parsed.availabilityRequests) ? parsed.availabilityRequests : createDefaultState().availabilityRequests
       ),
+      dashboardMessageBoard: normalizeDashboardMessageBoard(parsed.dashboardMessageBoard || createDefaultState().dashboardMessageBoard),
       blackoutDates: normalizeBlackoutDates(parsed.blackoutDates),
       roleColors: parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : createDefaultState().roleColors,
       ui: loadUiState(parsed.ui)
@@ -7635,6 +7672,9 @@ function render() {
       const right = `${b.date || ''} ${b.start || ''}`;
       return left.localeCompare(right);
     });
+  const dashboardMessageBoard = getDashboardMessageBoardState();
+  const dashboardMessageTeams = normalizeManagedTeams(dashboardMessageBoard.selectedTeams || []);
+  const canViewDashboardMessage = canUserViewDashboardMessage(currentUser, dashboardMessageBoard);
 
   root.innerHTML = `
     <div class="app">
@@ -7674,6 +7714,41 @@ function render() {
           <strong>${escapeHtml(viewAgent?.name || 'Agent')}</strong>
           <div class="muted">You can review your assignments and request changes here.</div>
         </div>`}
+
+      ${!isAgentView ? `
+        <div class="panel" style="margin-top:12px; margin-bottom:16px;">
+          <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+            <div>
+              <h2 style="margin:0 0 6px;">Dashboard message board</h2>
+              <div class="muted">Post dashboard updates and email them to selected teams.</div>
+            </div>
+            ${dashboardMessageBoard.updatedAt ? `<div class="muted">Last updated ${escapeHtml(new Date(dashboardMessageBoard.updatedAt).toLocaleString())}${dashboardMessageBoard.updatedBy ? ` by ${escapeHtml(dashboardMessageBoard.updatedBy)}` : ''}</div>` : ''}
+          </div>
+          <form id="dashboard-message-board-form" class="stack" style="margin-top:10px;">
+            <textarea name="messageText" rows="3" placeholder="Type the message to show on dashboard and email to teams." required>${escapeHtml(dashboardMessageBoard.text || '')}</textarea>
+            <label style="display:flex; flex-direction:column; gap:6px;">
+              <span>Send to teams</span>
+              <select name="selectedTeams" multiple size="${Math.min(teamOptions.length, 4)}" style="min-height:90px;">
+                ${teamOptions.map((team) => `<option value="${escapeHtml(team)}" ${dashboardMessageTeams.includes(team) ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
+              </select>
+            </label>
+            <div class="row" style="justify-content:flex-end; gap:8px;">
+              <button type="submit">Post and email teams</button>
+              <button type="button" id="dashboard-message-board-clear" class="secondary">Clear message</button>
+            </div>
+          </form>
+        </div>` : ''}
+
+      ${(isAgentView || canViewDashboardMessage) ? `
+        <div class="panel" style="margin-bottom:16px; border-color:#7AACAF;">
+          <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+            <h2 style="margin:0;">Team message board</h2>
+            <span class="muted">${canViewDashboardMessage ? (dashboardMessageTeams.length > 0 ? `Audience: ${escapeHtml(dashboardMessageTeams.join(', '))}` : 'Audience: all teams') : 'No active message for your team'}</span>
+          </div>
+          ${canViewDashboardMessage
+            ? `<div style="white-space:pre-wrap;">${escapeHtml(dashboardMessageBoard.text || '')}</div>${dashboardMessageBoard.updatedAt ? `<div class="muted" style="margin-top:8px;">Posted ${escapeHtml(new Date(dashboardMessageBoard.updatedAt).toLocaleString())}${dashboardMessageBoard.updatedBy ? ` by ${escapeHtml(dashboardMessageBoard.updatedBy)}` : ''}</div>` : ''}`
+            : '<div class="muted">No message has been posted for your team yet.</div>'}
+        </div>` : ''}
 
       <div class="grid" style="margin-top:16px;${!isAgentView ? ' grid-template-columns:1fr;' : ''}">
         <div class="stack">
@@ -9265,6 +9340,70 @@ function bindEvents() {
   document.getElementById('toggle-swap-alerts')?.addEventListener('click', () => {
     state.ui.swapAlertsCollapsed = !state.ui.swapAlertsCollapsed;
     saveUiState();
+    render();
+  });
+
+  document.getElementById('dashboard-message-board-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const currentUser = getCurrentUser();
+    if (!isAdminUser(currentUser)) return;
+
+    const formElement = event.currentTarget;
+    if (!(formElement instanceof HTMLFormElement)) return;
+    const formData = new FormData(formElement);
+    const messageText = String(formData.get('messageText') || '').trim();
+    const selectedTeams = normalizeManagedTeams(formData.getAll('selectedTeams'));
+
+    if (!messageText) {
+      alert('Enter a message before posting.');
+      return;
+    }
+    if (selectedTeams.length === 0) {
+      alert('Select at least one team to send this message to.');
+      return;
+    }
+
+    const updatedAt = getCurrentIsoTimestamp();
+    const updatedBy = String(currentUser?.name || currentUser?.username || 'Admin').trim();
+    state.dashboardMessageBoard = normalizeDashboardMessageBoard({
+      text: messageText,
+      selectedTeams,
+      updatedAt,
+      updatedBy
+    });
+
+    const recipientEmails = getDashboardMessageRecipientEmails(selectedTeams);
+    const audienceSummary = selectedTeams.join(', ');
+    recipientEmails.forEach((recipientEmail) => {
+      sendEmailNotification({
+        to: recipientEmail,
+        subject: 'Dashboard message board update',
+        body: `A new dashboard message was posted for ${audienceSummary}.\n\n${messageText}\n\nPosted by: ${updatedBy}`,
+        type: 'dashboard-message-board'
+      });
+    });
+
+    saveState();
+    const outboxCount = loadEmailOutbox().length;
+    const recipientNote = recipientEmails.length > 0
+      ? `Queued ${recipientEmails.length} team email${recipientEmails.length === 1 ? '' : 's'}.`
+      : 'No team member emails were found, so no emails were queued.';
+    alert(`Message board updated. ${recipientNote} Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
+    render();
+  });
+
+  document.getElementById('dashboard-message-board-clear')?.addEventListener('click', () => {
+    const currentUser = getCurrentUser();
+    if (!isAdminUser(currentUser)) return;
+    const shouldClear = confirm('Clear the dashboard message board?');
+    if (!shouldClear) return;
+    state.dashboardMessageBoard = normalizeDashboardMessageBoard({
+      text: '',
+      selectedTeams: [],
+      updatedAt: getCurrentIsoTimestamp(),
+      updatedBy: String(currentUser?.name || currentUser?.username || 'Admin').trim()
+    });
+    saveState();
     render();
   });
 
