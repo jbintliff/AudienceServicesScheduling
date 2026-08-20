@@ -2291,6 +2291,49 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     return users;
   };
 
+  const ensureRecoverableUserForEmail = (targetEmail) => {
+    const normalizedTarget = normalizeEmail(targetEmail);
+    if (!normalizedTarget) {
+      return { user: null, error: '' };
+    }
+
+    const existingUser = findUsersForLoginEmail(normalizedTarget)[0] || null;
+    if (existingUser) {
+      return { user: existingUser, error: '' };
+    }
+
+    const linkedAgent = state.agents.find((agent) => normalizeEmail(agent?.email) === normalizedTarget);
+    if (!linkedAgent) {
+      return { user: null, error: '' };
+    }
+
+    const createdAt = getCurrentIsoTimestamp();
+    const autoLinkedUser = withRequiredEmail({
+      id: createId(),
+      username: createUniqueAgentUsername(normalizedTarget),
+      name: linkedAgent?.name || '',
+      email: normalizedTarget,
+      phone: '',
+      password: createTemporaryPassword(),
+      passwordUpdatedAt: createdAt,
+      createdAt,
+      profileUpdatedAt: createdAt,
+      mustChangePassword: true,
+      calendarFeedToken: createCalendarFeedToken(),
+      role: userRoles.agent,
+      agentId: Number(linkedAgent.id)
+    });
+
+    authUsers.push(autoLinkedUser);
+    const didSaveAuthUsers = saveAuthUsers();
+    if (!didSaveAuthUsers) {
+      authUsers = authUsers.filter((user) => Number(user.id) !== Number(autoLinkedUser.id));
+      return { user: null, error: 'save-failed' };
+    }
+
+    return { user: autoLinkedUser, error: '' };
+  };
+
   document.getElementById('login-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -2336,7 +2379,13 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const email = normalizeEmail(formData.get('email'));
-    let foundUser = findUsersForLoginEmail(email)[0] || null;
+    let recoverableResult = ensureRecoverableUserForEmail(email);
+    let foundUser = recoverableResult.user;
+
+    if (!foundUser && recoverableResult.error === 'save-failed') {
+      renderLoginPage('Unable to prepare this account for recovery right now. Please contact an admin.');
+      return;
+    }
 
     if (!foundUser && backendApiBase) {
       // Match login behavior: refresh once from shared backend before treating the email as unknown.
@@ -2344,7 +2393,13 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       if (remoteStore) {
         applyRemoteSnapshot(remoteStore);
         syncFromStorage();
-        foundUser = findUsersForLoginEmail(email)[0] || null;
+        recoverableResult = ensureRecoverableUserForEmail(email);
+        foundUser = recoverableResult.user;
+      }
+
+      if (!foundUser && recoverableResult.error === 'save-failed') {
+        renderLoginPage('Unable to prepare this account for recovery right now. Please contact an admin.');
+        return;
       }
     }
 
