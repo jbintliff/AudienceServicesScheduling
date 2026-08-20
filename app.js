@@ -2321,7 +2321,19 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const email = normalizeEmail(formData.get('email'));
-    let foundUser = authUsers.find((user) => normalizeEmail(user.email) === email);
+    const findRecoverableUser = (targetEmail) => {
+      const normalizedTarget = normalizeEmail(targetEmail);
+      if (!normalizedTarget) return null;
+
+      const directMatch = authUsers.find((user) => normalizeEmail(user.email) === normalizedTarget);
+      if (directMatch) return directMatch;
+
+      const linkedAgent = state.agents.find((agent) => normalizeEmail(agent?.email) === normalizedTarget);
+      if (!linkedAgent) return null;
+      return getUserByAgentId(linkedAgent.id);
+    };
+
+    let foundUser = findRecoverableUser(email);
 
     if (!foundUser && backendApiBase) {
       // Match login behavior: refresh once from shared backend before treating the email as unknown.
@@ -2329,7 +2341,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       if (remoteStore) {
         applyRemoteSnapshot(remoteStore);
         syncFromStorage();
-        foundUser = authUsers.find((user) => normalizeEmail(user.email) === email);
+        foundUser = findRecoverableUser(email);
       }
     }
 
@@ -2354,6 +2366,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       return;
     }
 
+    alert(`Temporary password: ${temporaryPassword}\n\nUse this password to sign in now.`);
     renderLoginPage('', `Email confirmed. Temporary password: ${temporaryPassword}  Use this password to sign in now.`);
   });
 }
