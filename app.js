@@ -2269,9 +2269,9 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
         ${shouldPrefillRememberedLogin ? '<button id="clear-saved-login" type="button" class="secondary" style="margin-top:10px;">Clear saved password on this device</button>' : ''}
         <form id="forgot-password-form" class="stack" style="margin-top:10px;">
           <input name="email" type="email" placeholder="Forgot password? Enter your email" required autocomplete="email" />
-          <button type="submit" class="secondary">Get temporary password</button>
+          <button type="submit" class="secondary">Recover account</button>
         </form>
-        <div class="muted" style="margin-top:8px;">Enter your email to receive a temporary password in this browser.</div>
+        <div class="muted" style="margin-top:8px;">Enter your email to continue recovery in this browser with a temporary password.</div>
       </div>
     </div>
   `;
@@ -2357,7 +2357,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
           ...user,
           password: temporaryPassword,
           passwordUpdatedAt,
-          mustChangePassword: isAgentLikeUser(user) ? true : Boolean(user.mustChangePassword)
+          mustChangePassword: true
         }
       : user);
     const didSaveAuthUsers = saveAuthUsers();
@@ -2366,8 +2366,85 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       return;
     }
 
-    alert(`Temporary password: ${temporaryPassword}\n\nUse this password to sign in now.`);
-    renderLoginPage('', `Email confirmed. Temporary password: ${temporaryPassword}  Use this password to sign in now.`);
+    const refreshedUser = authUsers.find((user) => user.id === foundUser.id) || foundUser;
+    renderForgotPasswordTempPasswordPage(refreshedUser, temporaryPassword, email);
+  });
+}
+
+function renderForgotPasswordTempPasswordPage(user, temporaryPassword, emailAddress = '') {
+  const tempPassword = String(temporaryPassword || '').trim();
+  const normalizedEmail = normalizeEmail(emailAddress || user?.email || '');
+  if (!user?.id || !tempPassword) {
+    renderLoginPage('Unable to continue password recovery. Please try again.');
+    return;
+  }
+
+  root.innerHTML = `
+    <div class="app" style="max-width:560px; padding-top:48px;">
+      <div class="panel">
+        <h1>Temporary password issued</h1>
+        <p class="muted">Account confirmed for ${escapeHtml(normalizedEmail || 'this email')}.</p>
+        <div class="card" style="border-color:#16a34a; margin-bottom:12px;">
+          <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div><strong>Temporary password:</strong> <span id="forgot-password-issued-value" data-temp-password="${escapeHtml(tempPassword)}" style="font-family:monospace;">${escapeHtml(tempPassword)}</span></div>
+            <button type="button" id="forgot-password-temp-toggle-display" class="secondary">Hide</button>
+          </div>
+        </div>
+        <p class="muted" style="margin-bottom:10px;">Enter this temporary password below to continue to new password setup.</p>
+        <form id="forgot-password-temp-form" class="stack">
+          <div class="row" style="gap:8px; align-items:center;">
+            <input id="forgot-password-temp-input" name="enteredTempPassword" type="password" placeholder="Enter temporary password" required autocomplete="one-time-code" />
+            <button type="button" id="forgot-password-temp-toggle-input" class="secondary">Show</button>
+          </div>
+          <button type="submit">Continue</button>
+        </form>
+        <button id="forgot-password-temp-back" type="button" class="secondary" style="margin-top:10px;">Back to sign in</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('forgot-password-temp-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const enteredTempPassword = String(formData.get('enteredTempPassword') || '').trim();
+    if (enteredTempPassword !== tempPassword) {
+      alert('Temporary password did not match. Please try again.');
+      return;
+    }
+
+    const refreshedUser = authUsers.find((entry) => entry.id === user.id) || user;
+    renderFirstLoginPasswordSetupPage(refreshedUser, {
+      title: 'Create a new password',
+      description: 'Temporary password verified. Create a new password to finish account recovery.'
+    });
+  });
+
+  document.getElementById('forgot-password-temp-toggle-display')?.addEventListener('click', () => {
+    const valueElement = document.getElementById('forgot-password-issued-value');
+    const toggleButton = document.getElementById('forgot-password-temp-toggle-display');
+    if (!(valueElement instanceof HTMLElement) || !(toggleButton instanceof HTMLButtonElement)) return;
+    const sourcePassword = String(valueElement.getAttribute('data-temp-password') || '');
+    const isMasked = valueElement.textContent === '•'.repeat(sourcePassword.length);
+    if (isMasked) {
+      valueElement.textContent = sourcePassword;
+      toggleButton.textContent = 'Hide';
+      return;
+    }
+    valueElement.textContent = '•'.repeat(sourcePassword.length);
+    toggleButton.textContent = 'Show';
+  });
+
+  document.getElementById('forgot-password-temp-toggle-input')?.addEventListener('click', () => {
+    const inputElement = document.getElementById('forgot-password-temp-input');
+    const toggleButton = document.getElementById('forgot-password-temp-toggle-input');
+    if (!(inputElement instanceof HTMLInputElement) || !(toggleButton instanceof HTMLButtonElement)) return;
+    const shouldShow = inputElement.type === 'password';
+    inputElement.type = shouldShow ? 'text' : 'password';
+    toggleButton.textContent = shouldShow ? 'Hide' : 'Show';
+  });
+
+  document.getElementById('forgot-password-temp-back')?.addEventListener('click', () => {
+    renderLoginPage();
   });
 }
 
@@ -7583,7 +7660,7 @@ function render() {
     renderLoginPage('Your linked agent profile no longer exists. Contact an admin.');
     return;
   }
-  if (isAgentLikeUser(currentUser) && currentUser.mustChangePassword) {
+  if (currentUser.mustChangePassword) {
     renderFirstLoginPasswordSetupPage(currentUser);
     return;
   }
