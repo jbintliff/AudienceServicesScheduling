@@ -7715,31 +7715,7 @@ function render() {
           <div class="muted">You can review your assignments and request changes here.</div>
         </div>`}
 
-      ${!isAgentView ? `
-        <div class="panel" style="margin-top:12px; margin-bottom:16px;">
-          <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
-            <div>
-              <h2 style="margin:0 0 6px;">Dashboard message board</h2>
-              <div class="muted">Post dashboard updates and email them to selected teams.</div>
-            </div>
-            ${dashboardMessageBoard.updatedAt ? `<div class="muted">Last updated ${escapeHtml(new Date(dashboardMessageBoard.updatedAt).toLocaleString())}${dashboardMessageBoard.updatedBy ? ` by ${escapeHtml(dashboardMessageBoard.updatedBy)}` : ''}</div>` : ''}
-          </div>
-          <form id="dashboard-message-board-form" class="stack" style="margin-top:10px;">
-            <textarea name="messageText" rows="3" placeholder="Type the message to show on dashboard and email to teams." required>${escapeHtml(dashboardMessageBoard.text || '')}</textarea>
-            <label style="display:flex; flex-direction:column; gap:6px;">
-              <span>Send to teams</span>
-              <select name="selectedTeams" multiple size="${Math.min(teamOptions.length, 4)}" style="min-height:90px;">
-                ${teamOptions.map((team) => `<option value="${escapeHtml(team)}" ${dashboardMessageTeams.includes(team) ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
-              </select>
-            </label>
-            <div class="row" style="justify-content:flex-end; gap:8px;">
-              <button type="submit">Post and email teams</button>
-              <button type="button" id="dashboard-message-board-clear" class="secondary">Clear message</button>
-            </div>
-          </form>
-        </div>` : ''}
-
-      ${(isAgentView || canViewDashboardMessage) ? `
+      ${isAgentView ? `
         <div class="panel" style="margin-bottom:16px; border-color:#7AACAF;">
           <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
             <h2 style="margin:0;">Team message board</h2>
@@ -7855,6 +7831,45 @@ function render() {
                     `).join('')}
                   </div>
                 </div>
+
+                <div class="panel" style="margin-bottom:16px;">
+                  <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+                    <div>
+                      <h2 style="margin:0 0 6px;">Dashboard message board</h2>
+                      <div class="muted">Post dashboard updates and email them to selected teams.</div>
+                    </div>
+                    ${dashboardMessageBoard.updatedAt ? `<div class="muted">Last updated ${escapeHtml(new Date(dashboardMessageBoard.updatedAt).toLocaleString())}${dashboardMessageBoard.updatedBy ? ` by ${escapeHtml(dashboardMessageBoard.updatedBy)}` : ''}</div>` : ''}
+                  </div>
+                  <form id="dashboard-message-board-form" class="stack" style="margin-top:10px;">
+                    <textarea name="messageText" rows="3" placeholder="Type the message to show on dashboard and email to teams." required>${escapeHtml(dashboardMessageBoard.text || '')}</textarea>
+                    <label style="display:flex; flex-direction:column; gap:6px;">
+                      <span>Send to teams</span>
+                      <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                        ${teamOptions.map((team) => `
+                          <label class="chip" style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                            <input type="checkbox" name="selectedTeams" value="${escapeHtml(team)}" ${dashboardMessageTeams.includes(team) ? 'checked' : ''} />
+                            <span>${escapeHtml(team)}</span>
+                          </label>
+                        `).join('')}
+                      </div>
+                    </label>
+                    <div class="row" style="justify-content:flex-end; gap:8px;">
+                      <button type="submit">Post and email teams</button>
+                      <button type="button" id="dashboard-message-board-clear" class="secondary">Clear message</button>
+                    </div>
+                  </form>
+                </div>
+
+                ${canViewDashboardMessage ? `
+                  <div class="panel" style="margin-bottom:16px; border-color:#7AACAF;">
+                    <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+                      <h2 style="margin:0;">Team message board</h2>
+                      <span class="muted">${dashboardMessageTeams.length > 0 ? `Audience: ${escapeHtml(dashboardMessageTeams.join(', '))}` : 'Audience: all teams'}</span>
+                    </div>
+                    <div style="white-space:pre-wrap;">${escapeHtml(dashboardMessageBoard.text || '')}</div>
+                    ${dashboardMessageBoard.updatedAt ? `<div class="muted" style="margin-top:8px;">Posted ${escapeHtml(new Date(dashboardMessageBoard.updatedAt).toLocaleString())}${dashboardMessageBoard.updatedBy ? ` by ${escapeHtml(dashboardMessageBoard.updatedBy)}` : ''}</div>` : ''}
+                  </div>
+                ` : ''}
 
                 <div class="panel">
                   <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
