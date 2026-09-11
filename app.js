@@ -7500,8 +7500,14 @@ function renderAvailabilityRequestsPage(currentUser) {
                 <div style="display:flex; flex-direction:column; gap:4px;">
                   ${(cell.requests || []).slice(0, 3).map((request) => {
                     const typeMeta = getAvailabilityRequestTypeMeta(request);
+                    const statusValue = normalizeAvailabilityRequestStatus(request?.status);
+                    const statusStyle = statusValue === 'approved'
+                      ? 'background:#7AACAF; color:#17383B; border:1px solid rgba(23,56,59,0.25);'
+                      : statusValue === 'rejected'
+                        ? 'background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);'
+                        : 'background:#FDD592; color:#4B3A1F; border:1px solid rgba(75,58,31,0.25);';
                     return `
-                    <div data-view-availability-request="${request.id}" title="${escapeHtml((getAgent(request.agentId)?.name || 'Unknown'))} - ${escapeHtml(typeMeta.label)}" style="padding:3px 6px; border-radius:999px; font-size:12px; cursor:pointer; ${typeMeta.style}">
+                    <div data-view-availability-request="${request.id}" title="${escapeHtml((getAgent(request.agentId)?.name || 'Unknown'))} - ${escapeHtml(typeMeta.label)}" style="padding:3px 6px; border-radius:999px; font-size:12px; cursor:pointer; ${statusStyle}">
                       ${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')} • ${escapeHtml(typeMeta.label)}
                     </div>
                   `;
