@@ -6283,22 +6283,6 @@ function renderProfilePage(currentUser) {
       render();
     });
 
-    document.getElementById('admin-blackout-dates-form')?.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const formData = new FormData(event.currentTarget);
-      state.blackoutDates = normalizeBlackoutDates(formData.get('blackoutDates'));
-      saveState();
-      if (pageMode === 'profile') {
-        adminProfileNotice = {
-          type: 'success',
-          text: 'Blackout dates saved. Agents cannot submit time-off requests for those dates.'
-        };
-      } else {
-        alert('Blackout dates saved. Agents cannot submit time-off requests for those dates.');
-      }
-      render();
-    });
-
     bindProfilePhotoHandlers();
 
     document.getElementById('logout-btn')?.addEventListener('click', () => {
@@ -9186,6 +9170,22 @@ function bindEvents() {
   const activeUser = getCurrentUser();
   const canManageCalendar = canManageSchedule(activeUser);
   const canMarkAbsence = canMarkShiftAbsences(activeUser);
+
+  document.getElementById('admin-blackout-dates-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    state.blackoutDates = normalizeBlackoutDates(formData.get('blackoutDates'));
+    saveState();
+    if (pageMode === 'profile') {
+      adminProfileNotice = {
+        type: 'success',
+        text: 'Blackout dates saved. Agents cannot submit time-off requests for those dates.'
+      };
+    } else {
+      alert('Blackout dates saved. Agents cannot submit time-off requests for those dates.');
+    }
+    render();
+  });
 
   document.querySelectorAll('[data-open-availability-marker]').forEach((button) => {
     button.addEventListener('click', () => {

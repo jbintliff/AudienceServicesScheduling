@@ -6,8 +6,10 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dataFilePath = path.join(__dirname, 'backend', 'data.json');
-const policyFilesDirPath = path.join(__dirname, 'backend', 'policy-files');
+// DATA_DIR points at a persistent disk mount in production so data survives restarts/redeploys.
+const dataDir = process.env.DATA_DIR || path.join(__dirname, 'backend');
+const dataFilePath = path.join(dataDir, 'data.json');
+const policyFilesDirPath = path.join(dataDir, 'policy-files');
 const port = Number(process.env.PORT || 8787);
 
 const allowedKeys = new Set([
@@ -26,7 +28,6 @@ const allowedKeys = new Set([
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function ensureDataFile() {
-  const dataDir = path.dirname(dataFilePath);
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
