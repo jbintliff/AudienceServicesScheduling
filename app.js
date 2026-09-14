@@ -4834,6 +4834,246 @@ function openAvailabilityRequestListModal(requests, dateLabel = '') {
   document.body.appendChild(overlay);
 }
 
+function openAgentPendingRequestEditModal(request, onSave) {
+  if (!request) return;
+  const statusValue = normalizeAvailabilityRequestStatus(request.status);
+  if (statusValue !== 'pending') {
+    alert('Only pending requests can be edited.');
+    return;
+  }
+
+  const existingOverlay = document.getElementById('agent-pending-request-edit-modal-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  const agentName = getAgent(request.agentId)?.name || request.requesterName || 'Agent';
+  const unavailabilityType = String(request.unavailabilityType || 'Availability').trim();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'agent-pending-request-edit-modal-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:min(600px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:20px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
+      <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h2 style="margin:0;">Edit pending request</h2>
+        <span class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(0,0,0,0.2);">Pending</span>
+      </div>
+      <p class="muted" style="margin:0 0 16px;">Update your request details before admin review.</p>
+
+      <form id="agent-pending-request-edit-form" class="stack" style="display:flex; flex-direction:column; gap:12px;">
+        <div class="row" style="flex-wrap:wrap; gap:12px;">
+          <label style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:200px;">
+            <span style="font-size:0.9rem; font-weight:600;">Agent</span>
+            <input type="text" value="${escapeHtml(agentName)}" disabled style="padding:8px; border-radius:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#9ca3af;" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:180px;">
+            <span style="font-size:0.9rem; font-weight:600;">Request Type</span>
+            <select name="unavailabilityType" style="padding:8px; border-radius:6px;">
+              <option value="Availability" ${unavailabilityType === 'Availability' ? 'selected' : ''}>Availability</option>
+              <option value="PTO" ${unavailabilityType === 'PTO' ? 'selected' : ''}>PTO / Time Off</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap; gap:12px;">
+          <label style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:180px;">
+            <span style="font-size:0.9rem; font-weight:600;">Date</span>
+            <input name="unavailableDate" type="date" value="${escapeHtml(request.unavailableDate || '')}" required style="padding:8px; border-radius:6px;" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:140px;">
+            <span style="font-size:0.9rem; font-weight:600;">Start time</span>
+            <input name="unavailableStart" type="time" value="${escapeHtml(request.unavailableStart || '00:00')}" required style="padding:8px; border-radius:6px;" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:140px;">
+            <span style="font-size:0.9rem; font-weight:600;">End time</span>
+            <input name="unavailableEnd" type="time" value="${escapeHtml(request.unavailableEnd || '23:59')}" required style="padding:8px; border-radius:6px;" />
+          </label>
+        </div>
+
+        <label style="display:flex; flex-direction:column; gap:6px;">
+          <span style="font-size:0.9rem; font-weight:600;">Note / Reason</span>
+          <textarea name="note" rows="3" required style="padding:8px; border-radius:6px;">${escapeHtml(request.note || '')}</textarea>
+        </label>
+
+        <div class="row" style="justify-content:space-between; align-items:center; margin-top:12px; gap:8px; flex-wrap:wrap;">
+          <button type="button" id="agent-pending-request-delete" class="danger" style="background:#AB5C57; color:#fff; border:none; padding:8px 14px; border-radius:6px; cursor:pointer;">Cancel / Delete request</button>
+          <div class="row" style="gap:8px;">
+            <button type="button" id="agent-pending-request-cancel" class="secondary">Close</button>
+            <button type="submit" style="padding:8px 16px;">Save changes</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  `;
+
+  const closeModal = () => {
+    document.removeEventListener('keydown', onEscape);
+    overlay.remove();
+  };
+
+  const onEscape = (event) => {
+    if (event.key === 'Escape') closeModal();
+  };
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) closeModal();
+  });
+
+  overlay.querySelector('#agent-pending-request-cancel')?.addEventListener('click', closeModal);
+
+  overlay.querySelector('#agent-pending-request-delete')?.addEventListener('click', () => {
+    const shouldDelete = confirm(`Are you sure you want to cancel and delete this pending ${request.unavailabilityType || 'availability'} request for ${request.unavailableDate}?`);
+    if (!shouldDelete) return;
+
+    deleteAvailabilityRequestsByIds([request.id], { confirmMessage: '' });
+    closeModal();
+    if (typeof onSave === 'function') onSave();
+  });
+
+  overlay.querySelector('#agent-pending-request-edit-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const nextDate = String(formData.get('unavailableDate') || '').trim();
+    if (!getDayFromDate(nextDate)) {
+      alert('Please enter a valid date.');
+      return;
+    }
+
+    if (isBlackoutDate(nextDate)) {
+      alert(`Cannot schedule for ${nextDate} due to a blackout date. Please check in with your manager directly.`);
+      return;
+    }
+
+    const nextStart = String(formData.get('unavailableStart') || '').trim();
+    const nextEnd = String(formData.get('unavailableEnd') || '').trim();
+    if (!nextStart || !nextEnd || toMinutes(nextEnd) <= toMinutes(nextStart)) {
+      alert('End time must be later than start time.');
+      return;
+    }
+
+    const nextNote = String(formData.get('note') || '').trim();
+    if (!nextNote) {
+      alert('Please enter a note for this request.');
+      return;
+    }
+
+    const nextType = String(formData.get('unavailabilityType') || 'Availability').trim();
+
+    const allRequests = getAllAvailabilityRequests();
+    const targetIndex = allRequests.findIndex((r) => String(r.id) === String(request.id));
+    if (targetIndex >= 0) {
+      allRequests[targetIndex] = {
+        ...allRequests[targetIndex],
+        unavailabilityType: nextType,
+        unavailableDate: nextDate,
+        unavailableStart: nextStart,
+        unavailableEnd: nextEnd,
+        note: nextNote,
+        updatedAt: new Date().toISOString()
+      };
+      saveAvailabilityRequests(allRequests);
+      saveState();
+      alert('Pending request updated successfully.');
+    }
+
+    closeModal();
+    if (typeof onSave === 'function') onSave();
+  });
+
+  document.addEventListener('keydown', onEscape);
+  document.body.appendChild(overlay);
+}
+
+function openPublicAvailabilityDayModal(dateValue, requests, viewingAgentId) {
+  const requestList = Array.isArray(requests) ? requests.filter((r) => normalizeAvailabilityRequestStatus(r?.status) !== 'deleted') : [];
+  if (requestList.length === 0) {
+    alert('No requests for this date.');
+    return;
+  }
+
+  const existingOverlay = document.getElementById('public-availability-day-modal-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'public-availability-day-modal-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:min(680px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
+      <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
+        <div>
+          <h2 style="margin:0;">Submitted requests for ${escapeHtml(dateValue)}</h2>
+          <div class="muted">${requestList.length} request${requestList.length === 1 ? '' : 's'} on this date</div>
+        </div>
+        <button type="button" id="public-availability-day-modal-close" class="secondary">Close</button>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        ${requestList.map((request) => {
+          const typeMeta = getAvailabilityRequestTypeMeta(request);
+          const statusValue = normalizeAvailabilityRequestStatus(request?.status);
+          const statusStyles = getAvailabilityStatusStyles(statusValue);
+          const isOwnRequest = viewingAgentId > 0 && Number(request.agentId) === viewingAgentId;
+          const isPending = statusValue === 'pending';
+          const agentLabel = getPublicAvailabilityViewAgentLabel(request, viewingAgentId);
+
+          return `
+            <div class="card" style="padding:10px 12px; border-left:4px solid ${statusValue === 'approved' ? '#7AACAF' : statusValue === 'rejected' ? '#AB5C57' : '#FDD592'};">
+              <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+                <div>
+                  <div class="row" style="gap:6px; flex-wrap:wrap; margin-bottom:4px;">
+                    <span class="chip" style="${typeMeta.style}">${escapeHtml(typeMeta.label)}</span>
+                    <span class="chip" style="${statusStyles} border:1px solid rgba(255,255,255,0.2);">${escapeHtml(statusValue)}</span>
+                  </div>
+                  <strong>${escapeHtml(agentLabel)}</strong>
+                  <div class="muted">${escapeHtml(formatTimeRange(request?.unavailableStart || '--:--', request?.unavailableEnd || '--:--'))}</div>
+                  ${isOwnRequest && request?.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
+                </div>
+                ${isOwnRequest && isPending ? `
+                  <button type="button" data-edit-pending-from-modal="${request.id}" style="padding:4px 10px; font-size:12px;">✏️ Edit request</button>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+
+  const closeModal = () => {
+    document.removeEventListener('keydown', onEscape);
+    overlay.remove();
+  };
+
+  const onEscape = (event) => {
+    if (event.key === 'Escape') closeModal();
+  };
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) closeModal();
+  });
+
+  overlay.querySelector('#public-availability-day-modal-close')?.addEventListener('click', closeModal);
+
+  overlay.querySelectorAll('[data-edit-pending-from-modal]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const requestId = Number(button.getAttribute('data-edit-pending-from-modal'));
+      const targetRequest = getAllAvailabilityRequests().find((r) => Number(r.id) === requestId);
+      closeModal();
+      if (targetRequest) {
+        openAgentPendingRequestEditModal(targetRequest, () => {
+          renderPublicAvailabilityViewPage();
+        });
+      }
+    });
+  });
+
+  document.addEventListener('keydown', onEscape);
+  document.body.appendChild(overlay);
+}
+
 function getDayFromDate(dateValue) {
   const parsedDate = new Date(`${dateValue}T00:00:00`);
   if (Number.isNaN(parsedDate.getTime())) {
@@ -8440,8 +8680,15 @@ function getPublicAvailabilityViewAgentLabel(request, viewingAgentId) {
 function renderPublicAvailabilityViewPage() {
   const query = new URLSearchParams(window.location.search);
   const requestedAgentId = Number(query.get('agentId'));
-  const viewingAgentId = Number.isFinite(requestedAgentId) && requestedAgentId > 0 && getAgent(requestedAgentId) ? requestedAgentId : 0;
+  const currentUser = getCurrentUser();
+  const currentAgentUser = currentUser?.agentId ? Number(currentUser.agentId) : 0;
+  const viewingAgentId = Number.isFinite(requestedAgentId) && requestedAgentId > 0 && getAgent(requestedAgentId)
+    ? requestedAgentId
+    : (currentAgentUser && getAgent(currentAgentUser) ? currentAgentUser : 0);
   const viewingAgentName = viewingAgentId ? (getAgent(viewingAgentId)?.name || '') : '';
+
+  const visibleAgents = getFilteredAgents();
+  const sortedAgents = [...visibleAgents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
 
   const allAvailabilityRequests = getAllAvailabilityRequests()
     .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
@@ -8452,25 +8699,22 @@ function renderPublicAvailabilityViewPage() {
   const monthBlackoutDates = blackoutDates
     .filter((dateValue) => String(dateValue || '').startsWith(`${selectedMonth}-`))
     .sort((left, right) => left.localeCompare(right));
-  const filters = {
-    date: publicAvailabilityViewUi.date || '',
-    from: publicAvailabilityViewUi.from || '',
-    to: publicAvailabilityViewUi.to || '',
-    agentId: viewingAgentId ? (publicAvailabilityViewUi.agentId === String(viewingAgentId) ? String(viewingAgentId) : 'All') : 'All',
-    status: publicAvailabilityViewUi.status || 'All'
-  };
-  const filteredRequests = filterAvailabilityRequestsForAdminList(allAvailabilityRequests, filters);
-  const groupedRequests = groupAvailabilityRequestsForAdminList(filteredRequests);
-  const pendingCount = groupedRequests.filter((entry) => normalizeAvailabilityRequestStatus(entry.status) === 'pending').length;
 
   root.innerHTML = `
     <div class="app">
-      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
         <div>
           <h1>Submitted availability and PTO requests</h1>
-          <p class="muted">${viewingAgentName ? `Signed link for ${escapeHtml(viewingAgentName)}. Your own requests are shown by name; other agents are shown anonymously.` : 'View blackout dates and submitted requests without signing in. Other agents are shown anonymously.'}</p>
+          <p class="muted">${viewingAgentName ? `Signed link for ${escapeHtml(viewingAgentName)}. Your own requests are shown by name and can be edited while pending; other agents are shown anonymously.` : 'View blackout dates and submitted requests without signing in. Select your name below to view/edit your pending requests.'}</p>
         </div>
-        <div class="row" style="gap:8px;">
+        <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+          <label class="row" style="gap:6px; font-size:0.9rem; align-items:center;">
+            <span class="muted" style="white-space:nowrap;">Viewing as:</span>
+            <select id="public-availability-view-as-agent" style="padding:4px 8px; border-radius:6px; max-width:180px;">
+              <option value="0" ${!viewingAgentId ? 'selected' : ''}>Anonymous / All</option>
+              ${sortedAgents.map((agent) => `<option value="${agent.id}" ${viewingAgentId === Number(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+            </select>
+          </label>
           <a href="${escapeHtml(getPublicAvailabilityRequestUrl(viewingAgentId))}" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Submit a request</button></a>
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin login</button></a>
         </div>
@@ -8490,7 +8734,7 @@ function renderPublicAvailabilityViewPage() {
           <input id="public-availability-view-month" type="month" value="${escapeHtml(selectedMonth)}" />
         </div>
         <div class="row" style="gap:8px; margin-bottom:10px; flex-wrap:wrap;">
-          <span class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(0,0,0,0.2);">Pending</span>
+          <span class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(0,0,0,0.2);">Pending (Click yours to edit)</span>
           <span class="chip" style="background:#7AACAF; color:#17383B; border:1px solid rgba(255,255,255,0.2);">Approved</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied / PTO</span>
           <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
@@ -8505,27 +8749,42 @@ function renderPublicAvailabilityViewPage() {
               return '<div class="card" style="min-height:96px; opacity:0.25;"></div>';
             }
             const blackoutDate = isBlackoutDate(cell.date);
+            const cellRequests = cell.requests || [];
             return `
               <div class="card" style="min-height:96px; padding:8px; ${blackoutDate ? 'border-color:#AB5C57; box-shadow:inset 0 0 0 1px rgba(171,92,87,0.55);' : ''}">
-                <div style="font-weight:600; margin-bottom:6px;">${cell.day}</div>
+                <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <span style="font-weight:600;">${cell.day}</span>
+                  ${cellRequests.length > 0 ? `<button type="button" class="secondary" data-view-cell-requests="${cell.date}" style="padding:1px 6px; font-size:11px; margin:0; cursor:pointer;" title="View requests on ${cell.date}">View date</button>` : ''}
+                </div>
                 ${blackoutDate ? '<div class="chip" style="margin-bottom:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>' : ''}
                 <div style="display:flex; flex-direction:column; gap:4px;">
-                  ${(cell.requests || []).slice(0, 3).map((request) => {
+                  ${cellRequests.slice(0, 3).map((request) => {
                     const typeMeta = getAvailabilityRequestTypeMeta(request);
                     const statusValue = normalizeAvailabilityRequestStatus(request?.status);
-                    const displayStyle = statusValue === 'pending'
+                    const isOwnRequest = viewingAgentId > 0 && Number(request?.agentId) === viewingAgentId;
+                    const isPending = statusValue === 'pending';
+                    const canEdit = isOwnRequest && isPending;
+                    const displayStyle = isPending
                       ? 'background:#FDD592; color:#4B3A1F; border:1px solid rgba(75,58,31,0.25);'
                       : statusValue === 'rejected'
                         ? 'background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);'
                         : typeMeta.style;
                     const agentLabel = getPublicAvailabilityViewAgentLabel(request, viewingAgentId);
+
+                    if (canEdit) {
+                      return `
+                        <button type="button" data-edit-pending-request="${request.id}" title="Click to edit your pending request" style="padding:3px 6px; border-radius:999px; font-size:11px; ${displayStyle} cursor:pointer; text-align:left; border:1px solid rgba(0,0,0,0.3); font-weight:600; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                          ✏️ ${escapeHtml(agentLabel)} • ${escapeHtml(typeMeta.label)}
+                        </button>
+                      `;
+                    }
                     return `
-                    <div title="${escapeHtml(agentLabel)} - ${escapeHtml(typeMeta.label)}" style="padding:3px 6px; border-radius:999px; font-size:12px; ${displayStyle}">
-                      ${escapeHtml(agentLabel)} • ${escapeHtml(typeMeta.label)}
-                    </div>
-                  `;
+                      <div title="${escapeHtml(agentLabel)} - ${escapeHtml(typeMeta.label)}" style="padding:3px 6px; border-radius:999px; font-size:12px; ${displayStyle}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                        ${escapeHtml(agentLabel)} • ${escapeHtml(typeMeta.label)}
+                      </div>
+                    `;
                   }).join('')}
-                  ${(cell.requests || []).length > 3 ? `<div class="muted" style="font-size:12px;">+${(cell.requests || []).length - 3} more</div>` : ''}
+                  ${cellRequests.length > 3 ? `<button type="button" class="secondary" data-view-cell-requests="${cell.date}" style="padding:1px 6px; font-size:11px; text-align:left; background:transparent; border:none; color:#8599b8; cursor:pointer;">+${cellRequests.length - 3} more...</button>` : ''}
                 </div>
               </div>
             `;
@@ -8543,59 +8802,6 @@ function renderPublicAvailabilityViewPage() {
           </div>
         </div>
       </div>
-
-      <div class="panel">
-        <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-          <h2 style="margin:0;">All requests</h2>
-        </div>
-        <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
-          <input id="public-availability-view-date-filter" type="date" value="${escapeHtml(filters.date)}" />
-          <input id="public-availability-view-from-filter" type="date" value="${escapeHtml(filters.from)}" />
-          <input id="public-availability-view-to-filter" type="date" value="${escapeHtml(filters.to)}" />
-          <select id="public-availability-view-agent-filter" style="max-width:220px;" ${viewingAgentId ? '' : 'disabled'}>
-            <option value="All" ${filters.agentId === 'All' ? 'selected' : ''}>All agents</option>
-            ${viewingAgentId ? `<option value="${viewingAgentId}" ${filters.agentId === String(viewingAgentId) ? 'selected' : ''}>My requests only</option>` : ''}
-          </select>
-          <select id="public-availability-view-status-filter" style="max-width:220px;">
-            <option value="All" ${filters.status === 'All' ? 'selected' : ''}>All statuses</option>
-            <option value="pending" ${filters.status === 'pending' ? 'selected' : ''}>Pending</option>
-            <option value="approved" ${filters.status === 'approved' ? 'selected' : ''}>Approved</option>
-            <option value="rejected" ${filters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
-          </select>
-          <button id="public-availability-view-filters-apply" type="button">Apply filters</button>
-          <button id="public-availability-view-filters-reset" class="secondary" type="button">Reset filters</button>
-        </div>
-        <div class="muted">Visible after filters: ${groupedRequests.length} (${pendingCount} pending)</div>
-        <div class="request-list" style="margin-top:12px;">
-          ${groupedRequests.map((entry) => {
-            const request = entry.representativeRequest;
-            const requestStatus = normalizeAvailabilityRequestStatus(entry.status);
-            const typeMeta = getAvailabilityRequestTypeMeta(request);
-            const isOwnRequest = viewingAgentId > 0 && Number(request.agentId) === viewingAgentId;
-            const agentLabel = getPublicAvailabilityViewAgentLabel(request, viewingAgentId);
-            const rangeText = entry.kind === 'recurring-group'
-              ? `${entry.rangeStart || request.unavailableDate || 'Not set'} to ${entry.rangeEnd || request.unavailableDate || 'Not set'} • ${entry.occurrenceCount} date${entry.occurrenceCount === 1 ? '' : 's'}`
-              : `${request.unavailableDate || 'Not set'} • ${request.unavailableStart || '--:--'} - ${request.unavailableEnd || '--:--'}`;
-            return `
-            <div class="card" style="border-left:4px solid ${requestStatus === 'approved' ? '#7AACAF' : requestStatus === 'rejected' ? '#AB5C57' : '#FDD592'}; padding:10px 12px;">
-              <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px;">
-                <div>
-                  <div style="margin-bottom:4px;"><span class="chip" style="${typeMeta.style}">${escapeHtml(typeMeta.label)}</span></div>
-                  <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:2px;">
-                    <strong>${escapeHtml(agentLabel)}</strong>
-                    ${entry.kind === 'recurring-group' ? `<span class="muted">Recurring series</span>` : ''}
-                  </div>
-                  <div class="muted">${escapeHtml(rangeText)}</div>
-                  <div class="muted">Submitted ${escapeHtml(entry.requestedAt ? new Date(entry.requestedAt).toLocaleString() : 'Unknown')}</div>
-                  ${isOwnRequest && request.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
-                </div>
-                <span class="status-badge ${requestStatus}">${requestStatus}</span>
-              </div>
-            </div>
-          `;
-          }).join('') || '<div class="muted">No requests match the current filters.</div>'}
-        </div>
-      </div>
     </div>
   `;
 
@@ -8603,20 +8809,44 @@ function renderPublicAvailabilityViewPage() {
     publicAvailabilityViewUi.month = event.currentTarget.value;
     renderPublicAvailabilityViewPage();
   });
-  document.getElementById('public-availability-view-filters-apply')?.addEventListener('click', () => {
-    publicAvailabilityViewUi = {
-      ...publicAvailabilityViewUi,
-      date: document.getElementById('public-availability-view-date-filter')?.value || '',
-      from: document.getElementById('public-availability-view-from-filter')?.value || '',
-      to: document.getElementById('public-availability-view-to-filter')?.value || '',
-      agentId: document.getElementById('public-availability-view-agent-filter')?.value || 'All',
-      status: document.getElementById('public-availability-view-status-filter')?.value || 'All'
-    };
+
+  document.getElementById('public-availability-view-as-agent')?.addEventListener('change', (event) => {
+    const selectedAgentId = Number(event.currentTarget.value || 0);
+    const url = new URL(window.location.href);
+    if (selectedAgentId > 0) {
+      url.searchParams.set('agentId', String(selectedAgentId));
+    } else {
+      url.searchParams.delete('agentId');
+    }
+    window.history.replaceState({}, '', url.toString());
     renderPublicAvailabilityViewPage();
   });
-  document.getElementById('public-availability-view-filters-reset')?.addEventListener('click', () => {
-    publicAvailabilityViewUi = { month: publicAvailabilityViewUi.month, date: '', from: '', to: '', agentId: 'All', status: 'All' };
-    renderPublicAvailabilityViewPage();
+
+  document.querySelectorAll('[data-edit-pending-request]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const requestId = Number(button.getAttribute('data-edit-pending-request'));
+      const targetRequest = getAllAvailabilityRequests().find((r) => Number(r.id) === requestId);
+      if (targetRequest) {
+        openAgentPendingRequestEditModal(targetRequest, () => {
+          renderPublicAvailabilityViewPage();
+        });
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-view-cell-requests]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const dateValue = button.getAttribute('data-view-cell-requests');
+      if (!dateValue) return;
+      const cellRequests = getAllAvailabilityRequests()
+        .filter((r) => normalizeAvailabilityRequestStatus(r?.status) !== 'deleted')
+        .filter((r) => String(r?.unavailableDate || '').slice(0, 10) === dateValue);
+      if (cellRequests.length > 0) {
+        openPublicAvailabilityDayModal(dateValue, cellRequests, viewingAgentId);
+      }
+    });
   });
 }
 
