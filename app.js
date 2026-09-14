@@ -1,6 +1,6 @@
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['In-person', 'WFH', 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
-const teamOptions = ['Audience Services Representative', 'Audience Services Associate', 'Audience Services Management'];
+const teamOptions = ['Audience Services Representative', 'Audience Services Associate', 'Audience Services Management', 'Box Office'];
 const departmentOptions = ['Audience Services', 'Box Office'];
 const agentSkillOptions = [
   { value: 'single-tickets', label: 'Single Tickets' },
@@ -2744,6 +2744,27 @@ function getManagedTeamsForUser(user) {
   return normalizeManagedTeams(user?.managedTeams || []);
 }
 
+function getUserDepartment(user) {
+  if (!user) return '';
+  if (user.agentId) {
+    return normalizeDepartment(getAgent(Number(user.agentId))?.department);
+  }
+  return normalizeDepartment(user.department);
+}
+
+function getCurrentUserDepartmentScope() {
+  return getUserDepartment(getCurrentUser());
+}
+
+function isAgentInDepartmentScope(agentOrId, departmentScope) {
+  if (!departmentScope) return true;
+  const agent = (agentOrId && typeof agentOrId === 'object') ? agentOrId : getAgent(agentOrId);
+  if (!agent) return true;
+  const agentDepartment = normalizeDepartment(agent.department);
+  if (!agentDepartment) return true;
+  return agentDepartment === departmentScope;
+}
+
 function getManagersForTeam(teamName) {
   const normalizedTeam = normalizeManagedTeamValue(teamName);
   if (!normalizedTeam) return [];
@@ -3470,9 +3491,11 @@ function getAgentCatalogForUi() {
   const fromState = Array.isArray(state?.agents) ? state.agents : [];
   const fromDefault = Array.isArray(defaultState?.agents) ? defaultState.agents : [];
   const baseAgents = fromState.length > 0 ? fromState : fromDefault;
+  const departmentScope = getCurrentUserDepartmentScope();
   return (Array.isArray(baseAgents) ? baseAgents : [])
     .map((agent) => ({ ...agent }))
-    .filter((agent) => Number.isFinite(Number(agent?.id)) || String(agent?.name || '').trim());
+    .filter((agent) => Number.isFinite(Number(agent?.id)) || String(agent?.name || '').trim())
+    .filter((agent) => isAgentInDepartmentScope(agent, departmentScope));
 }
 
 const defaultRoleColorMap = {
@@ -5218,9 +5241,11 @@ function getAvailabilityRecurrenceLabel(request) {
 function getWeeklySpend(referenceDateValue = '', options = {}) {
   const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
   const publishedOnly = Boolean(options.publishedOnly);
+  const departmentScope = getCurrentUserDepartmentScope();
   return state.shifts
     .filter((shift) => (!publishedOnly || shift.status === shiftStatuses.published))
     .filter((shift) => shiftIsInWeek(shift, weekDates))
+    .filter((shift) => isAgentInDepartmentScope(shift.agentId, departmentScope))
     .reduce((sum, shift) => {
     const agent = getAgent(shift.agentId);
     return sum + (agent ? agent.payRate * shift.durationHours : 0);
@@ -5228,8 +5253,9 @@ function getWeeklySpend(referenceDateValue = '', options = {}) {
 }
 
 function getSpendByDay() {
+  const departmentScope = getCurrentUserDepartmentScope();
   return days.reduce((acc, day) => {
-    const spend = state.shifts.filter((shift) => shift.day === day).reduce((sum, shift) => {
+    const spend = state.shifts.filter((shift) => shift.day === day && isAgentInDepartmentScope(shift.agentId, departmentScope)).reduce((sum, shift) => {
       const agent = getAgent(shift.agentId);
       return sum + (agent ? agent.payRate * shift.durationHours : 0);
     }, 0);
@@ -5287,19 +5313,23 @@ function getMinimumHoursCredit(agentId, referenceDateValue = '') {
 }
 
 function getAvailabilityStats() {
+  const departmentScope = getCurrentUserDepartmentScope();
+  const scopedAgents = state.agents.filter((agent) => isAgentInDepartmentScope(agent, departmentScope));
   return {
-    available: state.agents.filter((agent) => agent.availability === 'Available').length,
-    unavailable: state.agents.filter((agent) => agent.availability === 'Unavailable').length,
-    timeOff: state.agents.filter((agent) => agent.timeOff).length,
-    pendingRequests: state.swapRequests.filter((request) => request.status === 'pending').length
+    available: scopedAgents.filter((agent) => agent.availability === 'Available').length,
+    unavailable: scopedAgents.filter((agent) => agent.availability === 'Unavailable').length,
+    timeOff: scopedAgents.filter((agent) => agent.timeOff).length,
+    pendingRequests: state.swapRequests.filter((request) => request.status === 'pending' && (isAgentInDepartmentScope(request.fromAgentId, departmentScope) || isAgentInDepartmentScope(request.toAgentId, departmentScope))).length
   };
 }
 
 function getFilteredAgents() {
   const search = state.ui.agentSearch.trim().toLowerCase();
+  const departmentScope = getCurrentUserDepartmentScope();
   return state.agents.filter((agent) => {
     const matchesName = !search || String(agent.name || '').toLowerCase().includes(search);
-    return matchesName;
+    const matchesDepartment = isAgentInDepartmentScope(agent, departmentScope);
+    return matchesName && matchesDepartment;
   });
 }
 
@@ -5313,6 +5343,9 @@ function getTeamBadgeStyle(team) {
   }
   if (normalizedTeam === 'Audience Services Management') {
     return 'background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);';
+  }
+  if (normalizedTeam === 'Box Office') {
+    return 'background:#608186; color:#EAF3F3; border:1px solid rgba(23,56,59,0.25);';
   }
   return 'background:#C49583; color:#2E2422; border:1px solid rgba(46,36,34,0.2);';
 }
@@ -5420,6 +5453,7 @@ function getFilteredCalendarShifts() {
   const search = (filters.search || '').trim().toLowerCase();
   const agentName = (filters.agentName || '').trim().toLowerCase();
   const selectedDate = (filters.date || '').trim();
+  const departmentScope = getCurrentUserDepartmentScope();
   return state.shifts.filter((shift) => {
     const matchesDay = filters.day === 'All' || shift.day === filters.day;
     const matchesAgent = filters.agentId === 'All' || String(shift.agentId) === String(filters.agentId);
@@ -5427,7 +5461,8 @@ function getFilteredCalendarShifts() {
     const matchesAgentName = !agentName || (getAgent(shift.agentId)?.name || '').toLowerCase().includes(agentName);
     const matchesDate = !selectedDate || (shift.date || '') === selectedDate;
     const matchesLocation = filters.location === 'All' || shift.location === filters.location;
-    if (!matchesDay || !matchesAgent || !matchesRole || !matchesAgentName || !matchesDate || !matchesLocation) return false;
+    const matchesDepartment = isAgentInDepartmentScope(shift.agentId, departmentScope);
+    if (!matchesDay || !matchesAgent || !matchesRole || !matchesAgentName || !matchesDate || !matchesLocation || !matchesDepartment) return false;
     if (!search) return true;
     const agent = getAgent(shift.agentId);
     return [shift.role, shift.day, shift.location, shift.start, shift.end, agent?.name].join(' ').toLowerCase().includes(search);
@@ -5878,11 +5913,11 @@ function renderCalendarPage(currentUser) {
               </select>
               <select name="toAgentId" required>
                 <option value="">Swap with agent</option>
-                ${state.agents.filter((agent) => agent.id !== viewAgent?.id && !isSwapRestrictedAgent(agent)).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+                ${state.agents.filter((agent) => agent.id !== viewAgent?.id && !isSwapRestrictedAgent(agent) && isAgentInDepartmentScope(agent, normalizeDepartment(viewAgent?.department))).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
               </select>
               <select name="toShiftId" required>
                 <option value="">Select their shift</option>
-                ${state.shifts.filter((shift) => Number(shift.agentId) !== Number(viewAgent?.id) && !isSwapRestrictedAgent(shift.agentId) && isPublishedShift(shift) && shiftIsInWeek(shift, getCalendarWeekDates(weekReference))).map((shift) => `<option value="${shift.id}">${escapeHtml(`${getAgent(shift.agentId)?.name || 'Unknown'} - ${getShiftSummary(shift)}`)}</option>`).join('')}
+                ${state.shifts.filter((shift) => Number(shift.agentId) !== Number(viewAgent?.id) && !isSwapRestrictedAgent(shift.agentId) && isPublishedShift(shift) && shiftIsInWeek(shift, getCalendarWeekDates(weekReference)) && isAgentInDepartmentScope(shift.agentId, normalizeDepartment(viewAgent?.department))).map((shift) => `<option value="${shift.id}">${escapeHtml(`${getAgent(shift.agentId)?.name || 'Unknown'} - ${getShiftSummary(shift)}`)}</option>`).join('')}
               </select>
             </div>
             <button type="submit">Request swap</button>
@@ -7694,13 +7729,16 @@ function renderAvailabilityRequestsPage(currentUser) {
   }
 
   const allAvailabilityRequests = getAllAvailabilityRequests();
+  const departmentScope = getCurrentUserDepartmentScope();
+  const visibleAgents = getFilteredAgents();
   const adminVisibleAvailabilityRequests = allAvailabilityRequests.filter(
-    (request) => normalizeAvailabilityRequestStatus(request.status) !== 'deleted'
+    (request) => normalizeAvailabilityRequestStatus(request.status) !== 'deleted' && isAgentInDepartmentScope(request.agentId, departmentScope)
   );
   const filteredAvailabilityRequests = getFilteredAvailabilityRequests(adminVisibleAvailabilityRequests);
   const visibleAvailabilityRequests = [...(filteredAvailabilityRequests.length > 0 ? filteredAvailabilityRequests : adminVisibleAvailabilityRequests)]
     .sort((left, right) => (right.requestedAt || '').localeCompare(left.requestedAt || ''));
   const visibleSwapRequests = [...(Array.isArray(state.swapRequests) ? state.swapRequests : [])]
+    .filter((request) => isAgentInDepartmentScope(request.fromAgentId, departmentScope) || isAgentInDepartmentScope(request.toAgentId, departmentScope))
     .sort((left, right) => (right.requestedAt || '').localeCompare(left.requestedAt || ''));
   const pendingCount = visibleAvailabilityRequests.filter((request) => request.status === 'pending').length;
   const pendingSwapCount = visibleSwapRequests.filter((request) => request.status === 'pending').length;
@@ -7913,7 +7951,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           <input id="availability-all-to-filter" type="date" value="${escapeHtml(allRequestFilters.to)}" />
           <select id="availability-all-agent-filter" style="max-width:220px;">
             <option value="All" ${allRequestFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
-            ${state.agents.map((agent) => `<option value="${agent.id}" ${String(allRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+            ${visibleAgents.map((agent) => `<option value="${agent.id}" ${String(allRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
           </select>
           <select id="availability-all-status-filter" style="max-width:220px;">
             <option value="All" ${allRequestFilters.status === 'All' ? 'selected' : ''}>All statuses</option>
@@ -7975,7 +8013,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           <input id="availability-swap-to-filter" type="date" value="${escapeHtml(swapRequestFilters.to)}" />
           <select id="availability-swap-agent-filter" style="max-width:220px;">
             <option value="All" ${swapRequestFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
-            ${state.agents.map((agent) => `<option value="${agent.id}" ${String(swapRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+            ${visibleAgents.map((agent) => `<option value="${agent.id}" ${String(swapRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
           </select>
           <select id="availability-swap-status-filter" style="max-width:220px;">
             <option value="All" ${swapRequestFilters.status === 'All' ? 'selected' : ''}>All statuses</option>
@@ -8126,7 +8164,9 @@ function render() {
     ? []
     : getFilteredCalendarShifts().filter((shift) => shift.status === shiftStatuses.published && shiftIsInWeek(shift, plannerWeekDates));
   const sortedAdminWeeklyShifts = [...adminWeeklyShifts].sort(compareCalendarShiftDisplayOrder);
-  const swapAlertCount = state.swapRequests.length;
+  const dashboardDepartmentScope = getCurrentUserDepartmentScope();
+  const scopedSwapRequests = state.swapRequests.filter((request) => isAgentInDepartmentScope(request.fromAgentId, dashboardDepartmentScope) || isAgentInDepartmentScope(request.toAgentId, dashboardDepartmentScope));
+  const swapAlertCount = scopedSwapRequests.length;
   const agentViewShifts = getAgentViewShifts();
   const todayDay = days[(new Date().getDay() + 6) % 7] || 'Mon';
   const selectedAgentScheduleView = ['day', 'week', 'month'].includes(state.ui.agentScheduleView) ? state.ui.agentScheduleView : 'week';
@@ -8162,8 +8202,8 @@ function render() {
 
       ${!isAgentView ? `
         <div class="stats">
-          <div class="stat"><strong>${state.agents.length}</strong><div class="muted">Agents</div></div>
-          <div class="stat"><strong>${state.shifts.length}</strong><div class="muted">Shifts</div></div>
+          <div class="stat"><strong>${visibleAgents.length}</strong><div class="muted">Agents</div></div>
+          <div class="stat"><strong>${getFilteredCalendarShifts().length}</strong><div class="muted">Shifts</div></div>
           <div class="stat"><strong>${stats.available}</strong><div class="muted">Available</div></div>
           <div class="stat"><strong>$${escapeHtml(viewedWeekFullCost.toFixed(2))}</strong><div class="muted">Viewed week cost (published)</div></div>
         </div>` : `
@@ -8346,7 +8386,7 @@ function render() {
                   <div class="muted" style="margin-bottom:8px;">${swapAlertCount} alert${swapAlertCount === 1 ? '' : 's'}</div>
                   ${state.ui.swapAlertsCollapsed ? '<div class="muted">Swap alerts are hidden.</div>' : `
                     <div class="request-list" style="margin-top:12px;">
-                      ${state.swapRequests.map((request) => `
+                      ${scopedSwapRequests.map((request) => `
                         <div class="card">
                           <div class="row" style="justify-content:space-between;">
                             <div>
