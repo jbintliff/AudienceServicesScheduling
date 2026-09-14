@@ -1,6 +1,7 @@
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['In-person', 'WFH', 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
 const teamOptions = ['Audience Services Representative', 'Audience Services Associate', 'Audience Services Management'];
+const departmentOptions = ['Audience Services', 'Box Office'];
 const agentSkillOptions = [
   { value: 'single-tickets', label: 'Single Tickets' },
   { value: 'subscrptions', label: 'Subscriptions' },
@@ -485,9 +486,9 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', role: 'In-person', payRate: 24, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', role: 'WFH', payRate: 18, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Available' },
-    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', role: 'Booth Duty', payRate: 15, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', department: 'Audience Services', role: 'In-person', payRate: 24, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', department: 'Audience Services', role: 'WFH', payRate: 18, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Available' },
+    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', department: 'Box Office', role: 'Booth Duty', payRate: 15, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -561,7 +562,7 @@ const defaultState = {
 };
 
 const defaultAuthUsers = [
-  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', email: 'admin@scheduler.local', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.admin },
+  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', department: 'Audience Services', email: 'admin@scheduler.local', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.admin },
   { id: 1002, username: 'maya', email: 'maya@scheduler.local', phone: '215-555-0101', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 1 },
   { id: 1003, username: 'luis', email: 'luis@scheduler.local', phone: '215-555-0102', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 2 },
   { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 3 }
@@ -2673,6 +2674,13 @@ function normalizeTeamLabel(team) {
   return matchedTeam || teamOptions[0];
 }
 
+function normalizeDepartment(department) {
+  const normalizedDepartment = String(department || '').trim().toLowerCase();
+  if (!normalizedDepartment) return '';
+  const matchedDepartment = departmentOptions.find((item) => item.toLowerCase() === normalizedDepartment);
+  return matchedDepartment || '';
+}
+
 function normalizeManagedTeamValue(value) {
   const normalizedTeam = String(value || '').trim();
   if (!normalizedTeam) return '';
@@ -2839,6 +2847,11 @@ function isBlackoutDate(dateValue) {
   const normalizedDate = String(dateValue || '').trim().slice(0, 10);
   if (!normalizedDate) return false;
   return normalizeBlackoutDates(state.blackoutDates).includes(normalizedDate);
+}
+
+function getUpcomingBlackoutDates(dates) {
+  const todayIso = getCurrentLocalIsoDate();
+  return normalizeBlackoutDates(dates).filter((dateValue) => dateValue >= todayIso);
 }
 
 function getBlackoutDateMarker(dateValue) {
@@ -4302,6 +4315,7 @@ function saveAgentDetails(agentId, values) {
   const requestedAccessRole = normalizeUserRole(values?.accessRole);
   const accessRole = requestedAccessRole === userRoles.admin ? userRoles.agent : requestedAccessRole;
   const team = normalizeTeamLabel(String(values?.team || '').trim() || teamOptions[0]);
+  const department = normalizeDepartment(values?.department);
   const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
   const attendancePoints = normalizeAttendancePoints(values?.attendancePoints);
   const pronouns = normalizePronouns(values?.pronouns);
@@ -4328,6 +4342,7 @@ function saveAgentDetails(agentId, values) {
         name,
         email,
         team,
+        department,
         payRate,
         attendancePoints,
         pronouns,
@@ -4422,6 +4437,13 @@ function openAgentEditModal(agent, onSave) {
               ${teamOptions.map((team) => `<option value="${team}" ${(agent.team || teamOptions[0]) === team ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
             </select>
           </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Department</span>
+            <select name="department">
+              <option value="" ${!agent.department ? 'selected' : ''}>No department</option>
+              ${departmentOptions.map((department) => `<option value="${department}" ${agent.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+            </select>
+          </label>
         </div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px;">
           <label style="display:flex; flex-direction:column; gap:6px;">
@@ -4489,6 +4511,7 @@ function openAgentEditModal(agent, onSave) {
       email: formData.get('email'),
       accessRole: formData.get('accessRole'),
       team: formData.get('team'),
+      department: formData.get('department'),
       payRate: formData.get('payRate'),
       attendancePoints: formData.get('attendancePoints'),
       pronouns: formData.get('pronouns'),
@@ -6015,6 +6038,7 @@ function renderProfilePage(currentUser) {
                 ${currentUser?.profilePhotoDataUrl ? `<div style="margin-bottom:10px;"><img src="${escapeHtml(currentUser.profilePhotoDataUrl)}" alt="Profile photo" style="width:84px; height:84px; border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,0.35);" /></div>` : ''}
                 <div><strong>Name:</strong> ${escapeHtml(currentUser?.name || currentUser?.username || 'Not set')}</div>
                 <div><strong>Job title:</strong> ${escapeHtml(currentUser?.jobTitle || 'Scheduling Administrator')}</div>
+                <div><strong>Department:</strong> ${escapeHtml(currentUser?.department || 'Not set')}</div>
                 <div><strong>Email:</strong> ${escapeHtml(currentUser?.email || 'Not set')}</div>
                 <div><strong>Phone:</strong> ${escapeHtml(currentUser?.phone || 'Not set')}</div>
                 <div><strong>Managed teams:</strong> ${escapeHtml(currentManagedTeams.length > 0 ? currentManagedTeams.join(', ') : 'None')}</div>
@@ -6038,6 +6062,10 @@ function renderProfilePage(currentUser) {
               <form id="admin-update-profile-form" class="stack" style="margin-top:10px;">
                 <input name="name" placeholder="Name" value="${escapeHtml(currentUser?.name || currentUser?.username || '')}" required />
                 <input name="jobTitle" placeholder="Job title" value="${escapeHtml(currentUser?.jobTitle || 'Scheduling Administrator')}" required />
+                <select name="department">
+                  <option value="" ${!currentUser?.department ? 'selected' : ''}>No department</option>
+                  ${departmentOptions.map((department) => `<option value="${department}" ${currentUser?.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+                </select>
                 <input name="email" type="email" placeholder="Email" value="${escapeHtml(currentUser?.email || '')}" required autocomplete="email" />
                 <input name="phone" type="tel" placeholder="Phone" value="${escapeHtml(currentUser?.phone || '')}" required autocomplete="tel" />
                 <label class="stack" style="gap:4px;">
@@ -6061,6 +6089,10 @@ function renderProfilePage(currentUser) {
               <form id="add-admin-form" class="stack" style="margin-top:10px;">
                 <input name="name" placeholder="Manager name" required />
                 <input name="jobTitle" placeholder="Job title" value="Scheduling Manager" required />
+                <select name="department">
+                  <option value="">No department</option>
+                  ${departmentOptions.map((department) => `<option value="${department}">${escapeHtml(department)}</option>`).join('')}
+                </select>
                 <input name="email" type="email" placeholder="Email" required autocomplete="email" />
                 <input name="phone" type="tel" placeholder="Phone" required autocomplete="tel" />
                 <select name="accessRole" required>
@@ -6085,6 +6117,10 @@ function renderProfilePage(currentUser) {
                       <div class="row" style="gap:8px; flex-wrap:wrap;">
                         <input name="name" value="${escapeHtml(adminUser.name || '')}" placeholder="Manager name" required />
                         <input name="jobTitle" value="${escapeHtml(adminUser.jobTitle || 'Scheduling Manager')}" placeholder="Job title" required />
+                        <select name="department">
+                          <option value="" ${!adminUser.department ? 'selected' : ''}>No department</option>
+                          ${departmentOptions.map((department) => `<option value="${department}" ${adminUser.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+                        </select>
                       </div>
                       <div class="row" style="gap:8px; flex-wrap:wrap;">
                         <input name="email" type="email" value="${escapeHtml(adminUser.email || '')}" placeholder="Email" required autocomplete="email" />
@@ -6162,6 +6198,7 @@ function renderProfilePage(currentUser) {
       const formData = new FormData(event.currentTarget);
       const name = formData.get('name')?.toString().trim() || '';
       const jobTitle = formData.get('jobTitle')?.toString().trim() || '';
+      const department = normalizeDepartment(formData.get('department'));
       const email = normalizeEmail(formData.get('email'));
       const phone = normalizePhone(formData.get('phone'));
       const managedTeams = normalizeManagedTeams(formData.getAll('managedTeams'));
@@ -6182,6 +6219,7 @@ function renderProfilePage(currentUser) {
             ...user,
             name,
             jobTitle,
+            department,
             email,
             phone,
             managedTeams,
@@ -6210,6 +6248,7 @@ function renderProfilePage(currentUser) {
       const formData = new FormData(event.currentTarget);
       const name = formData.get('name')?.toString().trim() || '';
       const jobTitle = formData.get('jobTitle')?.toString().trim() || '';
+      const department = normalizeDepartment(formData.get('department'));
       const email = normalizeEmail(formData.get('email'));
       const phone = normalizePhone(formData.get('phone'));
       const accessRole = normalizeUserRole(formData.get('accessRole'));
@@ -6231,6 +6270,7 @@ function renderProfilePage(currentUser) {
         username: createUniqueAccountUsername(email, 'manager'),
         name,
         jobTitle,
+        department,
         email,
         phone,
         managedTeams,
@@ -6279,6 +6319,7 @@ function renderProfilePage(currentUser) {
         const formData = new FormData(form);
         const name = formData.get('name')?.toString().trim() || '';
         const jobTitle = formData.get('jobTitle')?.toString().trim() || '';
+        const department = normalizeDepartment(formData.get('department'));
         const email = normalizeEmail(formData.get('email'));
         const phone = normalizePhone(formData.get('phone'));
         const accessRole = normalizeUserRole(formData.get('accessRole'));
@@ -6309,6 +6350,7 @@ function renderProfilePage(currentUser) {
               ...user,
               name,
               jobTitle,
+              department,
               email,
               phone,
               managedTeams,
@@ -6725,6 +6767,7 @@ function renderProfilePage(currentUser) {
               ${activeAgentUser?.profilePhotoDataUrl ? `<div style="margin-bottom:10px;"><img src="${escapeHtml(activeAgentUser.profilePhotoDataUrl)}" alt="Profile photo" style="width:84px; height:84px; border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,0.35);" /></div>` : ''}
               <div><strong>Name:</strong> ${escapeHtml(viewAgent?.name || 'Not set')}</div>
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
+              <div><strong>Department:</strong> ${escapeHtml(viewAgent?.department || 'Not set')}</div>
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
               <div><strong>Attendance points:</strong> ${escapeHtml(normalizeAttendancePoints(viewAgent?.attendancePoints))}</div>
               <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(viewAgent?.pronouns) || 'Not set')}</div>
@@ -7511,6 +7554,10 @@ function renderAgentsPage(currentUser) {
             <select name="team" required>
               ${teamOptions.map((team) => `<option value="${team}">${escapeHtml(team)}</option>`).join('')}
             </select>
+            <select name="department">
+              <option value="">No department</option>
+              ${departmentOptions.map((department) => `<option value="${department}">${escapeHtml(department)}</option>`).join('')}
+            </select>
             <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
             <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" />
             <button type="submit" style="white-space:nowrap;">Add agent</button>
@@ -7524,6 +7571,7 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Name:</strong> ${escapeHtml(agent.name)}</div>
                   <div><strong>Access level:</strong> ${escapeHtml(getUserRoleLabel(getUserByAgentId(agent.id)?.role || userRoles.agent))}</div>
                   <div><strong>Team:</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span></div>
+                  <div><strong>Department:</strong> ${escapeHtml(agent.department || 'Not set')}</div>
                   <div><strong>Email:</strong> ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   <div><strong>Managed by:</strong> ${escapeHtml(getTeamManagerSummary(agent.team))}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
@@ -8519,7 +8567,7 @@ function renderPublicAvailabilityRequestPage() {
   const lockedAgent = lockedAgentId ? getAgent(lockedAgentId) : null;
   const visibleAgents = getFilteredAgents();
   const sortedAgents = [...visibleAgents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
-  const blackoutDates = normalizeBlackoutDates(state.blackoutDates);
+  const blackoutDates = getUpcomingBlackoutDates(state.blackoutDates);
   const defaultEmail = lockedAgent ? (getAgentAccountEmail(lockedAgent.id) || normalizeEmail(currentUser?.email) || '') : '';
 
   root.innerHTML = `
@@ -8706,7 +8754,7 @@ function renderPublicAvailabilityViewPage() {
     .filter((request) => String(request?.recurrenceType || '').trim().toLowerCase() !== 'weekly');
   const selectedMonth = publicAvailabilityViewUi.month || getCurrentLocalMonthValue();
   const calendarData = getAvailabilityCalendarCells(selectedMonth, allAvailabilityRequests);
-  const blackoutDates = normalizeBlackoutDates(state.blackoutDates);
+  const blackoutDates = getUpcomingBlackoutDates(state.blackoutDates);
   const monthBlackoutDates = blackoutDates
     .filter((dateValue) => String(dateValue || '').startsWith(`${selectedMonth}-`))
     .sort((left, right) => left.localeCompare(right));
@@ -9457,6 +9505,7 @@ function bindEvents() {
       name,
       email,
       team: normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]),
+      department: normalizeDepartment(formData.get('department')),
       role,
       payRate,
       attendancePoints: 0,
