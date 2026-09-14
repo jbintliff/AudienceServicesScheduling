@@ -4147,7 +4147,7 @@ function openShiftEditModal(shift, onSave) {
             <span>Agent</span>
             <select name="agentId">
               <option value="" ${!shift.agentId ? 'selected' : ''}>Unassigned</option>
-              ${[...state.agents].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}" ${Number(shift.agentId) === Number(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+              ${getFilteredAgents().sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}" ${Number(shift.agentId) === Number(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
             </select>
           </label>
           <label style="display:flex; flex-direction:column; gap:6px; min-width:180px; flex:1;">
