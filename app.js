@@ -8687,9 +8687,6 @@ function renderPublicAvailabilityViewPage() {
     : (currentAgentUser && getAgent(currentAgentUser) ? currentAgentUser : 0);
   const viewingAgentName = viewingAgentId ? (getAgent(viewingAgentId)?.name || '') : '';
 
-  const visibleAgents = getFilteredAgents();
-  const sortedAgents = [...visibleAgents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
-
   const allAvailabilityRequests = getAllAvailabilityRequests()
     .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
     .filter((request) => String(request?.recurrenceType || '').trim().toLowerCase() !== 'weekly');
@@ -8705,16 +8702,9 @@ function renderPublicAvailabilityViewPage() {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
         <div>
           <h1>Submitted availability and PTO requests</h1>
-          <p class="muted">${viewingAgentName ? `Signed link for ${escapeHtml(viewingAgentName)}. Your own requests are shown by name and can be edited while pending; other agents are shown anonymously.` : 'View blackout dates and submitted requests without signing in. Select your name below to view/edit your pending requests.'}</p>
+          <p class="muted">${viewingAgentName ? `Personalized link for ${escapeHtml(viewingAgentName)}. Your own requests are shown by name and can be edited while pending; other agents are shown anonymously.` : 'View blackout dates and submitted requests. Other agents are shown anonymously.'}</p>
         </div>
         <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
-          <label class="row" style="gap:6px; font-size:0.9rem; align-items:center;">
-            <span class="muted" style="white-space:nowrap;">Viewing as:</span>
-            <select id="public-availability-view-as-agent" style="padding:4px 8px; border-radius:6px; max-width:180px;">
-              <option value="0" ${!viewingAgentId ? 'selected' : ''}>Anonymous / All</option>
-              ${sortedAgents.map((agent) => `<option value="${agent.id}" ${viewingAgentId === Number(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
-            </select>
-          </label>
           <a href="${escapeHtml(getPublicAvailabilityRequestUrl(viewingAgentId))}" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Submit a request</button></a>
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin login</button></a>
         </div>
@@ -8807,18 +8797,6 @@ function renderPublicAvailabilityViewPage() {
 
   document.getElementById('public-availability-view-month')?.addEventListener('change', (event) => {
     publicAvailabilityViewUi.month = event.currentTarget.value;
-    renderPublicAvailabilityViewPage();
-  });
-
-  document.getElementById('public-availability-view-as-agent')?.addEventListener('change', (event) => {
-    const selectedAgentId = Number(event.currentTarget.value || 0);
-    const url = new URL(window.location.href);
-    if (selectedAgentId > 0) {
-      url.searchParams.set('agentId', String(selectedAgentId));
-    } else {
-      url.searchParams.delete('agentId');
-    }
-    window.history.replaceState({}, '', url.toString());
     renderPublicAvailabilityViewPage();
   });
 
