@@ -8511,20 +8511,26 @@ function render() {
 function renderPublicAvailabilityRequestPage() {
   const query = new URLSearchParams(window.location.search);
   const requestedAgentId = Number(query.get('agentId'));
+  const currentUser = getCurrentUser();
+  const currentAgentUser = currentUser?.agentId ? Number(currentUser.agentId) : 0;
+  const lockedAgentId = Number.isFinite(requestedAgentId) && requestedAgentId > 0 && getAgent(requestedAgentId)
+    ? requestedAgentId
+    : (currentAgentUser && getAgent(currentAgentUser) ? currentAgentUser : 0);
+  const lockedAgent = lockedAgentId ? getAgent(lockedAgentId) : null;
   const visibleAgents = getFilteredAgents();
   const sortedAgents = [...visibleAgents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
-  const preselectedAgentId = sortedAgents.some((agent) => Number(agent.id) === requestedAgentId) ? requestedAgentId : 0;
   const blackoutDates = normalizeBlackoutDates(state.blackoutDates);
+  const defaultEmail = lockedAgent ? (getAgentAccountEmail(lockedAgent.id) || normalizeEmail(currentUser?.email) || '') : '';
 
   root.innerHTML = `
     <div class="app">
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>Availability and PTO request form</h1>
-          <p class="muted">Submit a scheduling request without signing in. Your request is sent directly to the admin availability queue.</p>
+          <p class="muted">${lockedAgent ? `Personalized request form for ${escapeHtml(lockedAgent.name)}. Your request is sent directly to the admin availability queue.` : 'Submit a scheduling request without signing in. Your request is sent directly to the admin availability queue.'}</p>
         </div>
         <div class="row" style="gap:8px;">
-          <a href="${escapeHtml(getPublicAvailabilityViewUrl())}" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">View submitted requests</button></a>
+          <a href="${escapeHtml(getPublicAvailabilityViewUrl(lockedAgent ? lockedAgent.id : ''))}" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">View submitted requests</button></a>
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin login</button></a>
         </div>
       </div>
@@ -8540,16 +8546,24 @@ function renderPublicAvailabilityRequestPage() {
       <div class="panel">
         <form id="public-availability-form" class="stack">
           <div class="row" style="flex-wrap:wrap; gap:8px;">
+            ${lockedAgent ? `
+            <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+              <span>Agent</span>
+              <input type="hidden" name="agentId" value="${lockedAgent.id}" />
+              <input type="text" value="${escapeHtml(lockedAgent.name)}" readonly disabled style="cursor:not-allowed; opacity:0.9;" />
+            </label>
+            ` : `
             <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
               <span>Agent</span>
               <select name="agentId" required>
                 <option value="">Select agent</option>
-                ${sortedAgents.map((agent) => `<option value="${agent.id}" ${Number(agent.id) === preselectedAgentId ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+                ${sortedAgents.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
               </select>
             </label>
+            `}
             <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
               <span>Your email</span>
-              <input name="requesterEmail" type="email" placeholder="name@example.com" required />
+              <input name="requesterEmail" type="email" placeholder="name@example.com" value="${escapeHtml(defaultEmail)}" required />
             </label>
           </div>
 
