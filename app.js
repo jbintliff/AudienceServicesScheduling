@@ -571,6 +571,8 @@ const defaultAuthUsers = [
 const state = loadState();
 let authUsers = loadAuthUsers();
 let currentSession = loadSession();
+// While true, background/periodic render() calls must not replace the pre-session password recovery screens.
+let isPasswordRecoveryFlowActive = false;
 let draggedShiftId = null;
 let copiedShiftTemplate = null;
 let selectedCalendarShiftIds = new Set();
@@ -703,6 +705,7 @@ function getDefaultUiState() {
     availabilityDebugToolsVisible: false,
     availabilityDebugAgentId: '',
     adminOptionsCollapsedPanels: {},
+    collapsedManagerCards: {},
     accessMode: 'admin',
     currentAgentId: defaultState.agents[0]?.id ?? null,
     calendar: {
@@ -725,6 +728,14 @@ function normalizeUiState(source) {
     ? {}
     : Object.fromEntries(
         Object.entries(sourceAdminOptionsCollapsedPanels)
+          .map(([key, value]) => [String(key || '').trim(), Boolean(value)])
+          .filter(([key]) => Boolean(key))
+      );
+  const sourceCollapsedManagerCards = source?.collapsedManagerCards;
+  const normalizedCollapsedManagerCards = (!sourceCollapsedManagerCards || typeof sourceCollapsedManagerCards !== 'object' || Array.isArray(sourceCollapsedManagerCards))
+    ? {}
+    : Object.fromEntries(
+        Object.entries(sourceCollapsedManagerCards)
           .map(([key, value]) => [String(key || '').trim(), Boolean(value)])
           .filter(([key]) => Boolean(key))
       );
@@ -756,6 +767,7 @@ function normalizeUiState(source) {
     availabilityDebugToolsVisible: Boolean(source?.availabilityDebugToolsVisible),
     availabilityDebugAgentId: source?.availabilityDebugAgentId || defaults.availabilityDebugAgentId,
     adminOptionsCollapsedPanels: normalizedAdminOptionsCollapsedPanels,
+    collapsedManagerCards: normalizedCollapsedManagerCards,
     swapRequestToAgentId: source?.swapRequestToAgentId || defaults.swapRequestToAgentId,
     swapRequestToShiftId: source?.swapRequestToShiftId || defaults.swapRequestToShiftId,
     accessMode: source?.accessMode || defaults.accessMode,
@@ -2176,6 +2188,7 @@ function getUserRoleLabel(roleValue) {
 }
 
 function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
+  isPasswordRecoveryFlowActive = false;
   const rememberedLogin = loadRememberedLogin();
   const rememberedEmail = rememberedLogin.email || '';
   const rememberedPassword = rememberedLogin.password || '';
@@ -2455,9 +2468,11 @@ function renderForgotPasswordTempPasswordPage(user, temporaryPassword, emailAddr
   const tempPassword = String(temporaryPassword || '').trim();
   const normalizedEmail = normalizeEmail(emailAddress || user?.email || '');
   if (!user?.id || !tempPassword) {
+    isPasswordRecoveryFlowActive = false;
     renderLoginPage('Unable to continue password recovery. Please try again.');
     return;
   }
+  isPasswordRecoveryFlowActive = true;
 
   root.innerHTML = `
     <div class="app" style="max-width:560px; padding-top:48px;">
@@ -2524,6 +2539,7 @@ function renderForgotPasswordTempPasswordPage(user, temporaryPassword, emailAddr
   });
 
   document.getElementById('forgot-password-temp-back')?.addEventListener('click', () => {
+    isPasswordRecoveryFlowActive = false;
     renderLoginPage();
   });
 }
@@ -2605,6 +2621,7 @@ function renderFirstLoginPasswordSetupPage(currentUser, options = {}) {
       saveRememberedLogin(currentUser.email, newPassword, shouldRememberLogin);
       currentSession = { userId: currentUser.id };
       saveSession();
+      isPasswordRecoveryFlowActive = false;
       window.history.replaceState({}, '', window.location.pathname);
       applyAccessForUser({ ...currentUser, mustChangePassword: false });
       saveUiState();
@@ -6142,13 +6159,19 @@ function renderProfilePage(currentUser) {
                 <button type="submit">Add manager</button>
               </form>
               <div class="request-list" style="margin-top:12px;">
-                ${adminUsers.map((adminUser) => `
+                ${adminUsers.map((adminUser) => {
+                  const isManagerCardCollapsed = Boolean(state.ui.collapsedManagerCards?.[adminUser.id]);
+                  return `
                   <div class="card">
                     <form class="stack" data-update-admin-form="${adminUser.id}">
                       <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                         <strong>${escapeHtml(adminUser.name || adminUser.username || 'Manager')}</strong>
-                        <div class="muted">Status: ${escapeHtml(adminUser.isActive === false ? 'Inactive' : 'Active')} • Access: ${escapeHtml(getUserRoleLabel(adminUser.role))}</div>
+                        <div class="row" style="gap:8px; align-items:center;">
+                          <div class="muted">Status: ${escapeHtml(adminUser.isActive === false ? 'Inactive' : 'Active')} • Access: ${escapeHtml(getUserRoleLabel(adminUser.role))}</div>
+                          <button type="button" class="secondary" data-toggle-manager-card="${adminUser.id}">${isManagerCardCollapsed ? 'Expand' : 'Collapse'}</button>
+                        </div>
                       </div>
+                      <div data-manager-card-body="${adminUser.id}" class="stack" style="${isManagerCardCollapsed ? 'display:none;' : ''}">
                       <div class="row" style="gap:8px; flex-wrap:wrap;">
                         <input name="name" value="${escapeHtml(adminUser.name || '')}" placeholder="Manager name" required />
                         <input name="jobTitle" value="${escapeHtml(adminUser.jobTitle || 'Scheduling Manager')}" placeholder="Job title" required />
@@ -6178,9 +6201,11 @@ function renderProfilePage(currentUser) {
                         <button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>
                         <button type="button" class="danger" data-remove-admin="${adminUser.id}">Remove</button>
                       </div>
+                      </div>
                     </form>
                   </div>
-                `).join('')}
+                `;
+                }).join('')}
               </div>
             </div>
 
@@ -6443,6 +6468,23 @@ function renderProfilePage(currentUser) {
       saveAuthUsers();
       alert('Admin password updated successfully.');
       render();
+    });
+
+    document.querySelectorAll('[data-toggle-manager-card]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const managerId = String(button.getAttribute('data-toggle-manager-card') || '').trim();
+        if (!managerId) return;
+        const collapsedManagerCards = { ...(state.ui.collapsedManagerCards || {}) };
+        const isCollapsed = Boolean(collapsedManagerCards[managerId]);
+        collapsedManagerCards[managerId] = !isCollapsed;
+        state.ui.collapsedManagerCards = collapsedManagerCards;
+        saveUiState();
+        const cardBody = document.querySelector(`[data-manager-card-body="${managerId}"]`);
+        if (cardBody) {
+          cardBody.style.display = isCollapsed ? 'none' : '';
+        }
+        button.textContent = isCollapsed ? 'Collapse' : 'Expand';
+      });
     });
 
     document.querySelectorAll('[data-resend-admin-invite]').forEach((button) => {
@@ -8056,6 +8098,7 @@ function renderAvailabilityRequestsPage(currentUser) {
 
 function render() {
   syncFromStorage();
+  if (isPasswordRecoveryFlowActive) return;
   bindAvailabilitySubmitFallback();
   if (pageMode === 'public-availability-request') {
     renderPublicAvailabilityRequestPage();
