@@ -4449,6 +4449,31 @@ function openShiftAbsenceModal(shift, onSave) {
   document.body.appendChild(overlay);
 }
 
+function claimUnassignedShiftForAgent(shiftId, agentId) {
+  const normalizedShiftId = Number(shiftId);
+  const normalizedAgentId = Number(agentId);
+  if (!normalizedShiftId || !normalizedAgentId || !getAgent(normalizedAgentId)) {
+    return { ok: false, message: 'Unable to pick up this shift right now.' };
+  }
+  const shift = state.shifts.find((item) => Number(item.id) === normalizedShiftId);
+  if (!shift) {
+    return { ok: false, message: 'This shift is no longer available.' };
+  }
+  if (shift.agentId) {
+    return { ok: false, message: 'This shift has already been picked up by another agent.' };
+  }
+  state.shifts = state.shifts.map((item) => Number(item.id) === normalizedShiftId
+    ? { ...item, agentId: normalizedAgentId, updatedAt: getCurrentIsoTimestamp() }
+    : item);
+  const didSaveState = saveState();
+  if (!didSaveState) {
+    syncFromStorage();
+    return { ok: false, message: 'Unable to save this change right now. Please check browser storage settings and try again.' };
+  }
+  void flushLocalSnapshotSync();
+  return { ok: true };
+}
+
 function saveAgentDetails(agentId, values) {
   const id = Number(agentId);
   const name = String(values?.name || '').trim();
@@ -6310,7 +6335,7 @@ function renderProfilePage(currentUser) {
                       <div class="row" style="gap:8px; flex-wrap:wrap; justify-content:flex-end;">
                         <button type="submit" class="secondary">Save manager</button>
                         <button type="button" class="secondary" data-resend-admin-invite="${adminUser.id}">Resend invite</button>
-                        <button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>
+                        ${isBoxOfficeScopedAdmin && adminUser.department === 'Audience Services' ? '' : `<button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>`}
                         ${isBoxOfficeScopedAdmin ? '' : `<button type="button" class="danger" data-remove-admin="${adminUser.id}">Remove</button>`}
                       </div>
                       </div>
@@ -6633,6 +6658,10 @@ function renderProfilePage(currentUser) {
         const activeUser = getCurrentUser();
         const adminUser = authUsers.find((user) => isAdminUser(user) && Number(user.id) === adminId);
         if (!adminUser) return;
+        if (getCurrentUserDepartmentScope() === 'Box Office' && adminUser.department === 'Audience Services') {
+          alert('Box Office admin accounts cannot deactivate Audience Services managers.');
+          return;
+        }
         const isDeactivating = adminUser.isActive !== false;
         if (isDeactivating && isAdminUser(adminUser) && getActiveAdminCount() <= 1) {
           alert('You cannot deactivate the last active admin account.');
@@ -8999,6 +9028,12 @@ function renderPublicAvailabilityViewPage() {
   const monthBlackoutDates = blackoutDates
     .filter((dateValue) => String(dateValue || '').startsWith(`${selectedMonth}-`))
     .sort((left, right) => left.localeCompare(right));
+  const unassignedShifts = publicViewDepartmentScope === 'Box Office'
+    ? state.shifts
+        .filter((shift) => !shift.agentId && isPublishedShift(shift))
+        .filter((shift) => String(shift.date || '') >= getCurrentLocalIsoDate())
+        .sort((left, right) => String(left.date || '').localeCompare(String(right.date || '')) || String(left.start || '').localeCompare(String(right.start || '')))
+    : [];
 
   root.innerHTML = `
     <div class="app">
@@ -9018,6 +9053,25 @@ function renderPublicAvailabilityViewPage() {
         <h3 style="margin:0 0 8px;">Blackout dates</h3>
         <div class="row" style="gap:6px; flex-wrap:wrap;">
           ${blackoutDates.map((dateValue) => `<span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}
+        </div>
+      </div>` : ''}
+
+      ${publicViewDepartmentScope === 'Box Office' ? `
+      <div class="panel" style="margin-bottom:16px;">
+        <h3 style="margin:0 0 8px;">Open shifts available to pick up</h3>
+        <p class="muted" style="margin:0 0 10px;">${viewingAgentName ? 'Click Pick up shift to claim an open shift for yourself.' : 'Open this page from your personal link to pick up available shifts.'}</p>
+        <div class="stack" style="gap:8px;">
+          ${unassignedShifts.length > 0 ? unassignedShifts.map((shift) => `
+            <div class="card" style="padding:8px 10px;">
+              <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <div>
+                  <strong>${escapeHtml(shift.date || 'Unknown date')} (${escapeHtml(shift.day || '')})</strong>
+                  <div class="muted">${escapeHtml(formatTimeRange(shift.start, shift.end))} • ${escapeHtml(shift.role || 'No role')}${shift.location ? ` • ${escapeHtml(shift.location)}` : ''}</div>
+                </div>
+                ${viewingAgentId ? `<button type="button" data-pick-up-shift="${shift.id}">Pick up shift</button>` : '<span class="muted">Sign in via your personal link to pick up</span>'}
+              </div>
+            </div>
+          `).join('') : '<div class="muted">No open shifts right now.</div>'}
         </div>
       </div>` : ''}
 
@@ -9127,6 +9181,22 @@ function renderPublicAvailabilityViewPage() {
       if (cellRequests.length > 0) {
         openPublicAvailabilityDayModal(dateValue, cellRequests, viewingAgentId);
       }
+    });
+  });
+
+  document.querySelectorAll('[data-pick-up-shift]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!viewingAgentId) return;
+      const shiftId = Number(button.getAttribute('data-pick-up-shift'));
+      const shouldClaim = confirm('Pick up this shift for yourself?');
+      if (!shouldClaim) return;
+      const result = claimUnassignedShiftForAgent(shiftId, viewingAgentId);
+      if (!result.ok) {
+        alert(result.message);
+        return;
+      }
+      alert('Shift picked up successfully.');
+      renderPublicAvailabilityViewPage();
     });
   });
 }
