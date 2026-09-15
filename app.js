@@ -6348,20 +6348,6 @@ function renderProfilePage(currentUser) {
               </form>
             </div>
 
-            ${isBoxOfficeScopedAdmin ? '' : `
-            <div class="panel">
-              <h2>Backend sync</h2>
-              <p class="muted">Use a shared API URL so admin and agent data stays synchronized across devices.</p>
-              <form id="admin-backend-sync-form" class="stack" style="margin-top:10px;">
-                <input name="backendApiUrl" type="url" placeholder="https://your-backend.example.com/api" value="${escapeHtml(backendApiBase || '')}" />
-                <div class="row">
-                  <button type="submit">Save backend URL</button>
-                  <button type="button" id="clear-backend-url" class="secondary">Use local fallback</button>
-                </div>
-                <div class="muted">Current backend: ${escapeHtml(backendApiBase || 'Not configured (local browser storage only)')}</div>
-              </form>
-            </div>`}
-
             <div class="panel">
               <h2>Invite login URL</h2>
               <p class="muted">Set the exact public URL agents should open for sign in (example: https://your-app.example.com/index.html).</p>
@@ -6731,25 +6717,6 @@ function renderProfilePage(currentUser) {
         };
         render();
       });
-    });
-
-    document.getElementById('admin-backend-sync-form')?.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const formData = new FormData(event.currentTarget);
-      const backendApiUrl = normalizeBackendUrl(formData.get('backendApiUrl'));
-      if (!backendApiUrl) {
-        alert('Enter a valid backend URL that ends with /api.');
-        return;
-      }
-      safeSetLocalStorage(backendUrlKey, backendApiUrl);
-      alert('Backend URL saved. The app will reload and sync to shared data.');
-      window.location.reload();
-    });
-
-    document.getElementById('clear-backend-url')?.addEventListener('click', () => {
-      localStorage.removeItem(backendUrlKey);
-      alert('Backend URL cleared. The app will reload with local browser storage mode.');
-      window.location.reload();
     });
 
     document.getElementById('admin-app-login-url-form')?.addEventListener('submit', (event) => {
@@ -7233,19 +7200,7 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px;">
-        <div class="panel">
-          <h2>Venues</h2>
-          ${blackoutDepartmentScope === 'Box Office' ? '' : `
-          <form id="add-shift-location-form" class="row" style="margin-bottom:10px;">
-            <input name="location" placeholder="Add venue" required />
-            <button type="submit">Add venue</button>
-          </form>`}
-          <div class="row" style="gap:8px; flex-wrap:wrap;">
-            ${locationChoices.map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}${blackoutDepartmentScope === 'Box Office' ? '' : `<button type="button" class="danger" data-remove-shift-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button>`}</span>`).join('')}
-          </div>
-        </div>
-
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px; align-items:start;">
         <div class="panel">
           <h2>Roles${blackoutDepartmentScope ? ` (${escapeHtml(blackoutDepartmentScope)})` : ' (All departments)'}</h2>
           <form id="add-shift-role-form" class="row" style="margin-bottom:10px;">
@@ -7279,6 +7234,18 @@ function renderAdminOptionsPage(currentUser) {
             `).join('')}
           </div>
         </div>
+
+        <div class="stack">
+        <div class="panel">
+          <h2>Venues</h2>
+          ${blackoutDepartmentScope === 'Box Office' ? '' : `
+          <form id="add-shift-location-form" class="row" style="margin-bottom:10px;">
+            <input name="location" placeholder="Add venue" required />
+            <button type="submit">Add venue</button>
+          </form>`}
+          <div class="row" style="gap:8px; flex-wrap:wrap;">
+            ${locationChoices.map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}${blackoutDepartmentScope === 'Box Office' ? '' : `<button type="button" class="danger" data-remove-shift-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button>`}</span>`).join('')}
+          </div>
         </div>
 
         <div class="panel">
@@ -7315,6 +7282,8 @@ function renderAdminOptionsPage(currentUser) {
             `).join('') || '<div class="muted">No policy files uploaded yet.</div>'}
           </div>
         </div>
+        </div>
+        </div>
 
         ${renderPolicyPreviewModal()}
 
@@ -7331,6 +7300,20 @@ function renderAdminOptionsPage(currentUser) {
         </div>
 
         ${blackoutDepartmentScope === 'Box Office' ? '' : `
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px;">
+        <div class="panel">
+          <h2>Backend sync</h2>
+          <p class="muted">Use a shared API URL so admin and agent data stays synchronized across devices.</p>
+          <form id="admin-backend-sync-form" class="stack" style="margin-top:10px;">
+            <input name="backendApiUrl" type="url" placeholder="https://your-backend.example.com/api" value="${escapeHtml(backendApiBase || '')}" />
+            <div class="row">
+              <button type="submit">Save backend URL</button>
+              <button type="button" id="clear-backend-url" class="secondary">Use local fallback</button>
+            </div>
+            <div class="muted">Current backend: ${escapeHtml(backendApiBase || 'Not configured (local browser storage only)')}</div>
+          </form>
+        </div>
+
         <div class="panel">
           <h2>Email delivery</h2>
           <p class="muted">Control outgoing email and configure webhook delivery. When outgoing email is off, notifications stay local in Email outbox.</p>
@@ -7359,6 +7342,7 @@ function renderAdminOptionsPage(currentUser) {
               <button type="button" id="retry-undelivered-email" class="secondary">Retry undelivered emails</button>
             </div>
           </form>
+        </div>
         </div>`}
       </div>
     </div>
@@ -9945,6 +9929,25 @@ function bindEvents() {
       const requestedLocation = String(template.location || '').trim();
       locationInput.value = getLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
     }
+  });
+
+  document.getElementById('admin-backend-sync-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const backendApiUrl = normalizeBackendUrl(formData.get('backendApiUrl'));
+    if (!backendApiUrl) {
+      alert('Enter a valid backend URL that ends with /api.');
+      return;
+    }
+    safeSetLocalStorage(backendUrlKey, backendApiUrl);
+    alert('Backend URL saved. The app will reload and sync to shared data.');
+    window.location.reload();
+  });
+
+  document.getElementById('clear-backend-url')?.addEventListener('click', () => {
+    localStorage.removeItem(backendUrlKey);
+    alert('Backend URL cleared. The app will reload with local browser storage mode.');
+    window.location.reload();
   });
 
   document.getElementById('add-shift-template-form')?.addEventListener('submit', (event) => {
