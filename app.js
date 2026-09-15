@@ -2946,14 +2946,6 @@ function getBlackoutDatesForScope(departmentScope, source = state.blackoutDates)
   return Array.from(uniqueDates).sort((left, right) => left.localeCompare(right));
 }
 
-function bulkAssignUnassignedBlackoutDatesToDepartment(department) {
-  const nextDepartment = normalizeDepartment(department);
-  if (!nextDepartment) return;
-  state.blackoutDates = normalizeBlackoutDateEntries(state.blackoutDates).map((entry) => (
-    entry.department ? entry : { date: entry.date, department: nextDepartment }
-  ));
-}
-
 function updateBlackoutDateDepartment(date, oldDepartment, newDepartment) {
   const normalizedDate = String(date || '').trim().slice(0, 10);
   const normalizedOldDepartment = normalizeDepartment(oldDepartment);
@@ -7332,13 +7324,6 @@ function renderAdminOptionsPage(currentUser) {
             <textarea name="blackoutDates" rows="6" placeholder="2026-12-24&#10;2026-12-25">${escapeHtml(getBlackoutDatesForScope(blackoutDepartmentScope).join('\n'))}</textarea>
             <button type="submit">Save blackout dates</button>
           </form>
-          <form id="bulk-assign-blackout-dates-form" class="row" style="margin-top:10px; gap:8px; align-items:center;">
-            <span class="muted">Assign all unassigned blackout dates to</span>
-            <select name="department" required>
-              ${departmentOptions.map((department) => `<option value="${department}" ${blackoutDepartmentScope === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
-            </select>
-            <button type="submit" class="secondary">Apply</button>
-          </form>
           <div class="row" style="gap:8px; flex-wrap:wrap; margin-top:10px;">
             ${normalizeBlackoutDateEntries(state.blackoutDates).filter((entry) => isDateEntryInDepartmentScope(entry.department, blackoutDepartmentScope)).map((entry) => `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${escapeHtml(entry.date)}<select data-blackout-department-select="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!entry.department ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${entry.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-blackout-date="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:4px 8px;">Remove</button></span>`).join('') || '<span class="muted">No blackout dates yet.</span>'}
           </div>
@@ -9772,14 +9757,6 @@ function bindEvents() {
     } else {
       alert('Blackout dates saved. Agents cannot submit time-off requests for those dates.');
     }
-    render();
-  });
-
-  document.getElementById('bulk-assign-blackout-dates-form')?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    bulkAssignUnassignedBlackoutDatesToDepartment(formData.get('department'));
-    saveState();
     render();
   });
 
