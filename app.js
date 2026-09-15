@@ -2348,12 +2348,19 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     if (!normalizedTarget) return [];
 
     const directMatches = authUsers.filter((user) => normalizeEmail(user?.email) === normalizedTarget);
-    const linkedAgent = state.agents.find((agent) => normalizeEmail(agent?.email) === normalizedTarget);
-    const linkedUser = linkedAgent ? getUserByAgentId(linkedAgent.id) : null;
+    const agentMatches = state.agents.filter((agent) => normalizeEmail(agent?.email) === normalizedTarget);
+    const linkedUsers = agentMatches
+      .map((agent) => getUserByAgentId(agent.id))
+      .filter((user) => user && !directMatches.some((directUser) => Number(directUser?.id) === Number(user.id)));
 
-    const users = [...directMatches];
-    if (linkedUser && !users.some((user) => Number(user?.id) === Number(linkedUser.id))) {
-      users.push(linkedUser);
+    const users = [...directMatches, ...linkedUsers];
+    if (users.length === 0) {
+      const staleLinkedUsers = authUsers.filter((user) => {
+        if (!isAgentLikeUser(user) || !Number.isFinite(Number(user.agentId))) return false;
+        const agentMatch = state.agents.find((agent) => Number(agent.id) === Number(user.agentId));
+        return Boolean(agentMatch && normalizeEmail(agentMatch.email) === normalizedTarget);
+      });
+      return staleLinkedUsers;
     }
     return users;
   };
@@ -2366,6 +2373,13 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
 
     const existingUser = findUsersForLoginEmail(normalizedTarget)[0] || null;
     if (existingUser) {
+      const normalizedUserEmail = normalizeEmail(existingUser.email || '');
+      if (normalizedUserEmail !== normalizedTarget) {
+        const nextUser = { ...existingUser, email: normalizedTarget, updatedAt: getCurrentIsoTimestamp(), profileUpdatedAt: getCurrentIsoTimestamp() };
+        authUsers = authUsers.map((user) => Number(user.id) === Number(existingUser.id) ? nextUser : user);
+        saveAuthUsers();
+        return { user: nextUser, error: '' };
+      }
       return { user: existingUser, error: '' };
     }
 
