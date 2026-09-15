@@ -20,6 +20,7 @@ const availabilityRequestLedgerKey = 'agent-scheduler-availability-ledger-v1';
 const passwordResetRequestsKey = 'agent-scheduler-password-reset-requests-v1';
 const rememberedLoginKey = 'agent-scheduler-remembered-login-v1';
 const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
+const dashboardMessageSeenKey = 'agent-scheduler-dashboard-message-seen-v1';
 const emailDeliverySettingsKey = 'agent-scheduler-email-delivery-settings-v1';
 const profilePhotosKey = 'agent-scheduler-profile-photos-v1';
 const maxPolicyUploadBytes = 25 * 1024 * 1024;
@@ -2813,6 +2814,29 @@ function canUserViewDashboardMessage(user, messageBoardState) {
   const currentAgentTeam = normalizeManagedTeamValue(getAgent(Number(user?.agentId))?.team || '');
   if (!currentAgentTeam) return false;
   return selectedTeams.includes(currentAgentTeam);
+}
+
+function showPendingDashboardMessagePopup(user) {
+  if (!isAgentLikeUser(user)) return;
+  const messageBoardState = getDashboardMessageBoardState();
+  if (!canUserViewDashboardMessage(user, messageBoardState) || !messageBoardState.updatedAt) return;
+
+  const userKey = String(user?.id || user?.agentId || user?.username || '').trim();
+  if (!userKey) return;
+  let seenMessages = {};
+  try {
+    seenMessages = JSON.parse(localStorage.getItem(dashboardMessageSeenKey) || '{}');
+  } catch {
+    seenMessages = {};
+  }
+
+  const messageVersion = `${messageBoardState.updatedAt}|${messageBoardState.text}`;
+  if (seenMessages[userKey] === messageVersion) return;
+  seenMessages[userKey] = messageVersion;
+  safeSetLocalStorage(dashboardMessageSeenKey, JSON.stringify(seenMessages));
+
+  const postedBy = messageBoardState.updatedBy ? `\n\nPosted by: ${messageBoardState.updatedBy}` : '';
+  alert(`New dashboard message:\n\n${messageBoardState.text}${postedBy}`);
 }
 
 function getManagedTeamsForUser(user) {
@@ -8295,6 +8319,7 @@ function render() {
     return;
   }
   applyAccessForUser(currentUser);
+  showPendingDashboardMessagePopup(currentUser);
 
   if (pageMode === 'profile') {
     renderProfilePage(currentUser);
@@ -8553,12 +8578,12 @@ function render() {
                   <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
                     <div>
                       <h2 style="margin:0 0 6px;">Dashboard message board</h2>
-                      <div class="muted">Post dashboard updates and email them to selected teams.</div>
+                      <div class="muted">Post dashboard updates that selected teams will see when they next log in or refresh.</div>
                     </div>
                     ${dashboardMessageBoard.updatedAt ? `<div class="muted">Last updated ${escapeHtml(new Date(dashboardMessageBoard.updatedAt).toLocaleString())}${dashboardMessageBoard.updatedBy ? ` by ${escapeHtml(dashboardMessageBoard.updatedBy)}` : ''}</div>` : ''}
                   </div>
                   <form id="dashboard-message-board-form" class="stack" style="margin-top:10px;">
-                    <textarea name="messageText" rows="3" placeholder="Type the message to show on dashboard and email to teams." required>${escapeHtml(dashboardMessageBoard.text || '')}</textarea>
+                    <textarea name="messageText" rows="3" placeholder="Type the message to show to selected teams." required>${escapeHtml(dashboardMessageBoard.text || '')}</textarea>
                     <label style="display:flex; flex-direction:column; gap:6px;">
                       <span>Send to teams</span>
                       <div style="display:flex; flex-wrap:wrap; gap:8px;">
@@ -8571,7 +8596,7 @@ function render() {
                       </div>
                     </label>
                     <div class="row" style="justify-content:flex-end; gap:8px;">
-                      <button type="submit">Post and email teams</button>
+                      <button type="submit">Post message</button>
                       <button type="button" id="dashboard-message-board-clear" class="secondary">Clear message</button>
                     </div>
                   </form>
@@ -10429,23 +10454,8 @@ function bindEvents() {
       updatedBy
     });
 
-    const recipientEmails = getDashboardMessageRecipientEmails(selectedTeams);
-    const audienceSummary = selectedTeams.join(', ');
-    recipientEmails.forEach((recipientEmail) => {
-      sendEmailNotification({
-        to: recipientEmail,
-        subject: 'Dashboard message board update',
-        body: `A new dashboard message was posted for ${audienceSummary}.\n\n${messageText}\n\nPosted by: ${updatedBy}`,
-        type: 'dashboard-message-board'
-      });
-    });
-
     saveState();
-    const outboxCount = loadEmailOutbox().length;
-    const recipientNote = recipientEmails.length > 0
-      ? `Queued ${recipientEmails.length} team email${recipientEmails.length === 1 ? '' : 's'}.`
-      : 'No team member emails were found, so no emails were queued.';
-    alert(`Message board updated. ${recipientNote} Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
+    alert('Message board updated. Selected team members will see a pop-up the next time they log in or refresh their page.');
     render();
   });
 
