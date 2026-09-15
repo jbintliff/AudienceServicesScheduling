@@ -690,6 +690,16 @@ function getRoleCatalogForScope(departmentScope) {
   return getRoleCatalog().filter((role) => isDateEntryInDepartmentScope(getRoleDepartment(role), departmentScope));
 }
 
+function bulkAssignUnassignedRolesToDepartment(department) {
+  const nextDepartment = normalizeDepartment(department);
+  if (!nextDepartment) return;
+  getRoleCatalog().forEach((role) => {
+    if (!getRoleDepartment(role)) {
+      setRoleDepartment(role, nextDepartment);
+    }
+  });
+}
+
 function getPrimaryRole() {
   return getRoleCatalog()[0] || roleOptions[0];
 }
@@ -2934,6 +2944,33 @@ function getBlackoutDatesForScope(departmentScope, source = state.blackoutDates)
     .filter((entry) => isDateEntryInDepartmentScope(entry.department, departmentScope));
   const uniqueDates = new Set(scopedEntries.map((entry) => entry.date));
   return Array.from(uniqueDates).sort((left, right) => left.localeCompare(right));
+}
+
+function bulkAssignUnassignedBlackoutDatesToDepartment(department) {
+  const nextDepartment = normalizeDepartment(department);
+  if (!nextDepartment) return;
+  state.blackoutDates = normalizeBlackoutDateEntries(state.blackoutDates).map((entry) => (
+    entry.department ? entry : { date: entry.date, department: nextDepartment }
+  ));
+}
+
+function updateBlackoutDateDepartment(date, oldDepartment, newDepartment) {
+  const normalizedDate = String(date || '').trim().slice(0, 10);
+  const normalizedOldDepartment = normalizeDepartment(oldDepartment);
+  const normalizedNewDepartment = normalizeDepartment(newDepartment);
+  state.blackoutDates = normalizeBlackoutDateEntries(state.blackoutDates).map((entry) => (
+    entry.date === normalizedDate && entry.department === normalizedOldDepartment
+      ? { date: normalizedDate, department: normalizedNewDepartment }
+      : entry
+  ));
+}
+
+function removeBlackoutDateEntry(date, department) {
+  const normalizedDate = String(date || '').trim().slice(0, 10);
+  const normalizedDepartment = normalizeDepartment(department);
+  state.blackoutDates = normalizeBlackoutDateEntries(state.blackoutDates).filter((entry) => (
+    !(entry.date === normalizedDate && entry.department === normalizedDepartment)
+  ));
 }
 
 function isBlackoutDate(dateValue, departmentScope = getCurrentUserDepartmentScope()) {
@@ -5794,7 +5831,8 @@ async function importData(file) {
 }
 
 function renderAdminNavigationLinks(options = {}) {
-  const includeExport = options?.includeExport !== false;
+  const isBoxOfficeScoped = getCurrentUserDepartmentScope() === 'Box Office';
+  const includeExport = options?.includeExport !== false && !isBoxOfficeScoped;
   const includeImport = options?.includeImport !== false;
   const scheduleDropdown = `
     <details style="position:relative;">
@@ -5820,7 +5858,7 @@ function renderAdminNavigationLinks(options = {}) {
     '<a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>',
     '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>',
     adminDropdown,
-    '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>',
+    isBoxOfficeScoped ? '' : '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Email Outbox</button></a>',
     includeExport ? '<button id="export-data-btn" class="secondary">Export JSON</button>' : '',
     includeImport ? '<label class="secondary" style="display:inline-flex; align-items:center; padding:10px 12px; border-radius:10px; cursor:pointer;"><input id="import-data-input" type="file" accept="application/json" hidden />Import JSON</label>' : ''
   ].filter(Boolean).join('');
@@ -6150,7 +6188,7 @@ function renderProfilePage(currentUser) {
             <div>${escapeHtml(adminProfileNotice.text || '')}</div>
           </div>` : ''}
 
-        <div class="grid" style="margin-top:16px; grid-template-columns:1fr;">
+        <div class="grid" style="margin-top:16px;">
           <div class="stack">
             <div class="panel">
               <div class="card" style="margin-bottom:10px;">
@@ -6175,7 +6213,9 @@ function renderProfilePage(currentUser) {
                 </div>
               </form>
             </div>
+          </div>
 
+          <div class="stack">
             <div class="panel">
               <h2>Edit profile</h2>
               <form id="admin-update-profile-form" class="stack" style="margin-top:10px;">
@@ -6196,7 +6236,11 @@ function renderProfilePage(currentUser) {
                 <button type="submit">Save profile</button>
               </form>
             </div>
+          </div>
+        </div>
 
+        <div class="grid" style="margin-top:16px; grid-template-columns:1fr;">
+          <div class="stack">
             <div class="panel">
               <h2>Managers</h2>
               <p class="muted">Add additional manager accounts so multiple admins can access the site.</p>
@@ -7183,8 +7227,15 @@ function renderAdminOptionsPage(currentUser) {
             </select>
             <button type="submit">Add role</button>
           </form>
+          <form id="bulk-assign-roles-form" class="row" style="margin-bottom:10px; gap:8px; align-items:center;">
+            <span class="muted">Assign all unassigned roles to</span>
+            <select name="department" required>
+              ${departmentOptions.map((department) => `<option value="${department}" ${blackoutDepartmentScope === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+            </select>
+            <button type="submit" class="secondary">Apply</button>
+          </form>
           <div class="row" style="gap:8px; flex-wrap:wrap;">
-            ${roleChoices.map((role) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(role)}<button type="button" class="danger" data-remove-shift-role="${escapeHtml(role)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
+            ${roleChoices.map((role) => `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${escapeHtml(role)}<select data-role-department-select="${escapeHtml(role)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!getRoleDepartment(role) ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${getRoleDepartment(role) === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-shift-role="${escapeHtml(role)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
           </div>
         </div>
 
@@ -7232,6 +7283,16 @@ function renderAdminOptionsPage(currentUser) {
             <textarea name="blackoutDates" rows="6" placeholder="2026-12-24&#10;2026-12-25">${escapeHtml(getBlackoutDatesForScope(blackoutDepartmentScope).join('\n'))}</textarea>
             <button type="submit">Save blackout dates</button>
           </form>
+          <form id="bulk-assign-blackout-dates-form" class="row" style="margin-top:10px; gap:8px; align-items:center;">
+            <span class="muted">Assign all unassigned blackout dates to</span>
+            <select name="department" required>
+              ${departmentOptions.map((department) => `<option value="${department}" ${blackoutDepartmentScope === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+            </select>
+            <button type="submit" class="secondary">Apply</button>
+          </form>
+          <div class="row" style="gap:8px; flex-wrap:wrap; margin-top:10px;">
+            ${normalizeBlackoutDateEntries(state.blackoutDates).filter((entry) => isDateEntryInDepartmentScope(entry.department, blackoutDepartmentScope)).map((entry) => `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${escapeHtml(entry.date)}<select data-blackout-department-select="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!entry.department ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${entry.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-blackout-date="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:4px 8px;">Remove</button></span>`).join('') || '<span class="muted">No blackout dates yet.</span>'}
+          </div>
         </div>
 
         <div class="panel">
@@ -7596,7 +7657,7 @@ function renderPendingRequestsPage(currentUser) {
 
 function renderEmailOutboxPage(currentUser) {
   const isAdminView = currentUser.role === 'admin';
-  if (!isAdminView) {
+  if (!isAdminView || getCurrentUserDepartmentScope() === 'Box Office') {
     root.innerHTML = `
       <div class="app">
         <div class="panel">
@@ -9636,6 +9697,32 @@ function bindEvents() {
     render();
   });
 
+  document.getElementById('bulk-assign-blackout-dates-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    bulkAssignUnassignedBlackoutDatesToDepartment(formData.get('department'));
+    saveState();
+    render();
+  });
+
+  document.querySelectorAll('[data-blackout-department-select]').forEach((select) => {
+    select.addEventListener('change', () => {
+      const [entryDate, entryDepartment] = String(select.getAttribute('data-blackout-department-select') || '').split('|');
+      updateBlackoutDateDepartment(entryDate, entryDepartment, select.value);
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-remove-blackout-date]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const [entryDate, entryDepartment] = String(button.getAttribute('data-remove-blackout-date') || '').split('|');
+      removeBlackoutDateEntry(entryDate, entryDepartment);
+      saveState();
+      render();
+    });
+  });
+
   document.querySelectorAll('[data-open-availability-marker]').forEach((button) => {
     button.addEventListener('click', () => {
       const requestIds = String(button.getAttribute('data-open-availability-marker') || '')
@@ -10099,6 +10186,24 @@ function bindEvents() {
           delete state.roleColors[colorKey];
         }
       }
+      saveState();
+      render();
+    });
+  });
+
+  document.getElementById('bulk-assign-roles-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    bulkAssignUnassignedRolesToDepartment(formData.get('department'));
+    saveState();
+    render();
+  });
+
+  document.querySelectorAll('[data-role-department-select]').forEach((select) => {
+    select.addEventListener('change', () => {
+      const role = String(select.getAttribute('data-role-department-select') || '').trim();
+      if (!role) return;
+      setRoleDepartment(role, select.value);
       saveState();
       render();
     });
