@@ -8165,6 +8165,7 @@ function renderAvailabilityRequestsPage(currentUser) {
         </div>
       </div>
 
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(420px, 1fr)); gap:16px; align-items:start;">
       <div class="panel">
         <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
           <h2 style="margin:0;">All requests</h2>
@@ -8227,7 +8228,7 @@ function renderAvailabilityRequestsPage(currentUser) {
         `}
       </div>
 
-      <div class="panel" style="margin-top:16px;">
+      <div class="panel" style="margin-top:0;">
         <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
           <h2 style="margin:0;">Swap requests</h2>
           <button id="availability-swap-requests-toggle" class="secondary" type="button">${hideSwapRequests ? 'View swap requests' : 'Hide swap requests'}</button>
@@ -8273,6 +8274,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           }).join('') || '<div class="muted">No swap requests yet.</div>'}
         </div>
         `}
+      </div>
       </div>
     </div>
   `;
