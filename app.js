@@ -7241,6 +7241,7 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px;">
         <div class="panel">
           <h2>Venues</h2>
           <form id="add-shift-location-form" class="row" style="margin-bottom:10px;">
@@ -7272,6 +7273,7 @@ function renderAdminOptionsPage(currentUser) {
           <div class="row" style="gap:8px; flex-wrap:wrap;">
             ${roleChoices.map((role) => `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${escapeHtml(role)}<select data-role-department-select="${escapeHtml(role)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!getRoleDepartment(role) ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${getRoleDepartment(role) === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-shift-role="${escapeHtml(role)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
           </div>
+        </div>
         </div>
 
         <div class="panel">
