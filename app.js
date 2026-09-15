@@ -6306,7 +6306,7 @@ function renderProfilePage(currentUser) {
                         <strong>${escapeHtml(adminUser.name || adminUser.username || 'Manager')}</strong>
                         <div class="row" style="gap:8px; align-items:center;">
                           <div class="muted">Status: ${escapeHtml(adminUser.isActive === false ? 'Inactive' : 'Active')} • Access: ${escapeHtml(getUserRoleLabel(adminUser.role))}</div>
-                          <button type="button" class="secondary" data-toggle-manager-card="${adminUser.id}">${isManagerCardCollapsed ? 'Expand' : 'Collapse'}</button>
+                          <button type="button" class="secondary" data-toggle-manager-card="${adminUser.id}" title="${isManagerCardCollapsed ? 'Expand' : 'Collapse'}" aria-label="${isManagerCardCollapsed ? 'Expand' : 'Collapse'}">${isManagerCardCollapsed ? '\u25B6' : '\u25BC'}</button>
                         </div>
                       </div>
                       <div data-manager-card-body="${adminUser.id}" class="stack" style="${isManagerCardCollapsed ? 'display:none;' : ''}">
@@ -6618,7 +6618,9 @@ function renderProfilePage(currentUser) {
         if (cardBody) {
           cardBody.style.display = isCollapsed ? 'none' : '';
         }
-        button.textContent = isCollapsed ? 'Collapse' : 'Expand';
+        button.textContent = isCollapsed ? '\u25BC' : '\u25B6';
+        button.title = isCollapsed ? 'Collapse' : 'Expand';
+        button.setAttribute('aria-label', isCollapsed ? 'Collapse' : 'Expand');
       });
     });
 
@@ -7105,7 +7107,9 @@ function initializeAdminOptionsCollapsiblePanels() {
       contentNodes.forEach((child) => {
         child.style.display = isCollapsed ? 'none' : '';
       });
-      toggleButton.textContent = isCollapsed ? 'Expand' : 'Collapse';
+      toggleButton.textContent = isCollapsed ? '\u25B6' : '\u25BC';
+      toggleButton.title = isCollapsed ? 'Expand' : 'Collapse';
+      toggleButton.setAttribute('aria-label', isCollapsed ? 'Expand' : 'Collapse');
       panel.setAttribute('data-collapsed', isCollapsed ? 'true' : 'false');
     };
 
