@@ -9039,7 +9039,7 @@ function renderPublicAvailabilityViewPage() {
     <div class="app">
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
         <div>
-          <h1>Submitted availability and PTO requests</h1>
+          <h1>${publicViewDepartmentScope === 'Box Office' ? 'Submitted availability, PTO requests, and Open Shifts for Pick-up' : 'Submitted availability and PTO requests'}</h1>
           <p class="muted">${viewingAgentName ? `Personalized link for ${escapeHtml(viewingAgentName)}. Your own requests are shown by name and can be edited while pending; other agents are shown anonymously.` : 'View blackout dates and submitted requests. Other agents are shown anonymously.'}</p>
         </div>
         <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
