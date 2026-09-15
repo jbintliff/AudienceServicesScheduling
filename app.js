@@ -8162,7 +8162,7 @@ function renderAvailabilityRequestsPage(currentUser) {
       <div class="panel">
         <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
           <h2 style="margin:0;">All requests</h2>
-          <button id="availability-all-requests-toggle" class="secondary" type="button">${hideAllRequests ? 'View requests' : 'Hide requests'}</button>
+          <button id="availability-all-requests-toggle" class="secondary" type="button" title="${hideAllRequests ? 'View requests' : 'Hide requests'}" aria-label="${hideAllRequests ? 'View requests' : 'Hide requests'}">${hideAllRequests ? '\u25B6' : '\u25BC'}</button>
         </div>
         ${hideAllRequests ? '<div class="muted" style="margin-top:10px;">All requests are hidden.</div>' : `
         <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
@@ -8224,7 +8224,7 @@ function renderAvailabilityRequestsPage(currentUser) {
       <div class="panel" style="margin-top:0;">
         <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
           <h2 style="margin:0;">Swap requests</h2>
-          <button id="availability-swap-requests-toggle" class="secondary" type="button">${hideSwapRequests ? 'View swap requests' : 'Hide swap requests'}</button>
+          <button id="availability-swap-requests-toggle" class="secondary" type="button" title="${hideSwapRequests ? 'View swap requests' : 'Hide swap requests'}" aria-label="${hideSwapRequests ? 'View swap requests' : 'Hide swap requests'}">${hideSwapRequests ? '\u25B6' : '\u25BC'}</button>
         </div>
         ${hideSwapRequests ? '<div class="muted" style="margin-top:10px;">Swap requests are hidden.</div>' : `
         <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
