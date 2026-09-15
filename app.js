@@ -5850,7 +5850,7 @@ async function importData(file) {
 function renderAdminNavigationLinks(options = {}) {
   const isBoxOfficeScoped = getCurrentUserDepartmentScope() === 'Box Office';
   const includeExport = options?.includeExport !== false && !isBoxOfficeScoped;
-  const includeImport = options?.includeImport !== false;
+  const includeImport = options?.includeImport !== false && !isBoxOfficeScoped;
   const scheduleDropdown = `
     <details style="position:relative;">
       <summary class="secondary" style="list-style:none; cursor:pointer; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.08); color:#fff; user-select:none;">Schedule</summary>
