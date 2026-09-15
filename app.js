@@ -2762,6 +2762,14 @@ function getDashboardMessageBoardState() {
   return normalized;
 }
 
+function getAllowedDashboardMessageTeamsForUser(user) {
+  const userDepartment = getUserDepartment(user);
+  if (userDepartment === 'Box Office') {
+    return ['Box Office'];
+  }
+  return [...teamOptions];
+}
+
 function getDashboardMessageRecipientEmails(selectedTeams) {
   const normalizedTeams = normalizeManagedTeams(selectedTeams);
   if (normalizedTeams.length === 0) {
@@ -2780,6 +2788,9 @@ function canUserViewDashboardMessage(user, messageBoardState) {
   if (!messageBoardState?.text) return false;
   const selectedTeams = normalizeManagedTeams(messageBoardState.selectedTeams || []);
   if (selectedTeams.length === 0) return true;
+  if (getUserDepartment(user) === 'Box Office') {
+    return selectedTeams.length > 0 && selectedTeams.every((team) => team === 'Box Office');
+  }
   if (isAdminUser(user)) return true;
   if (isTeamLeadUser(user)) {
     const managedTeams = getManagedTeamsForUser(user);
@@ -8370,7 +8381,9 @@ function render() {
       return left.localeCompare(right);
     });
   const dashboardMessageBoard = getDashboardMessageBoardState();
-  const dashboardMessageTeams = normalizeManagedTeams(dashboardMessageBoard.selectedTeams || []);
+  const allowedDashboardMessageTeams = getAllowedDashboardMessageTeamsForUser(currentUser);
+  const dashboardMessageTeams = normalizeManagedTeams(dashboardMessageBoard.selectedTeams || [])
+    .filter((team) => allowedDashboardMessageTeams.includes(team));
   const canViewDashboardMessage = canUserViewDashboardMessage(currentUser, dashboardMessageBoard);
 
   root.innerHTML = `
@@ -8542,7 +8555,7 @@ function render() {
                     <label style="display:flex; flex-direction:column; gap:6px;">
                       <span>Send to teams</span>
                       <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                        ${teamOptions.map((team) => `
+                        ${allowedDashboardMessageTeams.map((team) => `
                           <label class="chip" style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
                             <input type="checkbox" name="selectedTeams" value="${escapeHtml(team)}" ${dashboardMessageTeams.includes(team) ? 'checked' : ''} />
                             <span>${escapeHtml(team)}</span>
@@ -10387,14 +10400,16 @@ function bindEvents() {
     if (!(formElement instanceof HTMLFormElement)) return;
     const formData = new FormData(formElement);
     const messageText = String(formData.get('messageText') || '').trim();
-    const selectedTeams = normalizeManagedTeams(formData.getAll('selectedTeams'));
+    const allowedDashboardMessageTeams = getAllowedDashboardMessageTeamsForUser(currentUser);
+    const selectedTeams = normalizeManagedTeams(formData.getAll('selectedTeams'))
+      .filter((team) => allowedDashboardMessageTeams.includes(team));
 
     if (!messageText) {
       alert('Enter a message before posting.');
       return;
     }
     if (selectedTeams.length === 0) {
-      alert('Select at least one team to send this message to.');
+      alert(`Select at least one team to send this message to. Box Office users can only send to the Box Office team.`);
       return;
     }
 
