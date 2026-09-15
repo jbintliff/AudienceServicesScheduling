@@ -6165,6 +6165,7 @@ function renderProfilePage(currentUser) {
   const isAbsenceManagerView = isTeamLeadUser(currentUser);
   if (isAdminView) {
     const currentManagedTeams = getManagedTeamsForUser(currentUser);
+    const isBoxOfficeScopedAdmin = getCurrentUserDepartmentScope() === 'Box Office';
     const adminUsers = authUsers
       .filter((user) => isAdminUser(user))
       .sort((left, right) => String(left.name || left.username || '').localeCompare(String(right.name || right.username || ''), undefined, { sensitivity: 'base' }));
@@ -6310,7 +6311,7 @@ function renderProfilePage(currentUser) {
                         <button type="submit" class="secondary">Save manager</button>
                         <button type="button" class="secondary" data-resend-admin-invite="${adminUser.id}">Resend invite</button>
                         <button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>
-                        <button type="button" class="danger" data-remove-admin="${adminUser.id}">Remove</button>
+                        ${isBoxOfficeScopedAdmin ? '' : `<button type="button" class="danger" data-remove-admin="${adminUser.id}">Remove</button>`}
                       </div>
                       </div>
                     </form>
@@ -6330,6 +6331,7 @@ function renderProfilePage(currentUser) {
               </form>
             </div>
 
+            ${isBoxOfficeScopedAdmin ? '' : `
             <div class="panel">
               <h2>Backend sync</h2>
               <p class="muted">Use a shared API URL so admin and agent data stays synchronized across devices.</p>
@@ -6341,7 +6343,7 @@ function renderProfilePage(currentUser) {
                 </div>
                 <div class="muted">Current backend: ${escapeHtml(backendApiBase || 'Not configured (local browser storage only)')}</div>
               </form>
-            </div>
+            </div>`}
 
             <div class="panel">
               <h2>Invite login URL</h2>
@@ -6674,6 +6676,10 @@ function renderProfilePage(currentUser) {
         const activeUser = getCurrentUser();
         const adminUser = authUsers.find((user) => isAdminUser(user) && Number(user.id) === adminId);
         if (!adminUser) return;
+        if (getCurrentUserDepartmentScope() === 'Box Office') {
+          alert('Box Office admin accounts cannot remove other managers.');
+          return;
+        }
         if (activeUser?.id === adminId) {
           alert('You cannot remove the manager account you are currently signed in with.');
           return;
@@ -7310,6 +7316,7 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
+        ${blackoutDepartmentScope === 'Box Office' ? '' : `
         <div class="panel">
           <h2>Email delivery</h2>
           <p class="muted">Control outgoing email and configure webhook delivery. When outgoing email is off, notifications stay local in Email outbox.</p>
@@ -7338,7 +7345,7 @@ function renderAdminOptionsPage(currentUser) {
               <button type="button" id="retry-undelivered-email" class="secondary">Retry undelivered emails</button>
             </div>
           </form>
-        </div>
+        </div>`}
       </div>
     </div>
   `;
