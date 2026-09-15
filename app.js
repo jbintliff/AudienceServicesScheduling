@@ -6269,7 +6269,7 @@ function renderProfilePage(currentUser) {
                 </label>
                 <button type="submit">Add manager</button>
               </form>
-              <div class="request-list" style="margin-top:12px;">
+              <div class="request-list" style="margin-top:12px; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));">
                 ${adminUsers.map((adminUser) => {
                   const isManagerCardCollapsed = Boolean(state.ui.collapsedManagerCards?.[adminUser.id]);
                   return `
