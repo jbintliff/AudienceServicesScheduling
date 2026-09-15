@@ -7236,12 +7236,13 @@ function renderAdminOptionsPage(currentUser) {
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px;">
         <div class="panel">
           <h2>Venues</h2>
+          ${blackoutDepartmentScope === 'Box Office' ? '' : `
           <form id="add-shift-location-form" class="row" style="margin-bottom:10px;">
             <input name="location" placeholder="Add venue" required />
             <button type="submit">Add venue</button>
-          </form>
+          </form>`}
           <div class="row" style="gap:8px; flex-wrap:wrap;">
-            ${locationChoices.map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}<button type="button" class="danger" data-remove-shift-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
+            ${locationChoices.map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}${blackoutDepartmentScope === 'Box Office' ? '' : `<button type="button" class="danger" data-remove-shift-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button>`}</span>`).join('')}
           </div>
         </div>
 
@@ -7263,7 +7264,7 @@ function renderAdminOptionsPage(currentUser) {
             <button type="submit" class="secondary">Apply</button>
           </form>
           <div class="row" style="gap:8px; flex-wrap:wrap;">
-            ${roleChoices.map((role) => `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${escapeHtml(role)}<select data-role-department-select="${escapeHtml(role)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!getRoleDepartment(role) ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${getRoleDepartment(role) === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-shift-role="${escapeHtml(role)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
+            ${roleChoices.map((role) => `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${escapeHtml(role)}<select data-role-department-select="${escapeHtml(role)}" ${blackoutDepartmentScope === 'Box Office' ? 'disabled title="Box Office accounts cannot change a role\'s department"' : ''} style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!getRoleDepartment(role) ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${getRoleDepartment(role) === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-shift-role="${escapeHtml(role)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
           </div>
           <div class="row" style="justify-content:space-between; align-items:center; margin-top:14px; margin-bottom:8px;">
             <h3 style="margin:0;">Role colors</h3>
@@ -10174,6 +10175,10 @@ function bindEvents() {
 
   document.getElementById('add-shift-location-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
+    if (getCurrentUserDepartmentScope() === 'Box Office') {
+      alert('Box Office admin accounts cannot add or change venues.');
+      return;
+    }
     const formData = new FormData(event.currentTarget);
     const location = String(formData.get('location') || '').trim();
     if (!location) return;
@@ -10188,6 +10193,10 @@ function bindEvents() {
 
   document.querySelectorAll('[data-remove-shift-location]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (getCurrentUserDepartmentScope() === 'Box Office') {
+        alert('Box Office admin accounts cannot add or change venues.');
+        return;
+      }
       const location = String(button.getAttribute('data-remove-shift-location') || '').trim();
       if (!location) return;
       const locationInUse = state.shifts.some((shift) => String(shift.location || '').trim() === location)
@@ -10256,6 +10265,11 @@ function bindEvents() {
 
   document.querySelectorAll('[data-role-department-select]').forEach((select) => {
     select.addEventListener('change', () => {
+      if (getCurrentUserDepartmentScope() === 'Box Office') {
+        alert('Box Office admin accounts cannot change a role\'s department.');
+        render();
+        return;
+      }
       const role = String(select.getAttribute('data-role-department-select') || '').trim();
       if (!role) return;
       setRoleDepartment(role, select.value);
