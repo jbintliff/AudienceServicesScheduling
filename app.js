@@ -516,6 +516,7 @@ const defaultState = {
   policies: [],
   blackoutDates: [],
   roleColors: {},
+  roleDepartments: {},
   roleCatalog: [...roleOptions],
   locationCatalog: [...shiftLocationOptions],
   ui: {
@@ -663,6 +664,30 @@ function normalizeLocationCatalog(values) {
 
 function getRoleCatalog() {
   return normalizeRoleCatalog(state?.roleCatalog);
+}
+
+function getRoleDepartment(roleName) {
+  const key = String(roleName || '').trim().toLowerCase();
+  if (!key) return '';
+  return normalizeDepartment(state.roleDepartments?.[key]);
+}
+
+function setRoleDepartment(roleName, department) {
+  const key = String(roleName || '').trim().toLowerCase();
+  if (!key) return;
+  state.roleDepartments = { ...(state.roleDepartments || {}), [key]: normalizeDepartment(department) };
+}
+
+function removeRoleDepartment(roleName) {
+  const key = String(roleName || '').trim().toLowerCase();
+  if (!key || !state.roleDepartments || !(key in state.roleDepartments)) return;
+  const nextRoleDepartments = { ...state.roleDepartments };
+  delete nextRoleDepartments[key];
+  state.roleDepartments = nextRoleDepartments;
+}
+
+function getRoleCatalogForScope(departmentScope) {
+  return getRoleCatalog().filter((role) => isDateEntryInDepartmentScope(getRoleDepartment(role), departmentScope));
 }
 
 function getPrimaryRole() {
@@ -2660,6 +2685,7 @@ function createDefaultState() {
     policies: defaultState.policies.map((policy) => ({ ...policy })),
     blackoutDates: [...defaultState.blackoutDates],
     roleColors: { ...defaultState.roleColors },
+    roleDepartments: { ...defaultState.roleDepartments },
     roleCatalog: [...defaultState.roleCatalog],
     locationCatalog: [...defaultState.locationCatalog],
     ui: getDefaultUiState()
@@ -3168,7 +3194,8 @@ function normalizeTemplates(templates, roleCatalog = roleOptions, locationCatalo
       start: normalizedStart || '08:00',
       end: normalizedEnd || '16:00',
       role: template?.role ? normalizeRoleLabel(template.role, normalizedRoles) : '',
-      location: requestedLocation && normalizedLocations.includes(requestedLocation) ? requestedLocation : ''
+      location: requestedLocation && normalizedLocations.includes(requestedLocation) ? requestedLocation : '',
+      department: normalizeDepartment(template?.department)
     };
   });
 }
@@ -3264,8 +3291,9 @@ function loadState() {
         Array.isArray(parsed.availabilityRequests) ? parsed.availabilityRequests : createDefaultState().availabilityRequests
       ),
       dashboardMessageBoard: normalizeDashboardMessageBoard(parsed.dashboardMessageBoard || createDefaultState().dashboardMessageBoard),
-      blackoutDates: normalizeBlackoutDates(parsed.blackoutDates),
+      blackoutDates: normalizeBlackoutDateEntries(parsed.blackoutDates),
       roleColors: parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : createDefaultState().roleColors,
+      roleDepartments: parsed.roleDepartments && typeof parsed.roleDepartments === 'object' && !Array.isArray(parsed.roleDepartments) ? parsed.roleDepartments : createDefaultState().roleDepartments,
       ui: loadUiState(parsed.ui)
     };
   } catch {
@@ -3626,9 +3654,12 @@ function cloneShift(shift, dayOverride) {
   };
 }
 
-function getRoleLegendItems() {
-  const normalizedBaseRoles = getRoleCatalog();
-  const assignedRoles = state.agents.map((agent) => String(agent.role || '').trim()).filter(Boolean);
+function getRoleLegendItems(departmentScope = getCurrentUserDepartmentScope()) {
+  const normalizedBaseRoles = getRoleCatalogForScope(departmentScope);
+  const assignedRoles = state.agents
+    .filter((agent) => isAgentInDepartmentScope(agent, departmentScope))
+    .map((agent) => String(agent.role || '').trim())
+    .filter(Boolean);
   return Array.from(new Set([...normalizedBaseRoles, ...assignedRoles]));
 }
 
@@ -5741,6 +5772,8 @@ async function importData(file) {
     Object.assign(state, parsed);
     state.policies = importedPolicies;
     state.roleColors = parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : {};
+    state.roleDepartments = parsed.roleDepartments && typeof parsed.roleDepartments === 'object' && !Array.isArray(parsed.roleDepartments) ? parsed.roleDepartments : {};
+    state.blackoutDates = normalizeBlackoutDateEntries(parsed.blackoutDates);
     state.ui = loadUiState(parsed.ui);
 
     for (const importedPolicy of importedPolicies) {
@@ -5903,7 +5936,7 @@ function renderCalendarPage(currentUser) {
               <div class="row">
                 <select name="templateId">
                   <option value="">Use template (optional)</option>
-                  ${state.templates.filter((template) => isTemplateActive(template)).map((template) => `<option value="${template.id}">${escapeHtml(template.name)} (${escapeHtml(formatTimeRange(template.start, template.end))})</option>`).join('')}
+                  ${state.templates.filter((template) => isTemplateActive(template) && isDateEntryInDepartmentScope(template.department, getCurrentUserDepartmentScope())).map((template) => `<option value="${template.id}">${escapeHtml(template.name)} (${escapeHtml(formatTimeRange(template.start, template.end))})</option>`).join('')}
                 </select>
                 <select name="agentId">
                   <option value="">Unassigned (optional)</option>
@@ -7049,9 +7082,10 @@ function renderAdminOptionsPage(currentUser) {
     return;
   }
 
-  const roleChoices = getRoleCatalog();
+  const roleChoices = getRoleCatalogForScope(getCurrentUserDepartmentScope());
   const locationChoices = getLocationCatalog();
   const blackoutDepartmentScope = getCurrentUserDepartmentScope();
+  const scopedTemplates = state.templates.filter((template) => isDateEntryInDepartmentScope(template.department, blackoutDepartmentScope));
 
   root.innerHTML = `
     <div class="app">
@@ -7069,7 +7103,7 @@ function renderAdminOptionsPage(currentUser) {
 
       <div class="grid" style="grid-template-columns:1fr; gap:12px;">
         <div class="panel">
-          <h2>Shift templates</h2>
+          <h2>Shift templates${blackoutDepartmentScope ? ` (${escapeHtml(blackoutDepartmentScope)})` : ' (All departments)'}</h2>
           <form id="add-shift-template-form" class="stack" style="margin-bottom:12px;">
             <div class="row" style="flex-wrap:wrap;">
               <input name="name" placeholder="Template name" required />
@@ -7083,6 +7117,10 @@ function renderAdminOptionsPage(currentUser) {
                 <option value="">No default venue</option>
                 ${locationChoices.map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
               </select>
+              <select name="department">
+                <option value="" ${!blackoutDepartmentScope ? 'selected' : ''}>All departments</option>
+                ${departmentOptions.map((department) => `<option value="${department}" ${blackoutDepartmentScope === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+              </select>
               <label class="row" style="gap:6px; align-items:center; white-space:nowrap;">
                 <input name="active" type="checkbox" checked />
                 <span>Active</span>
@@ -7091,7 +7129,7 @@ function renderAdminOptionsPage(currentUser) {
             </div>
           </form>
           <div class="request-list">
-            ${state.templates.map((template) => `
+            ${scopedTemplates.map((template) => `
               <div class="card" style="padding:10px;">
                 <form class="stack" data-update-shift-template="${template.id}" style="gap:8px;">
                   <div class="row" style="flex-wrap:wrap; align-items:flex-end;">
@@ -7105,6 +7143,10 @@ function renderAdminOptionsPage(currentUser) {
                     <select name="location">
                       <option value="">No default venue</option>
                       ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(template.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
+                    </select>
+                    <select name="department">
+                      <option value="" ${!template.department ? 'selected' : ''}>All departments</option>
+                      ${departmentOptions.map((department) => `<option value="${department}" ${template.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
                     </select>
                     <label class="row" style="gap:6px; align-items:center; white-space:nowrap;">
                       <input name="active" type="checkbox" ${isTemplateActive(template) ? 'checked' : ''} />
@@ -7132,9 +7174,13 @@ function renderAdminOptionsPage(currentUser) {
         </div>
 
         <div class="panel">
-          <h2>Roles</h2>
+          <h2>Roles${blackoutDepartmentScope ? ` (${escapeHtml(blackoutDepartmentScope)})` : ' (All departments)'}</h2>
           <form id="add-shift-role-form" class="row" style="margin-bottom:10px;">
             <input name="role" placeholder="Add role" required />
+            <select name="department">
+              <option value="" ${!blackoutDepartmentScope ? 'selected' : ''}>All departments</option>
+              ${departmentOptions.map((department) => `<option value="${department}" ${blackoutDepartmentScope === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+            </select>
             <button type="submit">Add role</button>
           </form>
           <div class="row" style="gap:8px; flex-wrap:wrap;">
@@ -9780,7 +9826,8 @@ function bindEvents() {
       durationHours: getDurationHours(start, end),
       active,
       role: requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '',
-      location: requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : ''
+      location: requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : '',
+      department: normalizeDepartment(formData.get('department'))
     });
     saveState();
     render();
@@ -9812,7 +9859,8 @@ function bindEvents() {
             durationHours: getDurationHours(start, end),
             active,
             role: requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '',
-            location: requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : ''
+            location: requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : '',
+            department: normalizeDepartment(formData.get('department'))
           }
         : template);
       saveState();
@@ -10022,6 +10070,7 @@ function bindEvents() {
       return;
     }
     state.roleCatalog = [...getRoleCatalog(), role];
+    setRoleDepartment(role, formData.get('department'));
     saveState();
     render();
   });
@@ -10043,6 +10092,7 @@ function bindEvents() {
         return;
       }
       state.roleCatalog = nextRoleCatalog;
+      removeRoleDepartment(role);
       if (state.roleColors && typeof state.roleColors === 'object') {
         const colorKey = role.toLowerCase();
         if (state.roleColors[colorKey]) {
