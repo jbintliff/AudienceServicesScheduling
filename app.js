@@ -226,6 +226,7 @@ function sanitizePoliciesForStorage(policies) {
       name: String(policy?.name || '').trim(),
       mimeType: String(policy?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream',
       sizeBytes: Number(policy?.sizeBytes) || 0,
+      department: normalizeDepartment(policy?.department),
       uploadedAt: String(policy?.uploadedAt || '').trim() || getCurrentIsoTimestamp()
     }))
     .filter((policy) => policy.name);
@@ -2778,7 +2779,6 @@ function isAgentInDepartmentScope(agentOrId, departmentScope) {
   const agent = (agentOrId && typeof agentOrId === 'object') ? agentOrId : getAgent(agentOrId);
   if (!agent) return true;
   const agentDepartment = normalizeDepartment(agent.department);
-  if (!agentDepartment) return true;
   return agentDepartment === departmentScope;
 }
 
@@ -2868,23 +2868,52 @@ function parseCurrencyAmount(value) {
   return Number.isFinite(parsed) ? parsed : NaN;
 }
 
-function normalizeBlackoutDates(value) {
+function normalizeBlackoutDateEntries(value) {
   const source = Array.isArray(value)
     ? value
     : String(value || '').split(/[\s,]+/);
-  const uniqueDates = new Set();
+  const seenKeys = new Set();
+  const normalized = [];
   source.forEach((item) => {
-    const normalized = String(item || '').trim().slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return;
-    uniqueDates.add(normalized);
+    let dateValue = '';
+    let department = '';
+    if (item && typeof item === 'object') {
+      dateValue = String(item.date || '').trim().slice(0, 10);
+      department = normalizeDepartment(item.department);
+    } else {
+      dateValue = String(item || '').trim().slice(0, 10);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return;
+    const key = `${dateValue}|${department}`;
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
+    normalized.push({ date: dateValue, department });
   });
+  return normalized.sort((left, right) => left.date.localeCompare(right.date) || left.department.localeCompare(right.department));
+}
+
+function normalizeBlackoutDates(value) {
+  const uniqueDates = new Set(normalizeBlackoutDateEntries(value).map((entry) => entry.date));
   return Array.from(uniqueDates).sort((left, right) => left.localeCompare(right));
 }
 
-function isBlackoutDate(dateValue) {
+function isDateEntryInDepartmentScope(entryDepartment, departmentScope) {
+  if (!departmentScope) return true;
+  if (!entryDepartment) return true;
+  return entryDepartment === departmentScope;
+}
+
+function getBlackoutDatesForScope(departmentScope, source = state.blackoutDates) {
+  const scopedEntries = normalizeBlackoutDateEntries(source)
+    .filter((entry) => isDateEntryInDepartmentScope(entry.department, departmentScope));
+  const uniqueDates = new Set(scopedEntries.map((entry) => entry.date));
+  return Array.from(uniqueDates).sort((left, right) => left.localeCompare(right));
+}
+
+function isBlackoutDate(dateValue, departmentScope = getCurrentUserDepartmentScope()) {
   const normalizedDate = String(dateValue || '').trim().slice(0, 10);
   if (!normalizedDate) return false;
-  return normalizeBlackoutDates(state.blackoutDates).includes(normalizedDate);
+  return getBlackoutDatesForScope(departmentScope).includes(normalizedDate);
 }
 
 function getUpcomingBlackoutDates(dates) {
@@ -2892,12 +2921,13 @@ function getUpcomingBlackoutDates(dates) {
   return normalizeBlackoutDates(dates).filter((dateValue) => dateValue >= todayIso);
 }
 
-function getBlackoutDateMarker(dateValue) {
-  if (!isBlackoutDate(dateValue)) {
+function getBlackoutDateMarker(dateValue, departmentScope = getCurrentUserDepartmentScope()) {
+  if (!isBlackoutDate(dateValue, departmentScope)) {
     return '';
   }
   return '<div class="chip" style="margin-top:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>';
 }
+
 
 function getClickableAvailabilityMarkerHtml(requests, label, styleValue) {
   const requestIds = (Array.isArray(requests) ? requests : [])
@@ -2919,6 +2949,7 @@ function getPtoDateMarkers(dateValue) {
   const approvedPtoRequests = getAllAvailabilityRequests()
     .filter((request) => normalizeAvailabilityRequestStatus(request?.status) === 'approved')
     .filter((request) => String(request?.unavailabilityType || '').trim() === 'PTO')
+    .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
     .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === normalizedDate)
     .sort((left, right) => {
       const leftName = String(getAgent(left?.agentId)?.name || left?.requesterName || '').trim();
@@ -2974,6 +3005,7 @@ function getRecurringAvailabilityDateMarkers(dateValue) {
 
   const recurringAvailabilityRequests = getAllAvailabilityRequests()
     .filter((request) => isRecurringAvailabilityRequestActive(request, normalizedDate))
+    .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
     .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === normalizedDate)
     .sort((left, right) => {
       const leftName = String(getAgent(left?.agentId)?.name || left?.requesterName || '').trim();
@@ -3150,6 +3182,7 @@ function normalizePolicies(policies) {
       mimeType: String(policy?.mimeType || 'application/octet-stream').trim(),
       legacyContentBase64: String(policy?.contentBase64 || '').trim(),
       sizeBytes: Number(policy?.sizeBytes) || 0,
+      department: normalizeDepartment(policy?.department),
       uploadedAt: String(policy?.uploadedAt || '').trim() || new Date().toISOString()
     }))
     .filter((policy) => policy.name);
@@ -5003,7 +5036,7 @@ function openAgentPendingRequestEditModal(request, onSave) {
       return;
     }
 
-    if (isBlackoutDate(nextDate)) {
+    if (isBlackoutDate(nextDate, normalizeDepartment(getAgent(request.agentId)?.department))) {
       alert(`Cannot schedule for ${nextDate} due to a blackout date. Please check in with your manager directly.`);
       return;
     }
@@ -5954,6 +5987,7 @@ function renderCalendarPage(currentUser) {
             const dayDate = String(weekDates[day]?.iso || '').slice(0, 10);
             const dayRequests = getAllAvailabilityRequests()
               .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+              .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
               .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === dayDate);
             const hasDayRequests = dayRequests.length > 0;
             return `
@@ -7017,6 +7051,7 @@ function renderAdminOptionsPage(currentUser) {
 
   const roleChoices = getRoleCatalog();
   const locationChoices = getLocationCatalog();
+  const blackoutDepartmentScope = getCurrentUserDepartmentScope();
 
   root.innerHTML = `
     <div class="app">
@@ -7112,16 +7147,21 @@ function renderAdminOptionsPage(currentUser) {
           <p class="muted">Upload policy files that agents can view and download from the Policies page.</p>
           <form id="upload-policy-form" class="row" style="margin-bottom:10px; flex-wrap:wrap;">
             <input name="policyFile" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
+            <select name="department">
+              <option value="" ${!blackoutDepartmentScope ? 'selected' : ''}>All departments</option>
+              ${departmentOptions.map((department) => `<option value="${department}" ${blackoutDepartmentScope === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+            </select>
             <button type="submit">Upload policy</button>
           </form>
           <div class="request-list">
-            ${(Array.isArray(state.policies) ? state.policies : []).map((policy) => `
+            ${(Array.isArray(state.policies) ? state.policies : []).filter((policy) => isDateEntryInDepartmentScope(policy.department, blackoutDepartmentScope)).map((policy) => `
               <div class="card">
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
                     <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
                       <strong>${escapeHtml(policy.name || 'Policy')}</strong>
                       <span class="chip" style="font-size:0.72rem; padding:3px 8px;">${escapeHtml(getPolicyTypeLabel(policy))}</span>
+                      <span class="chip" style="font-size:0.72rem; padding:3px 8px;">${escapeHtml(policy.department || 'All departments')}</span>
                     </div>
                     <div class="muted">Uploaded: ${escapeHtml(policy.uploadedAt ? new Date(policy.uploadedAt).toLocaleString() : 'Unknown')}</div>
                     <div class="muted">Size: ${escapeHtml(formatBytes(policy.sizeBytes))}</div>
@@ -7140,10 +7180,10 @@ function renderAdminOptionsPage(currentUser) {
         ${renderPolicyPreviewModal()}
 
         <div class="panel">
-          <h2>Blackout dates</h2>
-          <p class="muted">Agents cannot submit time-off requests for these dates. Enter one date per line.</p>
+          <h2>Blackout dates${blackoutDepartmentScope ? ` (${escapeHtml(blackoutDepartmentScope)})` : ' (All departments)'}</h2>
+          <p class="muted">Agents cannot submit time-off requests for these dates. Enter one date per line.${blackoutDepartmentScope ? ` These dates only apply to ${escapeHtml(blackoutDepartmentScope)}.` : ' These dates apply to every department.'}</p>
           <form id="admin-blackout-dates-form" class="stack" style="margin-top:10px;">
-            <textarea name="blackoutDates" rows="6" placeholder="2026-12-24&#10;2026-12-25">${escapeHtml(normalizeBlackoutDates(state.blackoutDates).join('\n'))}</textarea>
+            <textarea name="blackoutDates" rows="6" placeholder="2026-12-24&#10;2026-12-25">${escapeHtml(getBlackoutDatesForScope(blackoutDepartmentScope).join('\n'))}</textarea>
             <button type="submit">Save blackout dates</button>
           </form>
         </div>
@@ -7292,7 +7332,9 @@ function renderAdminOptionsPage(currentUser) {
 
 function renderPoliciesPage(currentUser) {
   const isAdminView = currentUser.role === 'admin';
+  const policiesDepartmentScope = getCurrentUserDepartmentScope();
   const policies = [...(Array.isArray(state.policies) ? state.policies : [])]
+    .filter((policy) => isDateEntryInDepartmentScope(policy.department, policiesDepartmentScope))
     .sort((left, right) => String(right.uploadedAt || '').localeCompare(String(left.uploadedAt || '')));
 
   root.innerHTML = `
@@ -7807,7 +7849,7 @@ function renderAvailabilityRequestsPage(currentUser) {
   const filteredPendingSwapCount = visibleSwapRequestsForList.filter((request) => getSwapRequestFilterStatus(request) === 'pending').length;
   const selectedMonth = state.ui.availabilityCalendarMonth || getCurrentLocalMonthValue();
   const calendarData = getAvailabilityCalendarCells(selectedMonth, visibleAvailabilityRequests);
-  const allBlackoutDates = normalizeBlackoutDates(state.blackoutDates);
+  const allBlackoutDates = getBlackoutDatesForScope(departmentScope);
   const monthBlackoutDates = allBlackoutDates
     .filter((dateValue) => String(dateValue || '').startsWith(`${selectedMonth}-`))
     .sort((left, right) => left.localeCompare(right));
@@ -8197,7 +8239,7 @@ function render() {
   const currentAgentId = Number(viewAgent?.id);
   const visibleShifts = isAgentView ? getAgentViewShifts() : [];
   const sortedVisibleShifts = [...visibleShifts].sort(compareCalendarShiftDisplayOrder);
-  const blackoutDates = normalizeBlackoutDates(state.blackoutDates);
+  const blackoutDates = getBlackoutDatesForScope(getCurrentUserDepartmentScope());
   const plannerWeekReference = getActiveCalendarWeekReference();
   const weekDates = getCalendarWeekDates(plannerWeekReference);
   const plannerWeekDates = getCalendarWeekDates(plannerWeekReference);
@@ -8650,7 +8692,8 @@ function renderPublicAvailabilityRequestPage() {
   const lockedAgent = lockedAgentId ? getAgent(lockedAgentId) : null;
   const visibleAgents = getFilteredAgents();
   const sortedAgents = [...visibleAgents].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
-  const blackoutDates = getUpcomingBlackoutDates(state.blackoutDates);
+  const publicFormDepartmentScope = lockedAgent ? normalizeDepartment(lockedAgent.department) : getCurrentUserDepartmentScope();
+  const blackoutDates = getUpcomingBlackoutDates(getBlackoutDatesForScope(publicFormDepartmentScope));
   const defaultEmail = lockedAgent ? (getAgentAccountEmail(lockedAgent.id) || normalizeEmail(currentUser?.email) || '') : '';
 
   root.innerHTML = `
@@ -8837,7 +8880,8 @@ function renderPublicAvailabilityViewPage() {
     .filter((request) => String(request?.recurrenceType || '').trim().toLowerCase() !== 'weekly');
   const selectedMonth = publicAvailabilityViewUi.month || getCurrentLocalMonthValue();
   const calendarData = getAvailabilityCalendarCells(selectedMonth, allAvailabilityRequests);
-  const blackoutDates = getUpcomingBlackoutDates(state.blackoutDates);
+  const publicViewDepartmentScope = viewingAgentId ? normalizeDepartment(getAgent(viewingAgentId)?.department) : getCurrentUserDepartmentScope();
+  const blackoutDates = getUpcomingBlackoutDates(getBlackoutDatesForScope(publicViewDepartmentScope));
   const monthBlackoutDates = blackoutDates
     .filter((dateValue) => String(dateValue || '').startsWith(`${selectedMonth}-`))
     .sort((left, right) => left.localeCompare(right));
@@ -8883,7 +8927,7 @@ function renderPublicAvailabilityViewPage() {
             if (cell.empty) {
               return '<div class="card" style="min-height:96px; opacity:0.25;"></div>';
             }
-            const blackoutDate = isBlackoutDate(cell.date);
+            const blackoutDate = isBlackoutDate(cell.date, publicViewDepartmentScope);
             const cellRequests = cell.requests || [];
             return `
               <div class="card" style="min-height:96px; padding:8px; ${blackoutDate ? 'border-color:#AB5C57; box-shadow:inset 0 0 0 1px rgba(171,92,87,0.55);' : ''}">
@@ -9084,7 +9128,7 @@ function submitPublicAvailabilityRequest(formElement) {
     return false;
   }
 
-  const blockedBlackoutDates = recurrencePlan.dates.filter((dateValue) => isBlackoutDate(dateValue));
+  const blockedBlackoutDates = recurrencePlan.dates.filter((dateValue) => isBlackoutDate(dateValue, normalizeDepartment(getAgent(currentId)?.department)));
   if (blockedBlackoutDates.length > 0) {
     alert('Cannot submit due to blackout dates. Please check in with your manager directly.');
     return false;
@@ -9293,7 +9337,7 @@ function submitAvailabilityRequest(formElement) {
     return false;
   }
 
-  const blockedBlackoutDates = recurrencePlan.dates.filter((dateValue) => isBlackoutDate(dateValue));
+  const blockedBlackoutDates = recurrencePlan.dates.filter((dateValue) => isBlackoutDate(dateValue, normalizeDepartment(getAgent(currentId)?.department)));
   if (blockedBlackoutDates.length > 0) {
     alert('cannot submit due to blackout dates. please check in with your manager directly');
     return false;
@@ -9527,7 +9571,13 @@ function bindEvents() {
   document.getElementById('admin-blackout-dates-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    state.blackoutDates = normalizeBlackoutDates(formData.get('blackoutDates'));
+    const scope = getCurrentUserDepartmentScope();
+    const enteredDates = normalizeBlackoutDates(formData.get('blackoutDates'));
+    const otherScopeEntries = normalizeBlackoutDateEntries(state.blackoutDates).filter((entry) => entry.department !== scope);
+    state.blackoutDates = normalizeBlackoutDateEntries([
+      ...otherScopeEntries,
+      ...enteredDates.map((date) => ({ date, department: scope }))
+    ]);
     saveState();
     if (pageMode === 'profile') {
       adminProfileNotice = {
@@ -9796,6 +9846,8 @@ function bindEvents() {
     if (!(formElement instanceof HTMLFormElement)) return;
     const fileInput = formElement.querySelector('input[name="policyFile"]');
     if (!(fileInput instanceof HTMLInputElement)) return;
+    const departmentInput = formElement.querySelector('select[name="department"]');
+    const selectedDepartment = normalizeDepartment(departmentInput instanceof HTMLSelectElement ? departmentInput.value : '');
     const selectedFile = fileInput.files?.[0];
     if (!selectedFile) {
       alert('Choose a file to upload.');
@@ -9846,6 +9898,7 @@ function bindEvents() {
             mimeType: selectedFile.type || 'application/octet-stream'
           }),
           sizeBytes: Number(selectedFile.size) || 0,
+          department: selectedDepartment,
           uploadedAt: new Date().toISOString()
         }
       ];
@@ -11088,6 +11141,7 @@ function bindEvents() {
       if (!dateValue) return;
       const targetRequests = getAllAvailabilityRequests()
         .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+        .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
         .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === dateValue);
       if (targetRequests.length === 0) return;
       openAvailabilityRequestListModal(targetRequests, dateValue);
