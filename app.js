@@ -1219,6 +1219,24 @@ if (loadAvailabilityRequestsFromStorage().length === 0 && Array.isArray(state.av
   safeSetLocalStorage(availabilityRequestsKey, JSON.stringify(mergeAvailabilityRequests(state.availabilityRequests)));
 }
 
+(function ensureBoxOfficeDefaultRoles() {
+  const defaultBoxOfficeRoles = ['Box Office Worker', 'Box Office Assistant Manager'];
+  let didChange = false;
+  defaultBoxOfficeRoles.forEach((roleName) => {
+    if (!getRoleCatalog().some((item) => item.toLowerCase() === roleName.toLowerCase())) {
+      state.roleCatalog = [...getRoleCatalog(), roleName];
+      didChange = true;
+    }
+    if (!getRoleDepartment(roleName)) {
+      setRoleDepartment(roleName, 'Box Office');
+      didChange = true;
+    }
+  });
+  if (didChange) {
+    saveState();
+  }
+})();
+
 function syncFromStorage() {
   const latestState = loadState();
   Object.assign(state, latestState);
