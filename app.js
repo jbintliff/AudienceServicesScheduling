@@ -646,10 +646,6 @@ function isAgentLikeUser(user) {
   return isAgentUser(user) || isTeamLeadUser(user);
 }
 
-function isAbsenceManagerUser(user) {
-  return isTeamLeadUser(user);
-}
-
 function canMarkShiftAbsences(user) {
   return isAdminUser(user) || isTeamLeadUser(user);
 }
@@ -3720,15 +3716,6 @@ function formatBytes(value) {
   return `${mb.toFixed(1)} MB`;
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('Unable to read selected file.'));
-    reader.readAsDataURL(file);
-  });
-}
-
 function readFileAsText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -5443,10 +5430,6 @@ function getApprovedPtoHours(agentId, referenceDateValue = '') {
     .reduce((sum, request) => sum + getDurationHours(request.unavailableStart, request.unavailableEnd), 0);
 }
 
-function getMinimumHoursCredit(agentId, referenceDateValue = '') {
-  return getAssignedHours(agentId, referenceDateValue) + getApprovedPtoHours(agentId, referenceDateValue);
-}
-
 function getAvailabilityStats() {
   const departmentScope = getCurrentUserDepartmentScope();
   const scopedAgents = state.agents.filter((agent) => isAgentInDepartmentScope(agent, departmentScope));
@@ -5543,21 +5526,6 @@ function getSwapRequestFromShiftId(request) {
 
 function getSwapRequestToShiftId(request) {
   return Number(request?.toShiftId || request?.targetShiftId || 0) || null;
-}
-
-function getSwapRequestSummary(request) {
-  const fromShift = getShiftById(getSwapRequestFromShiftId(request));
-  const toShift = getShiftById(getSwapRequestToShiftId(request));
-  if (!fromShift && !toShift) {
-    return 'Swap request';
-  }
-  if (fromShift && !toShift) {
-    return getShiftSummary(fromShift);
-  }
-  if (!fromShift && toShift) {
-    return getShiftSummary(toShift);
-  }
-  return `${getShiftSummary(fromShift)} ↔ ${getShiftSummary(toShift)}`;
 }
 
 function getSwapRequestShiftLabel(request, side) {
