@@ -7279,9 +7279,9 @@ function renderAdminOptionsPage(currentUser) {
           </div>
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:center; width:100%;">
             ${getRoleLegendItems().map((role) => `
-              <label class="row" style="justify-content:space-between; gap:8px; width:100%; margin:0;">
-                <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
-                <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="width:56px; padding:4px;" />
+              <label class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25); cursor:pointer; justify-content:center; width:100%; margin:0;" title="Click to change color">
+                ${escapeHtml(role)}
+                <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
               </label>
             `).join('')}
           </div>
@@ -8472,11 +8472,11 @@ function render() {
                     <h2 style="margin:0;">Role colors</h2>
                     <button id="reset-role-colors" class="secondary" type="button">Reset role colors</button>
                   </div>
-                  <div style="display:grid; grid-template-columns:repeat(${getRoleLegendItems().length}, minmax(0, 1fr)); gap:10px; align-items:center; width:100%;">
+                  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:center; width:100%;">
                     ${getRoleLegendItems().map((role) => `
-                      <label class="row" style="justify-content:space-between; gap:8px; width:100%; margin:0;">
-                        <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
-                        <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="width:56px; padding:4px;" />
+                      <label class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25); cursor:pointer; justify-content:center; width:100%; margin:0;" title="Click to change color">
+                        ${escapeHtml(role)}
+                        <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
                       </label>
                     `).join('')}
                   </div>
