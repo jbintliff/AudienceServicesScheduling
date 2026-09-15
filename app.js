@@ -7273,6 +7273,18 @@ function renderAdminOptionsPage(currentUser) {
           <div class="row" style="gap:8px; flex-wrap:wrap;">
             ${roleChoices.map((role) => `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${escapeHtml(role)}<select data-role-department-select="${escapeHtml(role)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!getRoleDepartment(role) ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${getRoleDepartment(role) === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-shift-role="${escapeHtml(role)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
           </div>
+          <div class="row" style="justify-content:space-between; align-items:center; margin-top:14px; margin-bottom:8px;">
+            <h3 style="margin:0;">Role colors</h3>
+            <button id="reset-role-colors" class="secondary" type="button">Reset role colors</button>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:center; width:100%;">
+            ${getRoleLegendItems().map((role) => `
+              <label class="row" style="justify-content:space-between; gap:8px; width:100%; margin:0;">
+                <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
+                <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="width:56px; padding:4px;" />
+              </label>
+            `).join('')}
+          </div>
         </div>
         </div>
 
@@ -7329,21 +7341,6 @@ function renderAdminOptionsPage(currentUser) {
           </form>
           <div class="row" style="gap:8px; flex-wrap:wrap; margin-top:10px;">
             ${normalizeBlackoutDateEntries(state.blackoutDates).filter((entry) => isDateEntryInDepartmentScope(entry.department, blackoutDepartmentScope)).map((entry) => `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${escapeHtml(entry.date)}<select data-blackout-department-select="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!entry.department ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${entry.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-blackout-date="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:4px 8px;">Remove</button></span>`).join('') || '<span class="muted">No blackout dates yet.</span>'}
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <h2 style="margin:0;">Role colors</h2>
-            <button id="reset-role-colors" class="secondary" type="button">Reset role colors</button>
-          </div>
-          <div style="display:grid; grid-template-columns:repeat(${getRoleLegendItems().length}, minmax(0, 1fr)); gap:10px; align-items:center; width:100%;">
-            ${getRoleLegendItems().map((role) => `
-              <label class="row" style="justify-content:space-between; gap:8px; width:100%; margin:0;">
-                <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
-                <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="width:56px; padding:4px;" />
-              </label>
-            `).join('')}
           </div>
         </div>
 
