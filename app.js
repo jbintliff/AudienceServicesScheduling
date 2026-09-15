@@ -8053,57 +8053,17 @@ function renderAvailabilityRequestsPage(currentUser) {
         </div>
       </div>
 
-      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px; margin-bottom:16px; align-items:start;">
-        <div class="panel">
-          <h2>Blackout dates</h2>
-          <p class="muted">Agents cannot submit time-off requests for these dates.</p>
-          <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
-            <span class="muted" style="font-size:12px;">${monthBlackoutDates.length} this month • ${allBlackoutDates.length} total</span>
+      <div class="stack" style="margin-top:14px;">
+        <h3 style="margin:0;">Blackout dates</h3>
+        <p class="muted" style="margin:0;">Agents cannot submit time-off requests for these dates. Enter one date per line.${departmentScope ? ` These dates only apply to ${escapeHtml(departmentScope)}.` : ' These dates apply to every department.'}</p>
+        <form id="admin-blackout-dates-form" class="stack" style="margin-top:6px;">
+          <textarea name="blackoutDates" rows="5" placeholder="2026-12-24&#10;2026-12-25">${escapeHtml(getBlackoutDatesForScope(departmentScope).join('\n'))}</textarea>
+          <div class="row" style="justify-content:flex-end;">
+            <button type="submit">Save blackout dates</button>
           </div>
-          <div class="row" style="margin-top:8px; gap:6px; flex-wrap:wrap;">
-            ${monthBlackoutDates.length > 0
-              ? `${monthBlackoutDates.slice(0, 12).map((dateValue) => `<span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}${monthBlackoutDates.length > 12 ? `<span class="chip" style="background:rgba(23,56,59,0.08); border:1px solid rgba(23,56,59,0.2);">+${monthBlackoutDates.length - 12} more</span>` : ''}`
-              : '<span class="muted">No blackout dates in this month.</span>'}
-          </div>
-        </div>
-
-        <div class="panel">
-          <h2>Add availability or PTO manually</h2>
-          <p class="muted">Create approved PTO, one-time availability, or recurring weekly availability entries directly for an agent.</p>
-          <form id="add-manual-pto-form" class="stack" style="margin-top:10px;">
-            <div class="row" style="flex-wrap:wrap; gap:8px;">
-              <select name="requestKind" required>
-                <option value="pto">Approved PTO</option>
-                <option value="availability-once">One-time availability</option>
-                <option value="availability-recurring">Recurring availability (weekly)</option>
-              </select>
-            </div>
-            <div class="row" style="flex-wrap:wrap; gap:8px;">
-              <select name="agentId" required>
-                <option value="">Select agent</option>
-                ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
-              </select>
-              <input name="unavailableDate" type="date" required />
-              <input name="unavailableStart" type="time" value="09:00" required />
-              <input name="unavailableEnd" type="time" value="17:00" required />
-            </div>
-            <div class="row" style="flex-wrap:wrap; gap:8px;">
-              <select name="recurrenceDay">
-                <option value="">Recurring day (weekly only)</option>
-                ${days.map((day) => `<option value="${day}">${day}</option>`).join('')}
-              </select>
-              <input name="recurrenceStartDate" type="date" placeholder="Recurring start date" />
-              <input name="recurrenceEndDate" type="date" placeholder="Recurring end date" />
-            </div>
-            <textarea name="note" rows="3" placeholder="Reason/details for PTO" required></textarea>
-            <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
-              <input name="sendNotification" type="checkbox" checked />
-              <span>Send email notification to agent</span>
-            </label>
-            <div class="row" style="justify-content:flex-end;">
-              <button type="submit">Add request</button>
-            </div>
-          </form>
+        </form>
+        <div class="row" style="gap:8px; flex-wrap:wrap; margin-top:4px;">
+          ${normalizeBlackoutDateEntries(state.blackoutDates).filter((entry) => isDateEntryInDepartmentScope(entry.department, departmentScope)).map((entry) => `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${escapeHtml(entry.date)}<select data-blackout-department-select="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!entry.department ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${entry.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-blackout-date="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:4px 8px;">Remove</button></span>`).join('') || '<span class="muted">No blackout dates yet.</span>'}
         </div>
       </div>
 
