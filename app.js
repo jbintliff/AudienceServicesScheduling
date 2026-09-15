@@ -6267,26 +6267,35 @@ function renderProfilePage(currentUser) {
                   <div>${escapeHtml(adminManagerNotice.text || '')}</div>
                   ${adminManagerNotice.resetLink ? `<div style="margin-top:8px;"><a href="${escapeHtml(adminManagerNotice.resetLink)}" style="color:#17383B;">Open reset link</a></div>` : ''}
                 </div>` : ''}
-              <form id="add-admin-form" class="stack" style="margin-top:10px;">
-                <input name="name" placeholder="Manager name" required />
-                <input name="jobTitle" placeholder="Job title" value="Scheduling Manager" required />
-                <select name="department">
-                  <option value="">No department</option>
-                  ${departmentOptions.map((department) => `<option value="${department}">${escapeHtml(department)}</option>`).join('')}
-                </select>
-                <input name="email" type="email" placeholder="Email" required autocomplete="email" />
-                <input name="phone" type="tel" placeholder="Phone" required autocomplete="tel" />
-                <select name="accessRole" required>
-                  <option value="${userRoles.admin}">Admin (full access)</option>
-                </select>
-                <label class="stack" style="gap:4px;">
-                  <span class="muted">Managed teams</span>
-                  <select name="managedTeams" multiple size="${Math.min(teamOptions.length, 4)}" style="min-height:90px;">
-                    ${teamOptions.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join('')}
-                  </select>
-                </label>
-                <button type="submit">Add manager</button>
-              </form>
+              <details class="card" style="margin-top:10px; padding:12px;">
+                <summary style="cursor:pointer; font-weight:600;">Add new manager</summary>
+                <form id="add-admin-form" class="stack" style="margin-top:10px;">
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <input name="name" placeholder="Manager name" required />
+                    <input name="jobTitle" placeholder="Job title" value="Scheduling Manager" required />
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <select name="department">
+                      <option value="">No department</option>
+                      ${departmentOptions.map((department) => `<option value="${department}">${escapeHtml(department)}</option>`).join('')}
+                    </select>
+                    <select name="accessRole" required>
+                      <option value="${userRoles.admin}">Admin (full access)</option>
+                    </select>
+                  </div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <input name="email" type="email" placeholder="Email (optional)" autocomplete="email" />
+                    <input name="phone" type="tel" placeholder="Phone (optional)" autocomplete="tel" />
+                  </div>
+                  <label class="stack" style="gap:4px;">
+                    <span class="muted">Managed teams</span>
+                    <select name="managedTeams" multiple size="${Math.min(teamOptions.length, 4)}" style="min-height:90px;">
+                      ${teamOptions.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join('')}
+                    </select>
+                  </label>
+                  <button type="submit">Add manager</button>
+                </form>
+              </details>
               <div class="request-list" style="margin-top:12px; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));">
                 ${adminUsers.map((adminUser) => {
                   const isManagerCardCollapsed = Boolean(state.ui.collapsedManagerCards?.[adminUser.id]);
@@ -6310,8 +6319,8 @@ function renderProfilePage(currentUser) {
                         </select>
                       </div>
                       <div class="row" style="gap:8px; flex-wrap:wrap;">
-                        <input name="email" type="email" value="${escapeHtml(adminUser.email || '')}" placeholder="Email" required autocomplete="email" />
-                        <input name="phone" type="tel" value="${escapeHtml(adminUser.phone || '')}" placeholder="Phone" required autocomplete="tel" />
+                        <input name="email" type="email" value="${escapeHtml(adminUser.email || '')}" placeholder="Email (optional)" autocomplete="email" />
+                        <input name="phone" type="tel" value="${escapeHtml(adminUser.phone || '')}" placeholder="Phone (optional)" autocomplete="tel" />
                       </div>
                       <div class="row" style="gap:8px; flex-wrap:wrap;">
                         <select name="accessRole" required>
@@ -6430,15 +6439,17 @@ function renderProfilePage(currentUser) {
       const accessRole = normalizeUserRole(formData.get('accessRole'));
       const managedTeams = normalizeManagedTeams(formData.getAll('managedTeams'));
 
-      if (!name || !jobTitle || !email || !phone) {
-        alert('All manager fields are required.');
+      if (!name || !jobTitle) {
+        alert('Manager name and job title are required.');
         return;
       }
 
-      const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email);
-      if (emailInUse) {
-        alert('That email address is already in use by another account.');
-        return;
+      if (email) {
+        const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email);
+        if (emailInUse) {
+          alert('That email address is already in use by another account.');
+          return;
+        }
       }
 
       const nextAdminUser = withRequiredEmail({
@@ -6469,7 +6480,13 @@ function renderProfilePage(currentUser) {
       }
       const inviteResult = sendAdminInviteEmail(nextAdminUser);
       const outboxCount = loadEmailOutbox().length;
-      if (isEmailQueuedWithoutWebhookDelivery(inviteResult?.deliveryStatus)) {
+      if (!email) {
+        adminManagerNotice = {
+          type: 'success',
+          text: 'Manager added. No email on file yet, so no invite was sent \u2014 add an email later and use Resend invite to send sign-in details.',
+          resetLink: ''
+        };
+      } else if (isEmailQueuedWithoutWebhookDelivery(inviteResult?.deliveryStatus)) {
         adminManagerNotice = {
           type: 'success',
           text: 'Manager added. Invite was queued in Email outbox because outgoing email or webhook delivery is disabled. Configure Admin options > Email delivery to send real emails.',
@@ -6501,15 +6518,17 @@ function renderProfilePage(currentUser) {
         const accessRole = normalizeUserRole(formData.get('accessRole'));
         const managedTeams = normalizeManagedTeams(formData.getAll('managedTeams'));
 
-        if (!name || !jobTitle || !email || !phone) {
-          alert('All manager fields are required.');
+        if (!name || !jobTitle) {
+          alert('Manager name and job title are required.');
           return;
         }
 
-        const emailInUse = authUsers.some((user) => user.id !== adminId && normalizeEmail(user.email) === email);
-        if (emailInUse) {
-          alert('That email address is already in use by another account.');
-          return;
+        if (email) {
+          const emailInUse = authUsers.some((user) => user.id !== adminId && normalizeEmail(user.email) === email);
+          if (emailInUse) {
+            alert('That email address is already in use by another account.');
+            return;
+          }
         }
 
         const demotingLastActiveAdmin = isAdminUser(adminUser)
@@ -7301,9 +7320,9 @@ function renderAdminOptionsPage(currentUser) {
 
         ${blackoutDepartmentScope === 'Box Office' ? '' : `
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px;">
-        <div class="panel">
-          <h2>Backend sync</h2>
-          <p class="muted">Use a shared API URL so admin and agent data stays synchronized across devices.</p>
+        <details class="panel">
+          <summary style="cursor:pointer; font-size:1.17em; font-weight:bold;">Backend sync</summary>
+          <p class="muted" style="margin-top:10px;">Use a shared API URL so admin and agent data stays synchronized across devices.</p>
           <form id="admin-backend-sync-form" class="stack" style="margin-top:10px;">
             <input name="backendApiUrl" type="url" placeholder="https://your-backend.example.com/api" value="${escapeHtml(backendApiBase || '')}" />
             <div class="row">
@@ -7312,11 +7331,11 @@ function renderAdminOptionsPage(currentUser) {
             </div>
             <div class="muted">Current backend: ${escapeHtml(backendApiBase || 'Not configured (local browser storage only)')}</div>
           </form>
-        </div>
+        </details>
 
-        <div class="panel">
-          <h2>Email delivery</h2>
-          <p class="muted">Control outgoing email and configure webhook delivery. When outgoing email is off, notifications stay local in Email outbox.</p>
+        <details class="panel">
+          <summary style="cursor:pointer; font-size:1.17em; font-weight:bold;">Email delivery</summary>
+          <p class="muted" style="margin-top:10px;">Control outgoing email and configure webhook delivery. When outgoing email is off, notifications stay local in Email outbox.</p>
           <form id="admin-email-delivery-form" class="stack" style="margin-top:10px;">
             <label class="row" style="align-items:center; justify-content:flex-start; gap:8px;">
               <input name="outgoingEnabled" type="checkbox" ${emailDeliverySettings.outgoingEnabled !== false ? 'checked' : ''} />
@@ -7342,7 +7361,7 @@ function renderAdminOptionsPage(currentUser) {
               <button type="button" id="retry-undelivered-email" class="secondary">Retry undelivered emails</button>
             </div>
           </form>
-        </div>
+        </details>
         </div>`}
       </div>
     </div>
@@ -10986,8 +11005,8 @@ function bindEvents() {
       const agentId = Number(button.getAttribute('data-resend-agent-invite'));
       const agent = getAgent(agentId);
       const agentUser = getUserByAgentId(agentId);
-      if (!agent || !agentUser?.email) {
-        alert('This agent needs a valid email before sending an invite.');
+      if (!agent || !agentUser) {
+        alert('This agent does not have a linked login account yet.');
         return;
       }
       const temporaryPassword = createTemporaryPassword();
@@ -11002,6 +11021,11 @@ function bindEvents() {
         : user);
       saveAuthUsers();
       const refreshedAgentUser = getUserByAgentId(agentId) || { ...agentUser, password: temporaryPassword, passwordUpdatedAt, mustChangePassword: true };
+      if (!refreshedAgentUser.email) {
+        alert(`This agent has no email on file, so an invite email can't be sent. A new temporary password was generated \u2014 share it with them directly.\n\nTemporary password: ${temporaryPassword}\nSign-in link: ${getAppLoginUrl()}\n\nAdd their email in Edit agent to enable email invites next time.`);
+        render();
+        return;
+      }
       const inviteResult = sendAgentInviteEmail(refreshedAgentUser, agent.name, temporaryPassword);
       const outboxCount = loadEmailOutbox().length;
       if (isEmailQueuedWithoutWebhookDelivery(inviteResult?.deliveryStatus)) {
