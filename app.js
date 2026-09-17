@@ -8845,6 +8845,33 @@ function renderPublicAvailabilityRequestPage() {
   const publicFormDepartmentScope = lockedAgent ? normalizeDepartment(lockedAgent.department) : getCurrentUserDepartmentScope();
   const blackoutDates = getUpcomingBlackoutDates(getBlackoutDatesForScope(publicFormDepartmentScope));
   const defaultEmail = lockedAgent ? (getAgentAccountEmail(lockedAgent.id) || normalizeEmail(currentUser?.email) || '') : '';
+  const linkedAgentRequests = lockedAgent
+    ? getAllAvailabilityRequests()
+        .filter((request) => Number(request?.agentId) === lockedAgentId)
+        .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+        .sort((left, right) => String(right?.unavailableDate || right?.requestedAt || '').localeCompare(String(left?.unavailableDate || left?.requestedAt || '')))
+    : [];
+  const requestStatusSections = [
+    { key: 'pending', label: 'Pending requests' },
+    { key: 'approved', label: 'Approved requests' },
+    { key: 'rejected', label: 'Denied requests' }
+  ];
+  const renderLinkedAgentRequest = (request) => {
+    const typeMeta = getAvailabilityRequestTypeMeta(request);
+    const statusValue = normalizeAvailabilityRequestStatus(request?.status);
+    return `
+      <div class="card" style="padding:10px 12px;">
+        <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+          <strong>${escapeHtml(typeMeta.label)}</strong>
+          <span class="chip" style="${statusValue === 'pending' ? 'background:#FDD592; color:#4B3A1F;' : statusValue === 'rejected' ? 'background:#AB5C57; color:#FFF1EF;' : 'background:#7AACAF; color:#17383B;'}">${escapeHtml(statusValue === 'rejected' ? 'Denied' : statusValue === 'approved' ? 'Approved' : 'Pending')}</span>
+        </div>
+        <div class="muted">Date: ${escapeHtml(request?.unavailableDate || 'Not set')}</div>
+        <div class="muted">Time: ${escapeHtml(request?.unavailableStart || '--:--')} - ${escapeHtml(request?.unavailableEnd || '--:--')}</div>
+        <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
+        ${request?.note ? `<div class="muted">Note: ${escapeHtml(request.note)}</div>` : ''}
+      </div>
+    `;
+  };
 
   root.innerHTML = `
     <div class="app">
@@ -8995,6 +9022,24 @@ function renderPublicAvailabilityRequestPage() {
           </div>
         </form>
       </div>
+
+      ${lockedAgent ? `
+      <div class="panel" style="margin-top:16px;">
+        <h2 style="margin-top:0;">Your request status</h2>
+        <div class="stack" style="gap:16px;">
+          ${requestStatusSections.map((section) => {
+            const sectionRequests = linkedAgentRequests.filter((request) => normalizeAvailabilityRequestStatus(request?.status) === section.key);
+            return `
+              <section>
+                <h3 style="margin:0 0 8px;">${section.label}</h3>
+                <div class="stack" style="gap:8px;">
+                  ${sectionRequests.length > 0 ? sectionRequests.map(renderLinkedAgentRequest).join('') : '<div class="muted">No requests in this category.</div>'}
+                </div>
+              </section>
+            `;
+          }).join('')}
+        </div>
+      </div>` : ''}
     </div>
   `;
 
