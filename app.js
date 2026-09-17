@@ -5970,35 +5970,6 @@ function renderCalendarPage(currentUser) {
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
-        <div class="row" style="flex-wrap:wrap;">
-          <input id="calendar-search" placeholder="Search shifts" value="${escapeHtml(calendarFilters.search)}" />
-          <select id="calendar-agent-name-filter">
-            <option value="" ${!calendarFilters.agentName ? 'selected' : ''}>All agent names</option>
-            ${agentNameItems.map((name) => `<option value="${escapeHtml(name)}" ${String(calendarFilters.agentName || '') === String(name) ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
-          </select>
-          <input id="calendar-date-filter" type="date" value="${escapeHtml(calendarFilters.date)}" />
-          <select id="calendar-day-filter">
-            <option value="All" ${calendarFilters.day === 'All' ? 'selected' : ''}>All days</option>
-            ${days.map((day) => `<option value="${day}" ${calendarFilters.day === day ? 'selected' : ''}>${day}</option>`).join('')}
-          </select>
-          <select id="calendar-agent-filter">
-            <option value="All" ${calendarFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
-            ${agentCatalog.map((agent) => `<option value="${agent.id}" ${String(calendarFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
-          </select>
-          <select id="calendar-role-filter">
-            <option value="All" ${calendarFilters.role === 'All' ? 'selected' : ''}>All roles</option>
-            ${roleItems.map((role) => `<option value="${escapeHtml(role)}" ${String(calendarFilters.role || 'All') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
-          </select>
-          <select id="calendar-location-filter">
-            <option value="All" ${calendarFilters.location === 'All' ? 'selected' : ''}>All venues</option>
-            ${locations.map((location) => `<option value="${location}" ${calendarFilters.location === location ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
-          </select>
-          <button id="calendar-filters-apply" type="button">Apply filters</button>
-          <button id="calendar-filters-reset" class="secondary" type="button">Reset filters</button>
-        </div>
-      </div>
-
-      <div class="panel" style="margin-bottom:16px;">
         <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div>
             <strong>Week of ${escapeHtml(weekLabel)}</strong>
@@ -6094,6 +6065,34 @@ function renderCalendarPage(currentUser) {
         </div>` : ''}
 
       <div class="panel">
+        <div style="margin:0 0 16px; padding:12px; border:1px solid rgba(255,255,255,0.12); border-radius:8px; background:rgba(255,255,255,0.04);">
+          <div class="row" style="flex-wrap:wrap;">
+            <input id="calendar-search" placeholder="Search shifts" value="${escapeHtml(calendarFilters.search)}" />
+            <select id="calendar-agent-name-filter">
+              <option value="" ${!calendarFilters.agentName ? 'selected' : ''}>All agent names</option>
+              ${agentNameItems.map((name) => `<option value="${escapeHtml(name)}" ${String(calendarFilters.agentName || '') === String(name) ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
+            </select>
+            <input id="calendar-date-filter" type="date" value="${escapeHtml(calendarFilters.date)}" />
+            <select id="calendar-day-filter">
+              <option value="All" ${calendarFilters.day === 'All' ? 'selected' : ''}>All days</option>
+              ${days.map((day) => `<option value="${day}" ${calendarFilters.day === day ? 'selected' : ''}>${day}</option>`).join('')}
+            </select>
+            <select id="calendar-agent-filter">
+              <option value="All" ${calendarFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
+              ${agentCatalog.map((agent) => `<option value="${agent.id}" ${String(calendarFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+            </select>
+            <select id="calendar-role-filter">
+              <option value="All" ${calendarFilters.role === 'All' ? 'selected' : ''}>All roles</option>
+              ${roleItems.map((role) => `<option value="${escapeHtml(role)}" ${String(calendarFilters.role || 'All') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
+            </select>
+            <select id="calendar-location-filter">
+              <option value="All" ${calendarFilters.location === 'All' ? 'selected' : ''}>All venues</option>
+              ${locations.map((location) => `<option value="${location}" ${calendarFilters.location === location ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
+            </select>
+            <button id="calendar-filters-apply" type="button">Apply filters</button>
+            <button id="calendar-filters-reset" class="secondary" type="button">Reset filters</button>
+          </div>
+        </div>
         ${canManageCalendar ? `<div class="muted" style="margin-bottom:10px;">${copiedShiftTemplate ? `Copied: ${escapeHtml(getShiftSummary(copiedShiftTemplate))}` : 'Copy a shift, then use Paste here on any day.'}</div>` : ''}
         <div class="row" style="margin-bottom:10px;">
           ${getRoleLegendItems().map((role) => `
