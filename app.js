@@ -8845,6 +8845,7 @@ function renderPublicAvailabilityRequestPage() {
   const publicFormDepartmentScope = lockedAgent ? normalizeDepartment(lockedAgent.department) : getCurrentUserDepartmentScope();
   const blackoutDates = getUpcomingBlackoutDates(getBlackoutDatesForScope(publicFormDepartmentScope));
   const defaultEmail = lockedAgent ? (getAgentAccountEmail(lockedAgent.id) || normalizeEmail(currentUser?.email) || '') : '';
+  const today = getCurrentLocalIsoDate();
   const linkedAgentRequests = lockedAgent
     ? getAllAvailabilityRequests()
         .filter((request) => Number(request?.agentId) === lockedAgentId)
@@ -8872,6 +8873,17 @@ function renderPublicAvailabilityRequestPage() {
       </div>
     `;
   };
+  const renderLinkedAgentRequestGroup = (label, requests, open = false) => `
+    <details data-public-request-group${open ? ' open' : ''} style="border:1px solid rgba(255,255,255,0.14); border-radius:8px; padding:0 10px;">
+      <summary style="display:flex; justify-content:space-between; align-items:center; cursor:pointer; padding:10px 0; list-style:none;">
+        <strong>${label} (${requests.length})</strong>
+        <span data-public-request-arrow aria-hidden="true" style="font-size:18px; line-height:1; transition:transform 0.15s ease;">&#9656;</span>
+      </summary>
+      <div class="stack" style="gap:8px; padding:0 0 10px;">
+        ${requests.length > 0 ? requests.map(renderLinkedAgentRequest).join('') : '<div class="muted">No requests in this category.</div>'}
+      </div>
+    </details>
+  `;
 
   root.innerHTML = `
     <div class="app">
@@ -9029,11 +9041,14 @@ function renderPublicAvailabilityRequestPage() {
         <div class="stack" style="gap:16px;">
           ${requestStatusSections.map((section) => {
             const sectionRequests = linkedAgentRequests.filter((request) => normalizeAvailabilityRequestStatus(request?.status) === section.key);
+            const upcomingRequests = sectionRequests.filter((request) => getAvailabilityRequestDate(request) >= today);
+            const passedRequests = sectionRequests.filter((request) => getAvailabilityRequestDate(request) < today);
             return `
               <section>
                 <h3 style="margin:0 0 8px;">${section.label}</h3>
                 <div class="stack" style="gap:8px;">
-                  ${sectionRequests.length > 0 ? sectionRequests.map(renderLinkedAgentRequest).join('') : '<div class="muted">No requests in this category.</div>'}
+                  ${renderLinkedAgentRequestGroup('Upcoming', upcomingRequests, true)}
+                  ${renderLinkedAgentRequestGroup('Passed', passedRequests)}
                 </div>
               </section>
             `;
@@ -9044,6 +9059,14 @@ function renderPublicAvailabilityRequestPage() {
   `;
 
   bindEvents();
+  document.querySelectorAll('[data-public-request-group]').forEach((group) => {
+    const arrow = group.querySelector('[data-public-request-arrow]');
+    const syncArrow = () => {
+      if (arrow) arrow.style.transform = group.open ? 'rotate(90deg)' : 'rotate(0deg)';
+    };
+    group.addEventListener('toggle', syncArrow);
+    syncArrow();
+  });
 }
 
 let publicAvailabilityViewUi = {
