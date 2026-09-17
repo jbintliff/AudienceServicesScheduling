@@ -32,6 +32,7 @@ const syncStatusKey = 'agent-scheduler-sync-status-v1';
 const calendarFeedSyncStatusKey = 'agent-scheduler-calendar-feed-sync-status-v1';
 const uiStateKey = 'agent-scheduler-ui-state-v1';
 const fixedEmailSenderName = 'Audience Services Manager';
+const appTimeZone = 'America/New_York';
 const emailDeliveryProviders = ['generic', 'sendgrid', 'mailgun'];
 const agentPasswordMaxAgeDays = 90;
 const defaultPasswordUpdatedAt = '2026-01-01T00:00:00.000Z';
@@ -265,6 +266,12 @@ function normalizeBackendUrl(url) {
 
 function getCurrentIsoTimestamp() {
   return new Date().toISOString();
+}
+
+function formatEasternDateTime(value) {
+  const dateValue = value instanceof Date ? value : new Date(String(value || ''));
+  if (Number.isNaN(dateValue.getTime())) return '';
+  return dateValue.toLocaleString('en-US', { timeZone: appTimeZone });
 }
 
 function getTimestampScore(value) {
@@ -503,8 +510,8 @@ const defaultState = {
     { id: 8, name: 'Part Time Weekend PM', start: '15:00', end: '20:00', durationHours: 5 }
   ],
   shifts: [
-    { id: 1, day: 'Mon', date: '2026-07-15', agentId: 1, role: 'In-person', start: '08:00', end: '16:00', durationHours: 8, location: 'Academy of Music', status: shiftStatuses.draft },
-    { id: 2, day: 'Wed', date: '2026-07-17', agentId: 2, role: 'WFH', start: '16:00', end: '22:00', durationHours: 6, location: 'Academy of Music', status: shiftStatuses.draft }
+    { id: 1, day: 'Mon', date: '2026-09-14', agentId: 1, role: 'In-person', start: '08:00', end: '16:00', durationHours: 8, location: 'Academy of Music', status: shiftStatuses.draft },
+    { id: 2, day: 'Wed', date: '2026-09-16', agentId: 2, role: 'WFH', start: '16:00', end: '22:00', durationHours: 6, location: 'Academy of Music', status: shiftStatuses.draft }
   ],
   swapRequests: [],
   availabilityRequests: [],
@@ -894,7 +901,7 @@ function getLastSyncStatusText() {
   if (Number.isNaN(syncDate.getTime())) {
     return 'Last synced: Waiting for first successful backend sync.';
   }
-  return `Last synced: ${syncDate.toLocaleString()}`;
+  return `Last synced: ${formatEasternDateTime(syncDate)} ET`;
 }
 
 function getCalendarFeedSyncStatusText() {
@@ -908,7 +915,7 @@ function getCalendarFeedSyncStatusText() {
   if (Number.isNaN(syncDate.getTime())) {
     return 'Calendar feed sync: Waiting for first successful schedule sync.';
   }
-  return `Calendar feed sync: ${syncDate.toLocaleString()}`;
+  return `Calendar feed sync: ${formatEasternDateTime(syncDate)} ET`;
 }
 
 function safeSetLocalStorage(key, value) {
@@ -5311,7 +5318,14 @@ function formatIsoDateLocal(dateValue) {
 }
 
 function getCurrentLocalIsoDate() {
-  return formatIsoDateLocal(new Date());
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: appTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function getCurrentLocalMonthValue() {
@@ -5776,7 +5790,7 @@ function getCalendarWeekDates(referenceDateValue) {
     dayDate.setDate(monday.getDate() + index);
     acc[day] = {
       iso: formatIsoDateLocal(dayDate),
-      label: dayDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      label: dayDate.toLocaleDateString('en-US', { timeZone: appTimeZone, month: 'short', day: 'numeric' })
     };
     return acc;
   }, {});
@@ -5792,7 +5806,7 @@ function getCalendarWeekLabel(weekDates) {
   if (Number.isNaN(firstDate.getTime()) || Number.isNaN(lastDate.getTime())) {
     return 'Current week';
   }
-  return `${firstDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${lastDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  return `${firstDate.toLocaleDateString('en-US', { timeZone: appTimeZone, month: 'short', day: 'numeric' })} - ${lastDate.toLocaleDateString('en-US', { timeZone: appTimeZone, month: 'short', day: 'numeric' })}`;
 }
 
 function shiftIsInWeek(shift, weekDates) {
@@ -7443,7 +7457,7 @@ function renderAdminOptionsPage(currentUser) {
     sendEmailNotification({
       to: activeUser.email,
       subject: 'Test email from Agent Scheduler',
-      body: `Test email sent at ${new Date().toLocaleString()}.`,
+      body: `Test email sent at ${formatEasternDateTime(new Date())} ET.`,
       type: 'test-email'
     });
     alert('Test email queued. Check Email outbox for delivery status.');
@@ -7928,7 +7942,7 @@ function getAvailabilityCalendarCells(monthValue, requests) {
   }
 
   return {
-    label: monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+    label: monthStart.toLocaleDateString('en-US', { timeZone: appTimeZone, month: 'long', year: 'numeric' }),
     cells
   };
 }
