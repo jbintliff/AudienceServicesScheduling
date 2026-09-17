@@ -7089,7 +7089,7 @@ function initializeAdminOptionsCollapsiblePanels() {
   const panelCollapseState = (!state.ui?.adminOptionsCollapsedPanels || typeof state.ui.adminOptionsCollapsedPanels !== 'object' || Array.isArray(state.ui.adminOptionsCollapsedPanels))
     ? {}
     : state.ui.adminOptionsCollapsedPanels;
-  const panels = Array.from(root.querySelectorAll('.grid > .panel'));
+  const panels = Array.from(root.querySelectorAll('.grid > .panel, [data-admin-options-collapsible]'));
 
   panels.forEach((panel, index) => {
     const firstChild = panel.firstElementChild;
@@ -7117,7 +7117,7 @@ function initializeAdminOptionsCollapsiblePanels() {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
-    const panelKey = `admin-options-${titleText || 'section'}-${index}`;
+    const panelKey = panel.dataset.adminOptionsPanelKey || `admin-options-${titleText || 'section'}-${index}`;
 
     if (headerContainer.querySelector('[data-admin-options-panel-toggle]')) {
       return;
@@ -7254,7 +7254,7 @@ function renderAdminOptionsPage(currentUser) {
         </div>
 
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px; align-items:start;">
-        <div class="panel">
+        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-roles">
           <h2>Roles${blackoutDepartmentScope ? ` (${escapeHtml(blackoutDepartmentScope)})` : ' (All departments)'}</h2>
           <form id="add-shift-role-form" class="row" style="margin-bottom:10px;">
             <input name="role" placeholder="Add role" required />
@@ -7289,7 +7289,7 @@ function renderAdminOptionsPage(currentUser) {
         </div>
 
         <div class="stack">
-        <div class="panel">
+        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-venues">
           <h2>Venues</h2>
           ${blackoutDepartmentScope === 'Box Office' ? '' : `
           <form id="add-shift-location-form" class="row" style="margin-bottom:10px;">
@@ -7301,7 +7301,7 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
-        <div class="panel">
+        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-policies">
           <h2>Policies</h2>
           <p class="muted">Upload policy files that agents can view and download from the Policies page.</p>
           <form id="upload-policy-form" class="row" style="margin-bottom:10px; flex-wrap:wrap;">
