@@ -8916,6 +8916,8 @@ function renderPublicAvailabilityRequestPage() {
         .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
         .sort((left, right) => String(right?.unavailableDate || right?.requestedAt || '').localeCompare(String(left?.unavailableDate || left?.requestedAt || '')))
     : [];
+  const upcomingLinkedAgentRequests = linkedAgentRequests.filter((request) => getAvailabilityRequestDate(request) >= today);
+  const passedLinkedAgentRequests = linkedAgentRequests.filter((request) => getAvailabilityRequestDate(request) < today);
   const requestStatusSections = [
     { key: 'pending', label: 'Pending requests' },
     { key: 'approved', label: 'Approved requests' },
@@ -8937,14 +8939,25 @@ function renderPublicAvailabilityRequestPage() {
       </div>
     `;
   };
-  const renderLinkedAgentRequestGroup = (label, requests, open = false) => `
+  const renderLinkedAgentStatusGroups = (requests) => requestStatusSections.map((section) => {
+    const sectionRequests = requests.filter((request) => normalizeAvailabilityRequestStatus(request?.status) === section.key);
+    return `
+      <section>
+        <h3 style="margin:0 0 8px;">${section.label}</h3>
+        <div class="stack" style="gap:8px;">
+          ${sectionRequests.length > 0 ? sectionRequests.map(renderLinkedAgentRequest).join('') : '<div class="muted">No requests in this category.</div>'}
+        </div>
+      </section>
+    `;
+  }).join('');
+  const renderLinkedAgentDateGroup = (label, requests, open = false) => `
     <details data-public-request-group${open ? ' open' : ''} style="border:1px solid rgba(255,255,255,0.14); border-radius:8px; padding:0 10px;">
       <summary style="display:flex; justify-content:space-between; align-items:center; cursor:pointer; padding:10px 0; list-style:none;">
         <strong>${label} (${requests.length})</strong>
         <span data-public-request-arrow aria-hidden="true" style="font-size:18px; line-height:1; transition:transform 0.15s ease;">&#9656;</span>
       </summary>
-      <div class="stack" style="gap:8px; padding:0 0 10px;">
-        ${requests.length > 0 ? requests.map(renderLinkedAgentRequest).join('') : '<div class="muted">No requests in this category.</div>'}
+      <div class="stack" style="gap:16px; padding:0 0 10px;">
+        ${renderLinkedAgentStatusGroups(requests)}
       </div>
     </details>
   `;
@@ -9103,20 +9116,8 @@ function renderPublicAvailabilityRequestPage() {
       <div class="panel" style="margin-top:16px;">
         <h2 style="margin-top:0;">Your request status</h2>
         <div class="stack" style="gap:16px;">
-          ${requestStatusSections.map((section) => {
-            const sectionRequests = linkedAgentRequests.filter((request) => normalizeAvailabilityRequestStatus(request?.status) === section.key);
-            const upcomingRequests = sectionRequests.filter((request) => getAvailabilityRequestDate(request) >= today);
-            const passedRequests = sectionRequests.filter((request) => getAvailabilityRequestDate(request) < today);
-            return `
-              <section>
-                <h3 style="margin:0 0 8px;">${section.label}</h3>
-                <div class="stack" style="gap:8px;">
-                  ${renderLinkedAgentRequestGroup('Upcoming', upcomingRequests, true)}
-                  ${renderLinkedAgentRequestGroup('Passed', passedRequests)}
-                </div>
-              </section>
-            `;
-          }).join('')}
+          ${renderLinkedAgentDateGroup('Upcoming requests', upcomingLinkedAgentRequests, true)}
+          ${renderLinkedAgentDateGroup('Passed requests', passedLinkedAgentRequests)}
         </div>
       </div>` : ''}
     </div>
