@@ -8286,6 +8286,8 @@ function renderAvailabilityRequestsPage(currentUser) {
 }
 
 function render() {
+  captureActiveFormDrafts();
+  capturePublicAvailabilityFormDraft();
   syncFromStorage();
   if (isPasswordRecoveryFlowActive) return;
   bindAvailabilitySubmitFallback();
@@ -8831,6 +8833,68 @@ function render() {
   bindEvents();
 }
 
+let publicAvailabilityFormDraft = null;
+let activeFormDrafts = [];
+
+function captureActiveFormDrafts() {
+  activeFormDrafts = Array.from(document.querySelectorAll('form')).map((form) => {
+    if (!form.id) return null;
+    const fields = {};
+    Array.from(form.elements).forEach((field) => {
+      if (!field.name || field.type === 'file') return;
+      if (field.type === 'checkbox' || field.type === 'radio') {
+        fields[field.name] = field.checked;
+      } else if (field instanceof HTMLSelectElement && field.multiple) {
+        fields[field.name] = Array.from(field.selectedOptions).map((option) => option.value);
+      } else {
+        fields[field.name] = field.value;
+      }
+    });
+    return { id: form.id, fields };
+  }).filter(Boolean);
+}
+
+function restoreActiveFormDrafts() {
+  activeFormDrafts.forEach(({ id, fields }) => {
+    const form = document.getElementById(id);
+    if (!(form instanceof HTMLFormElement)) return;
+    Array.from(form.elements).forEach((field) => {
+      if (!field.name || !(field.name in fields) || field.type === 'file') return;
+      const value = fields[field.name];
+      if (field.type === 'checkbox' || field.type === 'radio') {
+        field.checked = Boolean(value);
+      } else if (field instanceof HTMLSelectElement && field.multiple && Array.isArray(value)) {
+        Array.from(field.options).forEach((option) => {
+          option.selected = value.includes(option.value);
+        });
+      } else {
+        field.value = String(value ?? '');
+      }
+    });
+  });
+}
+
+function capturePublicAvailabilityFormDraft() {
+  if (pageMode !== 'public-availability-request') return;
+  const form = document.getElementById('public-availability-form');
+  if (form instanceof HTMLFormElement) {
+    publicAvailabilityFormDraft = Object.fromEntries(new FormData(form).entries());
+  }
+}
+
+function restorePublicAvailabilityFormDraft() {
+  const draft = publicAvailabilityFormDraft;
+  if (!draft) return;
+  const form = document.getElementById('public-availability-form');
+  if (!(form instanceof HTMLFormElement)) return;
+  Object.entries(draft).forEach(([name, value]) => {
+    const field = form.elements.namedItem(name);
+    if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement) {
+      field.value = String(value ?? '');
+    }
+  });
+}
+
 function renderPublicAvailabilityRequestPage() {
   const query = new URLSearchParams(window.location.search);
   const requestedAgentId = Number(query.get('agentId'));
@@ -9058,6 +9122,7 @@ function renderPublicAvailabilityRequestPage() {
     </div>
   `;
 
+  restorePublicAvailabilityFormDraft();
   bindEvents();
   document.querySelectorAll('[data-public-request-group]').forEach((group) => {
     const arrow = group.querySelector('[data-public-request-arrow]');
@@ -9823,6 +9888,7 @@ function bindProfilePhotoHandlers() {
 }
 
 function bindEvents() {
+  restoreActiveFormDrafts();
   const activeUser = getCurrentUser();
   const canManageCalendar = canManageSchedule(activeUser);
   const canMarkAbsence = canMarkShiftAbsences(activeUser);
