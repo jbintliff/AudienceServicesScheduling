@@ -1059,6 +1059,7 @@ async function fetchBackendSnapshot() {
 
 async function pushLocalSnapshotToBackend() {
   if (!backendApiBase) return false;
+  if (getLocalAgentCount() === 0) return false;
   const store = {};
   sharedStorageKeys.forEach((key) => {
     const value = localStorage.getItem(key);
@@ -1181,6 +1182,15 @@ function applyRemoteSnapshot(store) {
   }
 }
 
+function getLocalAgentCount() {
+  try {
+    const parsedState = JSON.parse(localStorage.getItem(storageKey) || '{}');
+    return Array.isArray(parsedState.agents) ? parsedState.agents.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function initializeBackendSync() {
   if (!backendApiBase) return;
   const remoteStore = await fetchBackendSnapshot();
@@ -1204,7 +1214,7 @@ async function initializeBackendSync() {
         markSyncSuccess();
       }
     }
-  } else if (hasLocalData) {
+  } else if (hasLocalData && getLocalAgentCount() > 0) {
     const pushed = await pushLocalSnapshotToBackend();
     if (pushed) {
       markSyncSuccess();
