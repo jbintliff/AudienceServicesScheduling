@@ -2168,7 +2168,12 @@ function clearSession() {
 }
 
 if (!localStorage.getItem(authUsersKey)) {
-  saveAuthUsers();
+  const serializedDefaultAuthUsers = JSON.stringify(serializeAuthUsersForStorage(authUsers));
+  if (backendApiBase) {
+    localStorage.setItem(authUsersKey, serializedDefaultAuthUsers);
+  } else {
+    safeSetLocalStorage(authUsersKey, serializedDefaultAuthUsers);
+  }
 }
 
 function getCurrentUser() {

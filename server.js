@@ -416,7 +416,13 @@ app.use(cors());
 app.use(express.json({ limit: '40mb' }));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true });
+  const store = readStore();
+  res.json({
+    ok: true,
+    dataProtectionVersion: 1,
+    agentCount: getStoredAgentCount(store),
+    seedAgentCount: getStoredAgentCountFromFile(seedDataFilePath)
+  });
 });
 
 app.get('/api/snapshot', (_req, res) => {
