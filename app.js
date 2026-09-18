@@ -11004,8 +11004,22 @@ function bindEvents() {
       return;
     }
 
-    authUsers = authUsers.map((user) => user.id === currentUser.id ? { ...user, phone } : user);
-    saveAuthUsers();
+    const profileUpdatedAt = getCurrentIsoTimestamp();
+    authUsers = authUsers.map((user) => user.id === currentUser.id
+      ? {
+          ...user,
+          phone,
+          updatedAt: profileUpdatedAt,
+          profileUpdatedAt
+        }
+      : user);
+    const didSaveAuthUsers = saveAuthUsers();
+    if (!didSaveAuthUsers) {
+      alert('Unable to save phone number right now. Please check browser storage settings and try again.');
+      syncFromStorage();
+      render();
+      return;
+    }
     alert('Phone number updated successfully.');
     render();
   });
