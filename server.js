@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 // DATA_DIR points at a persistent disk mount in production so data survives restarts/redeploys.
 const dataDir = process.env.DATA_DIR || path.join(__dirname, 'backend');
 const dataFilePath = path.join(dataDir, 'data.json');
+const dataBackupsDirPath = path.join(dataDir, 'data-backups');
 const policyFilesDirPath = path.join(dataDir, 'policy-files');
 const port = Number(process.env.PORT || 8787);
 
@@ -98,8 +99,24 @@ function readStore() {
   }
 }
 
+function backupCurrentDataFile() {
+  ensureDataFile();
+  if (!fs.existsSync(dataBackupsDirPath)) {
+    fs.mkdirSync(dataBackupsDirPath, { recursive: true });
+  }
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  fs.copyFileSync(dataFilePath, path.join(dataBackupsDirPath, `data-${timestamp}.json`));
+
+  const backups = fs.readdirSync(dataBackupsDirPath)
+    .filter((name) => /^data-.*\.json$/.test(name))
+    .map((name) => ({ name, path: path.join(dataBackupsDirPath, name), mtimeMs: fs.statSync(path.join(dataBackupsDirPath, name)).mtimeMs }))
+    .sort((left, right) => right.mtimeMs - left.mtimeMs);
+  backups.slice(25).forEach((backup) => fs.rmSync(backup.path, { force: true }));
+}
+
 function writeStore(store) {
   ensureDataFile();
+  backupCurrentDataFile();
   const next = { store };
   fs.writeFileSync(dataFilePath, JSON.stringify(next, null, 2), 'utf8');
 }
