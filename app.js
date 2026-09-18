@@ -1034,8 +1034,10 @@ async function deletePolicyFileFromBackend(policyId) {
 async function pushSharedKeyToBackend(key, rawValue) {
   if (!backendApiBase) return false;
   try {
+    // keepalive lets this request finish even if the user navigates away right after saving.
     const response = await requestBackend(`/store/${encodeURIComponent(key)}`, {
       method: 'PUT',
+      keepalive: true,
       body: JSON.stringify({ value: rawValue })
     });
     const ok = Boolean(response);
@@ -1066,6 +1068,7 @@ async function pushLocalSnapshotToBackend() {
   });
   const response = await requestBackend('/snapshot', {
     method: 'PUT',
+    keepalive: true,
     body: JSON.stringify({ store })
   });
   const didSync = Boolean(response);
@@ -1099,10 +1102,20 @@ function queueImmediateBackendSnapshotSync() {
   if (backendSnapshotSyncTimer) {
     window.clearTimeout(backendSnapshotSyncTimer);
   }
+  // Short debounce so the flush is in-flight (and keepalive-protected) before a nav-link click can abort it.
   backendSnapshotSyncTimer = window.setTimeout(() => {
     backendSnapshotSyncTimer = null;
     void flushLocalSnapshotSync();
-  }, 250);
+  }, 30);
+}
+
+function flushPendingBackendWritesOnUnload() {
+  if (!backendApiBase || pendingSharedWriteKeys.size === 0) return;
+  pendingSharedWriteKeys.forEach((key) => {
+    const value = localStorage.getItem(key);
+    if (value === null) return;
+    void pushSharedKeyToBackend(key, value);
+  });
 }
 
 function mergeRemoteSnapshotWithPendingLocal(remoteStore) {
@@ -11970,6 +11983,14 @@ void initializeBackendSync().finally(() => {
 
     window.addEventListener('online', () => {
       void pollBackendSync();
+    });
+
+    // Nav links are full-page loads, so flush any unsent edits before the document unloads.
+    window.addEventListener('pagehide', flushPendingBackendWritesOnUnload);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        flushPendingBackendWritesOnUnload();
+      }
     });
   }
 });
