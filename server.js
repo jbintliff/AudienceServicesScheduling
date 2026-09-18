@@ -10,6 +10,7 @@ const __dirname = path.dirname(__filename);
 const dataDir = process.env.DATA_DIR || path.join(__dirname, 'backend');
 const dataFilePath = path.join(dataDir, 'data.json');
 const dataBackupsDirPath = path.join(dataDir, 'data-backups');
+const seedDataFilePath = path.join(__dirname, 'backend', 'seed-data.json');
 const policyFilesDirPath = path.join(dataDir, 'policy-files');
 const port = Number(process.env.PORT || 8787);
 
@@ -33,7 +34,11 @@ function ensureDataFile() {
     fs.mkdirSync(dataDir, { recursive: true });
   }
   if (!fs.existsSync(dataFilePath)) {
-    fs.writeFileSync(dataFilePath, JSON.stringify({ store: {} }, null, 2), 'utf8');
+    fs.writeFileSync(dataFilePath, getSeedDataFileContent(), 'utf8');
+    return;
+  }
+  if (getStoredAgentCountFromFile(dataFilePath) === 0 && getStoredAgentCountFromFile(seedDataFilePath) > 0) {
+    fs.writeFileSync(dataFilePath, getSeedDataFileContent(), 'utf8');
   }
 }
 
@@ -114,8 +119,42 @@ function backupCurrentDataFile() {
   backups.slice(25).forEach((backup) => fs.rmSync(backup.path, { force: true }));
 }
 
+function getStoredAgentCount(store) {
+  const rawState = store?.['agent-scheduler-state-v4'];
+  if (typeof rawState !== 'string') return 0;
+  try {
+    const parsed = JSON.parse(rawState);
+    return Array.isArray(parsed?.agents) ? parsed.agents.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function getStoredAgentCountFromFile(filePath) {
+  if (!fs.existsSync(filePath)) return 0;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return getStoredAgentCount(parsed?.store || {});
+  } catch {
+    return 0;
+  }
+}
+
+function getSeedDataFileContent() {
+  if (fs.existsSync(seedDataFilePath) && getStoredAgentCountFromFile(seedDataFilePath) > 0) {
+    return fs.readFileSync(seedDataFilePath, 'utf8');
+  }
+  return JSON.stringify({ store: {} }, null, 2);
+}
+
 function writeStore(store) {
   ensureDataFile();
+  const currentStore = readStore();
+  const currentAgentCount = getStoredAgentCount(currentStore);
+  const nextAgentCount = getStoredAgentCount(store);
+  if (currentAgentCount >= 10 && nextAgentCount < 10 && nextAgentCount < currentAgentCount - 3) {
+    throw new Error(`Refusing to overwrite ${currentAgentCount} agents with ${nextAgentCount} agents.`);
+  }
   backupCurrentDataFile();
   const next = { store };
   fs.writeFileSync(dataFilePath, JSON.stringify(next, null, 2), 'utf8');
@@ -386,8 +425,12 @@ app.get('/api/snapshot', (_req, res) => {
 
 app.put('/api/snapshot', (req, res) => {
   const incomingStore = filterAllowedStore(req.body?.store || {});
-  writeStore(incomingStore);
-  res.json({ ok: true, keys: Object.keys(incomingStore).length });
+  try {
+    writeStore(incomingStore);
+    res.json({ ok: true, keys: Object.keys(incomingStore).length });
+  } catch (error) {
+    res.status(409).json({ ok: false, error: error.message || 'Snapshot would discard existing agent data.' });
+  }
 });
 
 app.put('/api/store/:key', (req, res) => {
@@ -405,8 +448,12 @@ app.put('/api/store/:key', (req, res) => {
 
   const store = readStore();
   store[key] = value;
-  writeStore(store);
-  res.json({ ok: true });
+  try {
+    writeStore(store);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(409).json({ ok: false, error: error.message || 'Store update would discard existing agent data.' });
+  }
 });
 
 app.put('/api/policy-files/:id', (req, res) => {
