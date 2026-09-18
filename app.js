@@ -3234,23 +3234,25 @@ function reconcileAgentEmailsWithAuthUsers() {
     const agentEmail = normalizeEmail(agent.email || '');
     const linkedUserEmail = normalizeEmail(linkedUser?.email || '');
 
-    if (linkedUser && linkedUserEmail !== agentEmail) {
-      didChange = true;
-      return { ...agent, email: linkedUserEmail };
-    }
-
     if (agentEmail && linkedUser && !linkedUserEmail) {
-      const profileUpdatedAt = getCurrentIsoTimestamp();
+      const profileUpdatedAt = agent.profileUpdatedAt || agent.updatedAt || getCurrentIsoTimestamp();
       authUsers = authUsers.map((user) => user.id === linkedUser.id
         ? { ...user, email: agentEmail, updatedAt: profileUpdatedAt, profileUpdatedAt }
         : user);
       didChange = true;
-      return { ...agent, email: agentEmail };
+      return { ...agent, email: agentEmail, updatedAt: profileUpdatedAt, profileUpdatedAt };
+    }
+
+    if (linkedUser && linkedUserEmail !== agentEmail) {
+      didChange = true;
+      const profileUpdatedAt = linkedUser.profileUpdatedAt || linkedUser.updatedAt || agent.profileUpdatedAt || getCurrentIsoTimestamp();
+      return { ...agent, email: linkedUserEmail, updatedAt: profileUpdatedAt, profileUpdatedAt };
     }
 
     if (!agentEmail && linkedUserEmail) {
       didChange = true;
-      return { ...agent, email: linkedUserEmail };
+      const profileUpdatedAt = linkedUser.profileUpdatedAt || linkedUser.updatedAt || agent.profileUpdatedAt || getCurrentIsoTimestamp();
+      return { ...agent, email: linkedUserEmail, updatedAt: profileUpdatedAt, profileUpdatedAt };
     }
 
     return agent;
@@ -4526,6 +4528,7 @@ function saveAgentDetails(agentId, values) {
   const id = Number(agentId);
   const name = String(values?.name || '').trim();
   const email = normalizeEmail(values?.email);
+  const profileUpdatedAt = getCurrentIsoTimestamp();
   const requestedAccessRole = normalizeUserRole(values?.accessRole);
   const accessRole = requestedAccessRole === userRoles.admin ? userRoles.agent : requestedAccessRole;
   const team = normalizeTeamLabel(String(values?.team || '').trim() || teamOptions[0]);
@@ -4561,13 +4564,14 @@ function saveAgentDetails(agentId, values) {
         attendancePoints,
         pronouns,
         skills,
-        maxInOfficeShifts
+        maxInOfficeShifts,
+        updatedAt: profileUpdatedAt,
+        profileUpdatedAt
       }
     : agent);
 
   const existingAgentUser = getUserByAgentId(id);
   if (existingAgentUser) {
-    const profileUpdatedAt = getCurrentIsoTimestamp();
     authUsers = authUsers.map((user) => user.id === existingAgentUser.id
       ? {
           ...user,
@@ -4579,7 +4583,7 @@ function saveAgentDetails(agentId, values) {
         }
       : user);
   } else {
-    const createdAt = getCurrentIsoTimestamp();
+    const createdAt = profileUpdatedAt;
     authUsers.push(withRequiredEmail({
       id: createId(),
       username: createUniqueAgentUsername(email),
@@ -6442,6 +6446,7 @@ function renderProfilePage(currentUser) {
         return;
       }
 
+      const profileUpdatedAt = getCurrentIsoTimestamp();
       authUsers = authUsers.map((user) => user.id === activeUser.id
         ? {
             ...user,
@@ -6451,12 +6456,19 @@ function renderProfilePage(currentUser) {
             email,
             phone,
             managedTeams,
-            updatedAt: getCurrentIsoTimestamp(),
-            profileUpdatedAt: getCurrentIsoTimestamp()
+            updatedAt: profileUpdatedAt,
+            profileUpdatedAt
           }
         : user);
       const didSaveAuthUsers = saveAuthUsers();
-      if (!didSaveAuthUsers) {
+      let didSaveState = true;
+      if (Number.isFinite(Number(activeUser.agentId))) {
+        state.agents = state.agents.map((agent) => Number(agent.id) === Number(activeUser.agentId)
+          ? { ...agent, email, updatedAt: profileUpdatedAt, profileUpdatedAt }
+          : agent);
+        didSaveState = saveState();
+      }
+      if (!didSaveAuthUsers || !didSaveState) {
         adminProfileNotice = {
           type: 'error',
           text: 'Unable to save admin profile changes right now. Please check browser storage settings and try again.'
@@ -6906,6 +6918,7 @@ function renderProfilePage(currentUser) {
         return;
       }
 
+      const profileUpdatedAt = getCurrentIsoTimestamp();
       authUsers = authUsers.map((user) => user.id === activeUser.id
         ? {
             ...user,
@@ -6913,12 +6926,19 @@ function renderProfilePage(currentUser) {
             jobTitle,
             email,
             phone,
-            updatedAt: getCurrentIsoTimestamp(),
-            profileUpdatedAt: getCurrentIsoTimestamp()
+            updatedAt: profileUpdatedAt,
+            profileUpdatedAt
           }
         : user);
       const didSaveAuthUsers = saveAuthUsers();
-      if (!didSaveAuthUsers) {
+      let didSaveState = true;
+      if (Number.isFinite(Number(activeUser.agentId))) {
+        state.agents = state.agents.map((agent) => Number(agent.id) === Number(activeUser.agentId)
+          ? { ...agent, email, updatedAt: profileUpdatedAt, profileUpdatedAt }
+          : agent);
+        didSaveState = saveState();
+      }
+      if (!didSaveAuthUsers || !didSaveState) {
         alert('Unable to save profile changes right now. Please check browser storage settings and try again.');
         render();
         return;
@@ -10003,6 +10023,7 @@ function bindEvents() {
       return;
     }
     const agentId = createId();
+    const createdAt = getCurrentIsoTimestamp();
     state.agents.push({
       id: agentId,
       name,
@@ -10015,10 +10036,11 @@ function bindEvents() {
       pronouns: '',
       skills: [],
       maxInOfficeShifts,
-      availability: 'Available'
+      availability: 'Available',
+      createdAt,
+      profileUpdatedAt: createdAt
     });
 
-    const createdAt = getCurrentIsoTimestamp();
     const nextUser = withRequiredEmail({
       id: createId(),
       username: createUniqueAgentUsername(email),
