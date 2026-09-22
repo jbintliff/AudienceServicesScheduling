@@ -8026,7 +8026,7 @@ function renderAvailabilityRequestsPage(currentUser) {
   }
 
   const allAvailabilityRequests = getAllAvailabilityRequests();
-  const departmentScope = getCurrentUserDepartmentScope();
+  const departmentScope = isAdminUser(currentUser) ? '' : getCurrentUserDepartmentScope();
   const visibleAgents = getFilteredAgents();
   const adminVisibleAvailabilityRequests = allAvailabilityRequests.filter(
     (request) => normalizeAvailabilityRequestStatus(request.status) !== 'deleted' && isAgentInDepartmentScope(request.agentId, departmentScope)
