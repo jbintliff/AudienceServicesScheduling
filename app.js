@@ -5930,8 +5930,8 @@ function renderAdminNavigationLinks(options = {}) {
         <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Admin Options</a>
         <a href="index.html?view=profile" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Admin Profile</a>
         ${isBoxOfficeScoped ? '' : '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Email Outbox</a>'}
-        ${includeExport ? '<button id="export-data-btn" class="secondary">Export JSON</button>' : ''}
-        ${includeImport ? '<label class="secondary" style="display:inline-flex; align-items:center; padding:10px 12px; border-radius:10px; cursor:pointer;"><input id="import-data-input" type="file" accept="application/json" hidden />Import JSON</label>' : ''}
+        ${includeExport ? '<button id="export-data-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export JSON</button>' : ''}
+        ${includeImport ? '<label class="secondary" style="display:block; width:100%; box-sizing:border-box; color:#fff; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); cursor:pointer;"><input id="import-data-input" type="file" accept="application/json" hidden />Import JSON</label>' : ''}
       </div>
     </details>
   `;
