@@ -573,7 +573,7 @@ const defaultState = {
 };
 
 const defaultAuthUsers = [
-  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', department: 'Audience Services', email: 'admin@scheduler.local', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.admin },
+  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', department: 'Audience Services', email: 'jbintliff@ensembleartsphilly.org', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.admin },
   { id: 1002, username: 'maya', email: 'maya@scheduler.local', phone: '215-555-0101', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 1 },
   { id: 1003, username: 'luis', email: 'luis@scheduler.local', phone: '215-555-0102', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 2 },
   { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 3 }
@@ -3431,11 +3431,11 @@ function saveState() {
   const didSaveInbox = safeSetLocalStorage(availabilityInboxKey, JSON.stringify(state.availabilityRequests));
   const didSaveRequests = safeSetLocalStorage(availabilityRequestsKey, JSON.stringify(state.availabilityRequests));
   saveUiState();
-  const didSaveAll = didSaveState && didSaveInbox && didSaveRequests;
-  if (didSaveAll) {
+  // The canonical state snapshot must remain usable even when an auxiliary request cache is full or unavailable.
+  if (didSaveState) {
     queueImmediateBackendSnapshotSync();
   }
-  return didSaveAll;
+  return didSaveState;
 }
 
 function didPersistTemplates() {
@@ -3445,6 +3445,18 @@ function didPersistTemplates() {
     const parsedState = JSON.parse(savedState);
     const savedTemplates = Array.isArray(parsedState?.templates) ? parsedState.templates : [];
     return JSON.stringify(savedTemplates) === JSON.stringify(state.templates);
+  } catch {
+    return false;
+  }
+}
+
+function didPersistShifts() {
+  try {
+    const savedState = localStorage.getItem(storageKey);
+    if (!savedState) return false;
+    const parsedState = JSON.parse(savedState);
+    const savedShifts = Array.isArray(parsedState?.shifts) ? parsedState.shifts : [];
+    return JSON.stringify(savedShifts) === JSON.stringify(state.shifts);
   } catch {
     return false;
   }
@@ -10189,13 +10201,14 @@ function bindEvents() {
       updatedAt: createdAt,
       publishedAt: ''
     });
-    const didSaveShift = saveState();
-    if (!didSaveShift) {
+    saveState();
+    if (!didPersistShifts()) {
       alert('Unable to save the shift. Please check browser storage settings and try again.');
       syncFromStorage();
       render();
       return;
     }
+    queueImmediateBackendSnapshotSync();
     render();
   });
 
