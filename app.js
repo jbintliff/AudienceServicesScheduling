@@ -8179,8 +8179,12 @@ function renderAvailabilityRequestsPage(currentUser) {
           </div>
         </div>
 
-        <div class="panel">
+        <div id="manual-availability-modal" style="display:none; position:fixed; inset:0; z-index:9999; align-items:center; justify-content:center; padding:16px; background:rgba(2,6,23,0.72);">
+          <div class="panel" style="width:min(720px, 100%); max-height:90vh; overflow:auto; margin:0;">
+            <div class="row" style="justify-content:space-between; align-items:center;">
           <h2>Add availability or PTO manually</h2>
+              <button id="close-manual-availability-modal" class="secondary" type="button" aria-label="Close">Close</button>
+            </div>
           <p class="muted">Create pending PTO, one-time availability, or recurring weekly availability entries for an agent. An admin must approve them.</p>
           <form id="add-manual-pto-form" class="stack" style="margin-top:10px;">
             <label style="display:flex; flex-direction:column; gap:6px;">
@@ -8228,6 +8232,7 @@ function renderAvailabilityRequestsPage(currentUser) {
               <button type="submit">Submit request</button>
             </div>
           </form>
+          </div>
         </div>
       </div>
 
@@ -11646,13 +11651,25 @@ function bindEvents() {
       if (event.target.closest('[data-view-availability-request], [data-view-availability-request-list]')) return;
       const dateValue = String(card.getAttribute('data-view-availability-date') || '').slice(0, 10);
       if (!dateValue) return;
-      const targetRequests = getAllAvailabilityRequests()
-        .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
-        .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
-        .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === dateValue);
-      if (targetRequests.length === 0) return;
-      openAvailabilityRequestListModal(targetRequests, dateValue);
+      const modal = document.getElementById('manual-availability-modal');
+      const form = document.getElementById('add-manual-pto-form');
+      if (!(modal instanceof HTMLElement) || !(form instanceof HTMLFormElement)) return;
+      const requestKind = form.elements.namedItem('requestKind');
+      const oneTimeDate = form.elements.namedItem('oneTimeDate');
+      const vacationSingleDate = form.elements.namedItem('vacationSingleDate');
+      if (requestKind instanceof HTMLSelectElement) {
+        requestKind.value = 'one-time-availability';
+        requestKind.dispatchEvent(new Event('change'));
+      }
+      if (oneTimeDate instanceof HTMLInputElement) oneTimeDate.value = dateValue;
+      if (vacationSingleDate instanceof HTMLInputElement) vacationSingleDate.value = dateValue;
+      modal.style.display = 'flex';
     });
+  });
+
+  document.getElementById('close-manual-availability-modal')?.addEventListener('click', () => {
+    const modal = document.getElementById('manual-availability-modal');
+    if (modal instanceof HTMLElement) modal.style.display = 'none';
   });
 
   document.querySelectorAll('[data-view-availability-request-list]').forEach((button) => {
