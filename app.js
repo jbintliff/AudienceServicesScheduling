@@ -7304,7 +7304,7 @@ function renderAdminOptionsPage(currentUser) {
                       <span>Active</span>
                     </label>
                     <button class="secondary" type="submit">Save</button>
-                    <button class="danger" type="button" data-remove-shift-template="${template.id}">Remove</button>
+                    <button class="danger" type="button" data-remove-shift-template="${template.id}">Delete</button>
                   </div>
                   <div class="muted">Template time: ${escapeHtml(formatTimeRange(template.start || '08:00', template.end || '16:00'))}</div>
                 </form>
