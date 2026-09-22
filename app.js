@@ -60,6 +60,7 @@ const sharedStorageKeys = [
   emailDeliverySettingsKey
 ];
 let policyFilesDbPromise = null;
+const sharedKeyWriteQueues = new Map();
 
 function openPolicyFilesDb() {
   if (typeof indexedDB === 'undefined') {
@@ -1033,20 +1034,31 @@ async function deletePolicyFileFromBackend(policyId) {
 
 async function pushSharedKeyToBackend(key, rawValue) {
   if (!backendApiBase) return false;
-  try {
-    // keepalive lets this request finish even if the user navigates away right after saving.
-    const response = await requestBackend(`/store/${encodeURIComponent(key)}`, {
-      method: 'PUT',
-      keepalive: true,
-      body: JSON.stringify({ value: rawValue })
-    });
-    const ok = Boolean(response);
-    if (ok) {
-      markSyncSuccess();
+  const previousWrite = sharedKeyWriteQueues.get(key) || Promise.resolve();
+  const nextWrite = previousWrite.catch(() => {}).then(async () => {
+    try {
+      // keepalive lets this request finish even if the user navigates away right after saving.
+      const response = await requestBackend(`/store/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        keepalive: true,
+        body: JSON.stringify({ value: rawValue })
+      });
+      const ok = Boolean(response);
+      if (ok) {
+        markSyncSuccess();
+      }
+      return ok;
+    } catch {
+      return false;
     }
-    return ok;
-  } catch {
-    return false;
+  });
+  sharedKeyWriteQueues.set(key, nextWrite);
+  try {
+    return await nextWrite;
+  } finally {
+    if (sharedKeyWriteQueues.get(key) === nextWrite) {
+      sharedKeyWriteQueues.delete(key);
+    }
   }
 }
 
@@ -8169,11 +8181,11 @@ function renderAvailabilityRequestsPage(currentUser) {
 
         <div class="panel">
           <h2>Add availability or PTO manually</h2>
-          <p class="muted">Create approved PTO, one-time availability, or recurring weekly availability entries directly for an agent.</p>
+          <p class="muted">Create pending PTO, one-time availability, or recurring weekly availability entries for an agent. An admin must approve them.</p>
           <form id="add-manual-pto-form" class="stack" style="margin-top:10px;">
             <div class="row" style="flex-wrap:wrap; gap:8px;">
               <select name="requestKind" required>
-                <option value="pto">Approved PTO</option>
+                <option value="pto">PTO</option>
                 <option value="availability-once">One-time availability</option>
                 <option value="availability-recurring">Recurring availability (weekly)</option>
               </select>
@@ -10826,17 +10838,8 @@ function bindEvents() {
       recurrenceInstance: index + 1,
       recurrenceTotal: recurrencePlan.dates.length,
       requestedAt: nowIso,
-      status: 'approved'
+      status: 'pending'
     }));
-
-    if (requestKind === 'pto') {
-      state.agents = state.agents.map((item) => Number(item.id) === agentId
-        ? {
-            ...item,
-            availability: 'Unavailable'
-          }
-        : item);
-    }
 
     const nextAvailabilityRequests = [...getAllAvailabilityRequests(), ...nextManualRequests];
     saveAvailabilityRequests(nextAvailabilityRequests);
@@ -10852,14 +10855,14 @@ function bindEvents() {
         : unavailableDate;
       sendEmailNotification({
         to: recipientEmail,
-        subject: `${requestLabel} added by admin`,
-        body: `Hi ${nextManualRequests[0]?.requesterName || 'Agent'}, an admin added approved ${requestLabel} for you.\n\nDate: ${dateLabel}\nTime: ${formatTimeRange(unavailableStart, unavailableEnd)}\nNote: ${note}`,
+        subject: `${requestLabel} submitted for approval`,
+        body: `Hi ${nextManualRequests[0]?.requesterName || 'Agent'}, a ${requestLabel} request was submitted for admin approval.\n\nDate: ${dateLabel}\nTime: ${formatTimeRange(unavailableStart, unavailableEnd)}\nNote: ${note}`,
         type: 'availability-admin-added'
       });
     }
 
     const submittedCount = nextManualRequests.length;
-    alert(`Approved ${requestKind === 'pto' ? 'PTO' : 'availability'} request${submittedCount === 1 ? '' : 's'} added successfully (${submittedCount}).`);
+    alert(`${requestKind === 'pto' ? 'PTO' : 'Availability'} request${submittedCount === 1 ? '' : 's'} submitted for admin approval (${submittedCount}).`);
     render();
   });
 
