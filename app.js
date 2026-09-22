@@ -7865,6 +7865,9 @@ function renderAgentsPage(currentUser) {
         <div class="muted" style="margin-bottom:6px;">Email is optional. Agents without an email can sign in with their username and temporary password.</div>
         <form id="add-agent-form" class="stack">
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(112px, 1fr)); gap:5px; align-items:end;">
+            <select name="role" required>
+              ${getRoleCatalog().map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('')}
+            </select>
             <input name="name" placeholder="Name" required />
             <input name="email" type="email" placeholder="Email (optional)" />
             <select name="accessRole" required>
@@ -7879,7 +7882,7 @@ function renderAgentsPage(currentUser) {
               ${departmentOptions.map((department) => `<option value="${department}">${escapeHtml(department)}</option>`).join('')}
             </select>
             <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
-            <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" placeholder="Max in-office" />
+            <input name="pronouns" placeholder="Pronouns (e.g. she/her)" maxlength="80" />
             <button type="submit" style="white-space:nowrap;">Add agent</button>
           </div>
         </form>
@@ -10048,7 +10051,7 @@ function bindEvents() {
       role,
       payRate,
       attendancePoints: 0,
-      pronouns: '',
+      pronouns: normalizePronouns(formData.get('pronouns')),
       skills: [],
       maxInOfficeShifts,
       availability: 'Available',
