@@ -7691,7 +7691,7 @@ function renderPendingRequestsPage(currentUser) {
   const currentAgentId = Number(currentUser?.agentId);
   const viewAgent = getAgent(currentAgentId) || getViewAgent();
   const allAvailabilityRequests = getAllAvailabilityRequests();
-  const pendingAvailabilityRequests = allAvailabilityRequests.filter((request) => isAvailabilityRequestVisibleToUser(request, currentUser) && request.status === 'pending');
+  const pendingAvailabilityRequests = allAvailabilityRequests.filter((request) => isAvailabilityRequestVisibleToUser(request, currentUser) && normalizeAvailabilityRequestStatus(request.status) === 'pending');
   const pendingSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'pending');
 
   root.innerHTML = `
