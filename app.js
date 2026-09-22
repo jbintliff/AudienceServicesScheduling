@@ -3438,6 +3438,18 @@ function saveState() {
   return didSaveAll;
 }
 
+function didPersistTemplates() {
+  try {
+    const savedState = localStorage.getItem(storageKey);
+    if (!savedState) return false;
+    const parsedState = JSON.parse(savedState);
+    const savedTemplates = Array.isArray(parsedState?.templates) ? parsedState.templates : [];
+    return JSON.stringify(savedTemplates) === JSON.stringify(state.templates);
+  } catch {
+    return false;
+  }
+}
+
 function getFilteredAvailabilityRequests(requests) {
   const fromDate = (state.ui.availabilityFrom || '').trim();
   const toDate = (state.ui.availabilityTo || '').trim();
@@ -10262,6 +10274,13 @@ function bindEvents() {
       department: normalizeDepartment(formData.get('department'))
     });
     saveState();
+    if (!didPersistTemplates()) {
+      alert('Unable to save this template. Please check browser storage settings and try again.');
+      syncFromStorage();
+      render();
+      return;
+    }
+    queueImmediateBackendSnapshotSync();
     render();
   });
 
@@ -10296,6 +10315,13 @@ function bindEvents() {
           }
         : template);
       saveState();
+      if (!didPersistTemplates()) {
+        alert('Unable to save this template. Please check browser storage settings and try again.');
+        syncFromStorage();
+        render();
+        return;
+      }
+      queueImmediateBackendSnapshotSync();
       render();
     });
   });
@@ -10309,11 +10335,14 @@ function bindEvents() {
       const shouldDelete = confirm(`Delete shift template ${templateName}?`);
       if (!shouldDelete) return;
       state.templates = state.templates.filter((template) => Number(template.id) !== templateId);
-      const didSaveState = saveState();
-      if (!didSaveState) {
+      saveState();
+      if (!didPersistTemplates()) {
         alert('Unable to remove this template permanently right now. Please check browser storage settings and try again.');
         syncFromStorage();
+        render();
+        return;
       }
+      queueImmediateBackendSnapshotSync();
       render();
     });
   });
