@@ -3416,17 +3416,21 @@ function loadState() {
   }
 }
 
-function saveState() {
+function getPersistableStateSnapshot() {
   state.availabilityRequests = getAllAvailabilityRequests();
   memoryAvailabilityInbox = state.availabilityRequests;
   const { ui, ...sharedState } = state;
   const sanitizedPolicies = sanitizePoliciesForStorage(sharedState.policies);
   sharedState.policies = sanitizedPolicies;
   state.policies = sanitizedPolicies;
-  const persistableState = {
+  return {
     ...sharedState,
     availabilityRequests: state.availabilityRequests
   };
+}
+
+function saveState() {
+  const persistableState = getPersistableStateSnapshot();
   const didSaveState = safeSetLocalStorage(storageKey, JSON.stringify(persistableState));
   const didSaveInbox = safeSetLocalStorage(availabilityInboxKey, JSON.stringify(state.availabilityRequests));
   const didSaveRequests = safeSetLocalStorage(availabilityRequestsKey, JSON.stringify(state.availabilityRequests));
@@ -3434,8 +3438,15 @@ function saveState() {
   // The canonical state snapshot must remain usable even when an auxiliary request cache is full or unavailable.
   if (didSaveState) {
     queueImmediateBackendSnapshotSync();
+  } else {
+    // Keep shared schedule data durable when this browser's localStorage is full.
+    void pushSharedKeyToBackend(storageKey, JSON.stringify(persistableState));
   }
   return didSaveState;
+}
+
+async function saveStateToBackendFallback() {
+  return pushSharedKeyToBackend(storageKey, JSON.stringify(getPersistableStateSnapshot()));
 }
 
 function didPersistTemplates() {
@@ -10203,8 +10214,7 @@ function bindEvents() {
     });
     saveState();
     if (!didPersistShifts()) {
-      alert('Unable to save the shift. Please check browser storage settings and try again.');
-      syncFromStorage();
+      void saveStateToBackendFallback();
       render();
       return;
     }
@@ -10288,8 +10298,7 @@ function bindEvents() {
     });
     saveState();
     if (!didPersistTemplates()) {
-      alert('Unable to save this template. Please check browser storage settings and try again.');
-      syncFromStorage();
+      void saveStateToBackendFallback();
       render();
       return;
     }
@@ -10329,8 +10338,7 @@ function bindEvents() {
         : template);
       saveState();
       if (!didPersistTemplates()) {
-        alert('Unable to save this template. Please check browser storage settings and try again.');
-        syncFromStorage();
+        void saveStateToBackendFallback();
         render();
         return;
       }
@@ -10350,8 +10358,7 @@ function bindEvents() {
       state.templates = state.templates.filter((template) => Number(template.id) !== templateId);
       saveState();
       if (!didPersistTemplates()) {
-        alert('Unable to remove this template permanently right now. Please check browser storage settings and try again.');
-        syncFromStorage();
+        void saveStateToBackendFallback();
         render();
         return;
       }
