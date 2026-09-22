@@ -7865,9 +7865,6 @@ function renderAgentsPage(currentUser) {
         <div class="muted" style="margin-bottom:6px;">Email is optional. Agents without an email can sign in with their username and temporary password.</div>
         <form id="add-agent-form" class="stack">
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(112px, 1fr)); gap:5px; align-items:end;">
-            <select name="role" required>
-              ${getRoleCatalog().map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('')}
-            </select>
             <input name="name" placeholder="Name" required />
             <input name="email" type="email" placeholder="Email (optional)" />
             <select name="accessRole" required>
