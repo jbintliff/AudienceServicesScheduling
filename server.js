@@ -10,7 +10,11 @@ const __dirname = path.dirname(__filename);
 const dataDir = process.env.DATA_DIR || path.join(__dirname, 'backend');
 const dataFilePath = path.join(dataDir, 'data.json');
 const dataBackupsDirPath = path.join(dataDir, 'data-backups');
-const seedDataFilePath = path.join(__dirname, 'backend', 'seed-data.json');
+const seedDataFilePaths = [
+  path.join(__dirname, 'backend', 'seed-data.json'),
+  path.join(__dirname, 'seed-data.json'),
+  path.join(dataDir, 'seed-data.json')
+];
 const policyFilesDirPath = path.join(dataDir, 'policy-files');
 const port = Number(process.env.PORT || 8787);
 
@@ -37,7 +41,7 @@ function ensureDataFile() {
     fs.writeFileSync(dataFilePath, getSeedDataFileContent(), 'utf8');
     return;
   }
-  if (getStoredAgentCountFromFile(dataFilePath) === 0 && getStoredAgentCountFromFile(seedDataFilePath) > 0) {
+  if (getStoredAgentCountFromFile(dataFilePath) === 0 && getSeedAgentCount() > 0) {
     fs.writeFileSync(dataFilePath, getSeedDataFileContent(), 'utf8');
   }
 }
@@ -141,10 +145,15 @@ function getStoredAgentCountFromFile(filePath) {
 }
 
 function getSeedDataFileContent() {
-  if (fs.existsSync(seedDataFilePath) && getStoredAgentCountFromFile(seedDataFilePath) > 0) {
+  const seedDataFilePath = seedDataFilePaths.find((filePath) => getStoredAgentCountFromFile(filePath) > 0);
+  if (seedDataFilePath) {
     return fs.readFileSync(seedDataFilePath, 'utf8');
   }
   return JSON.stringify({ store: {} }, null, 2);
+}
+
+function getSeedAgentCount() {
+  return seedDataFilePaths.reduce((best, filePath) => Math.max(best, getStoredAgentCountFromFile(filePath)), 0);
 }
 
 function writeStore(store) {
@@ -421,7 +430,7 @@ app.get('/api/health', (_req, res) => {
     ok: true,
     dataProtectionVersion: 1,
     agentCount: getStoredAgentCount(store),
-    seedAgentCount: getStoredAgentCountFromFile(seedDataFilePath)
+    seedAgentCount: getSeedAgentCount()
   });
 });
 
