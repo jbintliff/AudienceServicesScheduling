@@ -3299,14 +3299,6 @@ function normalizeTemplates(templates, roleCatalog = roleOptions, locationCatalo
     }));
   }
 
-  const legacyTemplateNames = new Set(['Morning Support', 'Evening Support']);
-  const incomingNames = templates.map((template) => String(template?.name || '').trim());
-  const onlyLegacyTemplates = incomingNames.length > 0 && incomingNames.every((name) => legacyTemplateNames.has(name));
-
-  if (onlyLegacyTemplates) {
-    return defaultTemplates;
-  }
-
   return templates.map((template) => {
     const requestedLocation = String(template?.location || '').trim();
     const normalizedStart = normalizeTimeInputValue(template?.start || '');
@@ -10143,7 +10135,10 @@ function bindEvents() {
 
   document.getElementById('add-shift-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!canManageCalendar) return;
+    if (!canManageCalendar) {
+      alert('Only admin users can add shifts to the schedule.');
+      return;
+    }
     const formData = new FormData(event.currentTarget);
     const agentId = formData.get('agentId') ? Number(formData.get('agentId')) : null;
     const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getAgent(agentId)?.role || getPrimaryRole(), getRoleCatalog());
@@ -10153,7 +10148,14 @@ function bindEvents() {
     const location = requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
-    if (!day || !role || !start || !end || !date) return;
+    if (!day || !role || !start || !end || !date) {
+      alert('Choose a role, date, start time, and end time before adding the shift.');
+      return;
+    }
+    if (toMinutes(end) <= toMinutes(start)) {
+      alert('End time must be later than start time.');
+      return;
+    }
     if (!await confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, {
       durationHours: getDurationHours(start, end),
       role
@@ -10175,7 +10177,13 @@ function bindEvents() {
       updatedAt: createdAt,
       publishedAt: ''
     });
-    saveState();
+    const didSaveShift = saveState();
+    if (!didSaveShift) {
+      alert('Unable to save the shift. Please check browser storage settings and try again.');
+      syncFromStorage();
+      render();
+      return;
+    }
     render();
   });
 
