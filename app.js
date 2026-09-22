@@ -7862,11 +7862,11 @@ function renderAgentsPage(currentUser) {
             <option value="team" ${agentSort === 'team' ? 'selected' : ''}>Sort: Team</option>
           </select>
         </div>
-        <div class="muted" style="margin-bottom:6px;">Add an agent with email to automatically send a password setup invite.</div>
+        <div class="muted" style="margin-bottom:6px;">Email is optional. Agents without an email can sign in with their username and temporary password.</div>
         <form id="add-agent-form" class="stack">
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(112px, 1fr)); gap:5px; align-items:end;">
             <input name="name" placeholder="Name" required />
-            <input name="email" type="email" placeholder="Email" required />
+            <input name="email" type="email" placeholder="Email (optional)" />
             <select name="accessRole" required>
               <option value="${userRoles.agent}">Agent</option>
               <option value="${userRoles.teamLead}">Team lead</option>
@@ -10024,15 +10024,15 @@ function bindEvents() {
     const payRateRaw = formData.get('payRate')?.toString().trim() || '0';
     const payRate = parseCurrencyAmount(payRateRaw);
     const maxInOfficeShifts = normalizeMaxInOfficeShifts(formData.get('maxInOfficeShifts'));
-    if (!name || !email) {
-      alert('Name and email are required to add an agent.');
+    if (!name) {
+      alert('Name is required to add an agent.');
       return;
     }
     if (!Number.isFinite(payRate) || payRate < 0) {
       alert('Pay rate must be a valid non-negative amount (example: $15.45).');
       return;
     }
-    const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email);
+    const emailInUse = email && authUsers.some((user) => normalizeEmail(user.email) === email);
     if (emailInUse) {
       alert('That email is already in use by another account.');
       return;
@@ -10086,10 +10086,12 @@ function bindEvents() {
     // Ensure the new agent is immediately visible in shared state, without waiting for invite flow.
     void flushLocalSnapshotSync();
 
-    const inviteResult = sendAgentInviteEmail(nextUser, name, nextUser.password);
+    const inviteResult = email ? sendAgentInviteEmail(nextUser, name, nextUser.password) : null;
 
     const outboxCount = loadEmailOutbox().length;
-    if (isEmailQueuedWithoutWebhookDelivery(inviteResult?.deliveryStatus)) {
+    if (!email) {
+      alert(`Agent added. No email was provided, so no invite was sent.\n\nUsername: ${nextUser.username}\nTemporary password: ${nextUser.password}\nSign-in link: ${getAppLoginUrl()}`);
+    } else if (isEmailQueuedWithoutWebhookDelivery(inviteResult?.deliveryStatus)) {
       alert(`Agent added. Invite was queued in Email outbox because outgoing email or webhook delivery is disabled. Configure Admin options > Email delivery to send real emails.\n\nTemporary password: ${inviteResult?.temporaryPassword || '(not available)'}\nSign-in link: ${inviteResult?.signInLink || getAppLoginUrl()}`);
     } else {
       alert(`Agent added and invitation email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
