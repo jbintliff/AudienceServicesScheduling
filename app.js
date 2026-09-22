@@ -10032,10 +10032,21 @@ function bindEvents() {
       alert('Pay rate must be a valid non-negative amount (example: $15.45).');
       return;
     }
-    const emailInUse = email && authUsers.some((user) => normalizeEmail(user.email) === email);
+    const emailInUse = email && authUsers.some((user) => {
+      if (normalizeEmail(user.email) !== email) return false;
+      if (isAdminUser(user)) return true;
+      return Boolean(getAgent(Number(user.agentId)));
+    });
     if (emailInUse) {
       alert('That email is already in use by another account.');
       return;
+    }
+    if (email) {
+      authUsers = authUsers.filter((user) => {
+        const matchesEmail = normalizeEmail(user.email) === email;
+        const isStaleAgentAccount = !isAdminUser(user) && !getAgent(Number(user.agentId));
+        return !(matchesEmail && isStaleAgentAccount);
+      });
     }
     const agentId = createId();
     const createdAt = getCurrentIsoTimestamp();
@@ -11196,9 +11207,11 @@ function bindEvents() {
       if (!shouldDelete) return;
 
       state.agents = state.agents.filter((agent) => Number(agent.id) !== id);
+      authUsers = authUsers.filter((user) => Number(user.agentId) !== id || isAdminUser(user));
       state.shifts = state.shifts.filter((shift) => Number(shift.agentId) !== id);
       state.swapRequests = state.swapRequests.filter((request) => Number(request.fromAgentId) !== id && Number(request.toAgentId) !== id);
       saveState();
+      saveAuthUsers();
       render();
     });
   });
