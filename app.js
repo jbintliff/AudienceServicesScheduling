@@ -8138,7 +8138,7 @@ function renderAvailabilityRequestsPage(currentUser) {
             const blackoutDate = isBlackoutDate(cell.date);
             const requestIdsForDate = (cell.requests || []).map((request) => Number(request?.id)).filter((id) => Number.isFinite(id)).join(',');
             return `
-              <div class="card" style="min-height:96px; padding:8px; ${blackoutDate ? 'border-color:#AB5C57; box-shadow:inset 0 0 0 1px rgba(171,92,87,0.55);' : ''}">
+              <div class="card" data-view-availability-date="${escapeHtml(cell.date)}" title="View requests for ${escapeHtml(cell.date)}" style="min-height:96px; padding:8px; cursor:pointer; ${blackoutDate ? 'border-color:#AB5C57; box-shadow:inset 0 0 0 1px rgba(171,92,87,0.55);' : ''}">
                 <div style="font-weight:600; margin-bottom:6px;">${cell.day}</div>
                 ${blackoutDate ? '<div class="chip" style="margin-bottom:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>' : ''}
                 <div style="display:flex; flex-direction:column; gap:4px;">
@@ -11638,6 +11638,20 @@ function bindEvents() {
       const request = getAllAvailabilityRequests().find((entry) => Number(entry.id) === id);
       if (!request) return;
       openAvailabilityRequestDetailsModal(request);
+    });
+  });
+
+  document.querySelectorAll('[data-view-availability-date]').forEach((card) => {
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('[data-view-availability-request], [data-view-availability-request-list]')) return;
+      const dateValue = String(card.getAttribute('data-view-availability-date') || '').slice(0, 10);
+      if (!dateValue) return;
+      const targetRequests = getAllAvailabilityRequests()
+        .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+        .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
+        .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === dateValue);
+      if (targetRequests.length === 0) return;
+      openAvailabilityRequestListModal(targetRequests, dateValue);
     });
   });
 
