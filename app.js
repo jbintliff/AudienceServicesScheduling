@@ -3958,7 +3958,8 @@ function getShiftStyle(shift) {
   const hasAttentionBorder = isShiftOfferedForPickup(shift) || Boolean(normalizeShiftAbsenceReason(shift?.absenceReason));
   const attentionBorder = hasAttentionBorder ? ' border:2px dashed rgba(255,255,255,0.8);' : '';
   const absentFade = normalizeShiftAbsenceReason(shift?.absenceReason) ? ' opacity:0.72;' : '';
-  return `background:${getShiftRoleColor(shift)}; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}${absentFade}`;
+  const shiftColor = isShiftAssignedToTeamLead(shift) ? '#9BB7D4' : getShiftRoleColor(shift);
+  return `background:${shiftColor}; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}${absentFade}`;
 }
 
 function getPlannerWeekIsoDateForDay(dayLabel) {
