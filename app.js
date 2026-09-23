@@ -2882,7 +2882,8 @@ function normalizeManagedTeams(value) {
 function normalizeDashboardMessageBoard(value) {
   const normalizedText = String(value?.text || '').trim();
   const sourceHistory = Array.isArray(value?.history) ? value.history : [];
-  const history = sourceHistory.map((entry) => ({
+  const history = sourceHistory.map((entry, index) => ({
+    id: String(entry?.id || `${String(entry?.updatedAt || '').trim()}-${index}-${String(entry?.text || '').slice(0, 24)}`).trim(),
     text: String(entry?.text || '').trim(),
     selectedTeams: normalizeManagedTeams(entry?.selectedTeams || []),
     updatedAt: String(entry?.updatedAt || '').trim(),
@@ -2917,6 +2918,7 @@ function renderDashboardMessageTimeline(messageBoardState, user) {
     .filter((entry) => canUserViewDashboardMessage(user, entry))
     .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
   const isCollapsed = Boolean(state.ui.dashboardMessageTimelineCollapsed);
+  const canDeleteMessages = isAdminUser(user);
   return `
     <div class="panel" style="margin-bottom:16px; border-color:#7AACAF;">
       <div class="row" style="justify-content:space-between; align-items:center; gap:8px; margin-bottom:${isCollapsed ? '0' : '8px'};">
@@ -2930,7 +2932,10 @@ function renderDashboardMessageTimeline(messageBoardState, user) {
         ${history.map((entry) => `
           <div class="card" style="padding:10px 12px;">
             <div style="white-space:pre-wrap;">${escapeHtml(entry.text)}</div>
-            <div class="muted" style="margin-top:8px;">Posted ${escapeHtml(entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : 'Unknown')}${entry.updatedBy ? ` by ${escapeHtml(entry.updatedBy)}` : ''}</div>
+            <div class="row" style="justify-content:space-between; align-items:center; gap:8px; margin-top:8px;">
+              <div class="muted">Posted ${escapeHtml(entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : 'Unknown')}${entry.updatedBy ? ` by ${escapeHtml(entry.updatedBy)}` : ''}</div>
+              ${canDeleteMessages ? `<button type="button" class="danger" data-delete-dashboard-message="${escapeHtml(entry.id)}" style="padding:4px 8px; font-size:12px;">Delete</button>` : ''}
+            </div>
           </div>
         `).join('') || '<div class="muted">No messages have been posted for your team yet.</div>'}
       </div>`}
@@ -3213,12 +3218,23 @@ function getAvailabilityRequestViewerLabel(request) {
   return 'Other agent';
 }
 
+function canViewAvailabilityRequestOnAgentCalendar(request, user = getCurrentUser()) {
+  if (!request || isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)) {
+    return true;
+  }
+  const currentAgentId = Number(user?.agentId);
+  if (!currentAgentId) return false;
+  if (Number(request.agentId) === currentAgentId) return true;
+  return String(request.unavailabilityType || '').trim() === 'PTO';
+}
+
 function getAvailabilityCalendarMarkers(dateValue) {
   const normalizedDate = String(dateValue || '').trim().slice(0, 10);
   if (!normalizedDate) return '';
   const requests = getAllAvailabilityRequests()
     .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
     .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
+    .filter((request) => canViewAvailabilityRequestOnAgentCalendar(request))
     .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === normalizedDate);
 
   const requestsByLabel = new Map();
@@ -10449,6 +10465,7 @@ function bindEvents() {
         .filter((value) => Number.isFinite(value));
       const requests = requestIds
         .map((requestId) => getAllAvailabilityRequests().find((entry) => Number(entry.id) === requestId))
+        .filter((request) => canViewAvailabilityRequestOnAgentCalendar(request))
         .filter(Boolean);
       if (requests.length === 0) return;
       if (requests.length === 1) {
@@ -11146,7 +11163,7 @@ function bindEvents() {
     const existingBoard = getDashboardMessageBoardState();
     const history = [
       ...(Array.isArray(existingBoard.history) ? existingBoard.history : []),
-      { text: messageText, selectedTeams, updatedAt, updatedBy }
+      { id: String(createId()), text: messageText, selectedTeams, updatedAt, updatedBy }
     ];
     state.dashboardMessageBoard = normalizeDashboardMessageBoard({
       text: messageText,
@@ -11165,6 +11182,25 @@ function bindEvents() {
     state.ui.dashboardMessageTimelineCollapsed = !Boolean(state.ui.dashboardMessageTimelineCollapsed);
     saveUiState();
     render();
+  });
+
+  document.querySelectorAll('[data-delete-dashboard-message]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const currentUser = getCurrentUser();
+      if (!isAdminUser(currentUser)) return;
+      const messageId = String(button.getAttribute('data-delete-dashboard-message') || '').trim();
+      if (!messageId) return;
+      const messageBoard = getDashboardMessageBoardState();
+      const message = messageBoard.history.find((entry) => String(entry.id) === messageId);
+      if (!message) return;
+      if (!confirm('Delete this message from the message board timeline?')) return;
+      state.dashboardMessageBoard = normalizeDashboardMessageBoard({
+        ...messageBoard,
+        history: messageBoard.history.filter((entry) => String(entry.id) !== messageId)
+      });
+      saveState();
+      render();
+    });
   });
 
   document.getElementById('clear-email-outbox')?.addEventListener('click', () => {
@@ -12094,7 +12130,7 @@ function bindEvents() {
       const id = Number(item.getAttribute('data-view-availability-request'));
       if (!id) return;
       const request = getAllAvailabilityRequests().find((entry) => Number(entry.id) === id);
-      if (!request) return;
+      if (!request || !canViewAvailabilityRequestOnAgentCalendar(request)) return;
       openAvailabilityRequestDetailsModal(request);
     });
   });
@@ -12134,7 +12170,8 @@ function bindEvents() {
       if (ids.length === 0) return;
       const targetRequests = getAllAvailabilityRequests()
         .filter((request) => ids.includes(Number(request.id)))
-        .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted');
+        .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+        .filter((request) => canViewAvailabilityRequestOnAgentCalendar(request));
       if (targetRequests.length === 0) return;
       const dateLabel = String(button.getAttribute('data-view-availability-request-list-date') || '').trim();
       openAvailabilityRequestListModal(targetRequests, dateLabel);
@@ -12148,6 +12185,7 @@ function bindEvents() {
       const targetRequests = getAllAvailabilityRequests()
         .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
         .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
+        .filter((request) => canViewAvailabilityRequestOnAgentCalendar(request))
         .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === dateValue);
       if (targetRequests.length === 0) return;
       openAvailabilityRequestListModal(targetRequests, dateValue);
