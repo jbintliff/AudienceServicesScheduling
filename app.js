@@ -797,6 +797,7 @@ function getDefaultUiState() {
     availabilitySwapRequestsHidden: false,
     availabilityDebugToolsVisible: false,
     availabilityDebugAgentId: '',
+    dashboardMessageTimelineCollapsed: false,
     adminOptionsCollapsedPanels: {},
     collapsedManagerCards: {},
     accessMode: 'admin',
@@ -859,6 +860,7 @@ function normalizeUiState(source) {
     availabilitySwapRequestsHidden: Boolean(source?.availabilitySwapRequestsHidden),
     availabilityDebugToolsVisible: Boolean(source?.availabilityDebugToolsVisible),
     availabilityDebugAgentId: source?.availabilityDebugAgentId || defaults.availabilityDebugAgentId,
+    dashboardMessageTimelineCollapsed: Boolean(source?.dashboardMessageTimelineCollapsed),
     adminOptionsCollapsedPanels: normalizedAdminOptionsCollapsedPanels,
     collapsedManagerCards: normalizedCollapsedManagerCards,
     swapRequestToAgentId: source?.swapRequestToAgentId || defaults.swapRequestToAgentId,
@@ -2879,11 +2881,28 @@ function normalizeManagedTeams(value) {
 
 function normalizeDashboardMessageBoard(value) {
   const normalizedText = String(value?.text || '').trim();
+  const sourceHistory = Array.isArray(value?.history) ? value.history : [];
+  const history = sourceHistory.map((entry) => ({
+    text: String(entry?.text || '').trim(),
+    selectedTeams: normalizeManagedTeams(entry?.selectedTeams || []),
+    updatedAt: String(entry?.updatedAt || '').trim(),
+    updatedBy: String(entry?.updatedBy || '').trim()
+  })).filter((entry) => entry.text);
+  if (history.length === 0 && normalizedText) {
+    history.push({
+      text: normalizedText,
+      selectedTeams: normalizeManagedTeams(value?.selectedTeams || []),
+      updatedAt: String(value?.updatedAt || '').trim(),
+      updatedBy: String(value?.updatedBy || '').trim()
+    });
+  }
+  const latest = history[history.length - 1] || {};
   return {
-    text: normalizedText,
-    selectedTeams: normalizeManagedTeams(value?.selectedTeams || []),
-    updatedAt: String(value?.updatedAt || '').trim(),
-    updatedBy: String(value?.updatedBy || '').trim()
+    text: latest.text || normalizedText,
+    selectedTeams: latest.selectedTeams || normalizeManagedTeams(value?.selectedTeams || []),
+    updatedAt: latest.updatedAt || String(value?.updatedAt || '').trim(),
+    updatedBy: latest.updatedBy || String(value?.updatedBy || '').trim(),
+    history
   };
 }
 
@@ -2891,6 +2910,32 @@ function getDashboardMessageBoardState() {
   const normalized = normalizeDashboardMessageBoard(state.dashboardMessageBoard || {});
   state.dashboardMessageBoard = normalized;
   return normalized;
+}
+
+function renderDashboardMessageTimeline(messageBoardState, user) {
+  const history = (Array.isArray(messageBoardState?.history) ? messageBoardState.history : [])
+    .filter((entry) => canUserViewDashboardMessage(user, entry))
+    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')));
+  const isCollapsed = Boolean(state.ui.dashboardMessageTimelineCollapsed);
+  return `
+    <div class="panel" style="margin-bottom:16px; border-color:#7AACAF;">
+      <div class="row" style="justify-content:space-between; align-items:center; gap:8px; margin-bottom:${isCollapsed ? '0' : '8px'};">
+        <div>
+          <h2 style="margin:0;">Message board timeline</h2>
+          <div class="muted">${history.length} message${history.length === 1 ? '' : 's'}</div>
+        </div>
+        <button type="button" id="toggle-dashboard-message-timeline" class="secondary" title="${isCollapsed ? 'Expand timeline' : 'Collapse timeline'}" aria-label="${isCollapsed ? 'Expand timeline' : 'Collapse timeline'}">${isCollapsed ? '\u25B6' : '\u25BC'}</button>
+      </div>
+      ${isCollapsed ? '' : `<div class="stack" style="gap:8px;">
+        ${history.map((entry) => `
+          <div class="card" style="padding:10px 12px;">
+            <div style="white-space:pre-wrap;">${escapeHtml(entry.text)}</div>
+            <div class="muted" style="margin-top:8px;">Posted ${escapeHtml(entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : 'Unknown')}${entry.updatedBy ? ` by ${escapeHtml(entry.updatedBy)}` : ''}</div>
+          </div>
+        `).join('') || '<div class="muted">No messages have been posted for your team yet.</div>'}
+      </div>`}
+    </div>
+  `;
 }
 
 function getAllowedDashboardMessageTeamsForUser(user) {
@@ -3154,6 +3199,46 @@ function getClickableAvailabilityMarkerHtml(requests, label, styleValue) {
   }
   const idsValue = requestIds.join(',');
   return `<button type="button" class="chip" data-open-availability-marker="${escapeHtml(idsValue)}" data-open-availability-marker-label="${escapeHtml(label)}" style="${styleValue}; cursor:pointer;" title="View request details">${escapeHtml(label)}</button>`;
+}
+
+function getAvailabilityRequestViewerLabel(request) {
+  const currentUser = getCurrentUser();
+  if (isAdminUser(currentUser) || isAdminAssistantUser(currentUser) || isAdminAssistantProfilesUser(currentUser)) {
+    return String(getAgent(request?.agentId)?.name || request?.requesterName || 'Unknown').trim() || 'Unknown';
+  }
+  const currentAgentId = Number(currentUser?.agentId);
+  if (currentAgentId && Number(request?.agentId) === currentAgentId) {
+    return String(getAgent(request?.agentId)?.name || request?.requesterName || 'You').trim() || 'You';
+  }
+  return 'Other agent';
+}
+
+function getAvailabilityCalendarMarkers(dateValue) {
+  const normalizedDate = String(dateValue || '').trim().slice(0, 10);
+  if (!normalizedDate) return '';
+  const requests = getAllAvailabilityRequests()
+    .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+    .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
+    .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === normalizedDate);
+
+  const requestsByLabel = new Map();
+  requests.forEach((request) => {
+    const typeMeta = getAvailabilityRequestTypeMeta(request);
+    const statusValue = normalizeAvailabilityRequestStatus(request?.status);
+    const label = `${getAvailabilityRequestViewerLabel(request)} ${typeMeta.label}`;
+    const style = statusValue === 'pending'
+      ? 'background:#FDD592; color:#4B3A1F; border:1px solid rgba(75,58,31,0.25);'
+      : typeMeta.style;
+    const existing = requestsByLabel.get(`${label}|${style}`) || { label, style, requests: [] };
+    existing.requests.push(request);
+    requestsByLabel.set(`${label}|${style}`, existing);
+  });
+
+  const markerHtml = Array.from(requestsByLabel.values())
+    .map((entry) => getClickableAvailabilityMarkerHtml(entry.requests, entry.label, entry.style))
+    .filter(Boolean)
+    .join('');
+  return markerHtml ? `<div style="display:flex; flex-direction:column; gap:4px; margin-top:6px;">${markerHtml}</div>` : '';
 }
 
 function getPtoDateMarkers(dateValue) {
@@ -4991,6 +5076,13 @@ function openAvailabilityRequestDetailsModal(request) {
   const statusStyles = getAvailabilityStatusStyles(statusValue);
   const recurrenceLabel = getAvailabilityRecurrenceLabel(request);
   const agentName = getAgent(request?.agentId)?.name || request?.requesterName || 'Unknown';
+  const currentUser = getCurrentUser();
+  const canSeeRequestIdentity = isAdminUser(currentUser)
+    || isAdminAssistantUser(currentUser)
+    || isAdminAssistantProfilesUser(currentUser)
+    || Number(currentUser?.agentId) === Number(request?.agentId);
+  const visibleAgentName = canSeeRequestIdentity ? agentName : 'Other agent';
+  const canManageRequestDetails = canManageAvailability(currentUser);
   const isRecurringAvailability = String(request?.unavailabilityType || '').trim() === 'Availability'
     && String(request?.recurrenceType || '').trim().toLowerCase() === 'weekly';
   const recurringSeriesRequestIds = isRecurringAvailability ? getAvailabilityRecurringSeriesRequestIds(request) : [];
@@ -5012,7 +5104,7 @@ function openAvailabilityRequestDetailsModal(request) {
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px;">
         <div class="card" style="padding:10px;">
           <strong>Agent</strong>
-          <div class="muted" style="margin-top:4px;">${escapeHtml(agentName)}</div>
+          <div class="muted" style="margin-top:4px;">${escapeHtml(visibleAgentName)}</div>
         </div>
         <div class="card" style="padding:10px;">
           <strong>Date</strong>
@@ -5028,11 +5120,11 @@ function openAvailabilityRequestDetailsModal(request) {
         </div>
         <div class="card" style="padding:10px;">
           <strong>Requested by</strong>
-          <div class="muted" style="margin-top:4px;">${escapeHtml(request?.requesterName || 'Unknown')}</div>
+          <div class="muted" style="margin-top:4px;">${escapeHtml(canSeeRequestIdentity ? (request?.requesterName || 'Unknown') : 'Hidden')}</div>
         </div>
         <div class="card" style="padding:10px;">
           <strong>Requester email</strong>
-          <div class="muted" style="margin-top:4px;">${escapeHtml(request?.requesterEmail || 'Not set')}</div>
+          <div class="muted" style="margin-top:4px;">${escapeHtml(canSeeRequestIdentity ? (request?.requesterEmail || 'Not set') : 'Hidden')}</div>
         </div>
       </div>
 
@@ -5043,7 +5135,7 @@ function openAvailabilityRequestDetailsModal(request) {
 
       ${request?.note ? `<div class="card" style="padding:10px; margin-top:10px;"><strong>Note</strong><div class="muted" style="margin-top:4px; white-space:pre-wrap;">${escapeHtml(request.note)}</div></div>` : ''}
 
-      <div class="row" style="justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:12px;">
+      ${canManageRequestDetails ? `<div class="row" style="justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:12px;">
         ${isRecurringAvailability ? `
           <span class="muted" style="margin-right:auto;">Recurring request: choose whether to delete one date or the full series.</span>
           <button type="button" id="availability-request-details-delete-one" class="danger">Delete this date</button>
@@ -5051,7 +5143,7 @@ function openAvailabilityRequestDetailsModal(request) {
         ` : `
           <button type="button" id="availability-request-details-delete-single" class="danger">Delete request</button>
         `}
-      </div>
+      </div>` : ''}
     </div>
   `;
 
@@ -5142,7 +5234,7 @@ function openAvailabilityRequestListModal(requests, dateLabel = '') {
           const typeMeta = getAvailabilityRequestTypeMeta(request);
           const statusValue = normalizeAvailabilityRequestStatus(request?.status);
           const statusStyles = getAvailabilityStatusStyles(statusValue);
-          const agentName = getAgent(request?.agentId)?.name || request?.requesterName || 'Unknown';
+          const agentName = getAvailabilityRequestViewerLabel(request);
           return `
             <button type="button" data-open-availability-request-from-list="${request.id}" style="text-align:left; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.14); color:#e5e7eb; border-radius:10px; padding:10px; cursor:pointer;">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
@@ -6272,8 +6364,7 @@ function renderCalendarPage(currentUser) {
                   </div>
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                   ${canManageCalendar ? `<div style="margin-top:6px;"><button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button></div>` : ''}
-                  ${canManageCalendar ? getPtoDateMarkers(weekDates[day]?.iso || '') : ''}
-                  ${canManageCalendar ? getRecurringAvailabilityDateMarkers(weekDates[day]?.iso || '') : ''}
+                  ${getAvailabilityCalendarMarkers(weekDates[day]?.iso || '')}
                 </div>
               </div>
               ${(() => {
@@ -7276,6 +7367,7 @@ function renderProfilePage(currentUser) {
   }
   const calendarSyncUrl = getAgentCalendarFeedUrl(activeAgentUser.calendarFeedToken);
   const activeRecurringAvailabilityGroups = getActiveRecurringAvailabilityGroupsForAgent(viewAgent?.id, getCurrentLocalIsoDate());
+  const profileMessageBoard = getDashboardMessageBoardState();
 
   root.innerHTML = `
     <div class="app agents-compact">
@@ -7301,6 +7393,8 @@ function renderProfilePage(currentUser) {
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
+
+      ${renderDashboardMessageTimeline(profileMessageBoard, currentUser)}
 
       <div class="grid" style="margin-top:16px; grid-template-columns:1fr;">
         <div class="stack">
@@ -8873,7 +8967,6 @@ function render() {
   const allowedDashboardMessageTeams = getAllowedDashboardMessageTeamsForUser(currentUser);
   const dashboardMessageTeams = normalizeManagedTeams(dashboardMessageBoard.selectedTeams || [])
     .filter((team) => allowedDashboardMessageTeams.includes(team));
-  const canViewDashboardMessage = canUserViewDashboardMessage(currentUser, dashboardMessageBoard);
 
   root.innerHTML = `
     <div class="app">
@@ -8914,16 +9007,7 @@ function render() {
           <div class="muted">You can review your assignments and request changes here.</div>
         </div>`}
 
-      ${isAgentView ? `
-        <div class="panel" style="margin-bottom:16px; border-color:#7AACAF;">
-          <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
-            <h2 style="margin:0;">Team message board</h2>
-            <span class="muted">${canViewDashboardMessage ? (dashboardMessageTeams.length > 0 ? `Audience: ${escapeHtml(dashboardMessageTeams.join(', '))}` : 'Audience: all teams') : 'No active message for your team'}</span>
-          </div>
-          ${canViewDashboardMessage
-            ? `<div style="white-space:pre-wrap;">${escapeHtml(dashboardMessageBoard.text || '')}</div>${dashboardMessageBoard.updatedAt ? `<div class="muted" style="margin-top:8px;">Posted ${escapeHtml(new Date(dashboardMessageBoard.updatedAt).toLocaleString())}${dashboardMessageBoard.updatedBy ? ` by ${escapeHtml(dashboardMessageBoard.updatedBy)}` : ''}</div>` : ''}`
-            : '<div class="muted">No message has been posted for your team yet.</div>'}
-        </div>` : ''}
+      ${isAgentView ? renderDashboardMessageTimeline(dashboardMessageBoard, currentUser) : ''}
 
       <div class="grid" style="margin-top:16px;${!isAgentView ? ' grid-template-columns:1fr;' : ''}">
         <div class="stack">
@@ -9054,21 +9138,11 @@ function render() {
                     </label>
                     <div class="row" style="justify-content:flex-end; gap:8px;">
                       <button type="submit">Post message</button>
-                      <button type="button" id="dashboard-message-board-clear" class="secondary">Clear message</button>
                     </div>
                   </form>
                 </div>
 
-                ${canViewDashboardMessage ? `
-                  <div class="panel" style="margin-bottom:16px; border-color:#7AACAF;">
-                    <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
-                      <h2 style="margin:0;">Team message board</h2>
-                      <span class="muted">${dashboardMessageTeams.length > 0 ? `Audience: ${escapeHtml(dashboardMessageTeams.join(', '))}` : 'Audience: all teams'}</span>
-                    </div>
-                    <div style="white-space:pre-wrap;">${escapeHtml(dashboardMessageBoard.text || '')}</div>
-                    ${dashboardMessageBoard.updatedAt ? `<div class="muted" style="margin-top:8px;">Posted ${escapeHtml(new Date(dashboardMessageBoard.updatedAt).toLocaleString())}${dashboardMessageBoard.updatedBy ? ` by ${escapeHtml(dashboardMessageBoard.updatedBy)}` : ''}</div>` : ''}
-                  </div>
-                ` : ''}
+                ${renderDashboardMessageTimeline(dashboardMessageBoard, currentUser)}
 
               </div>
             </div>
@@ -11069,30 +11143,27 @@ function bindEvents() {
 
     const updatedAt = getCurrentIsoTimestamp();
     const updatedBy = String(currentUser?.name || currentUser?.username || 'Admin').trim();
+    const existingBoard = getDashboardMessageBoardState();
+    const history = [
+      ...(Array.isArray(existingBoard.history) ? existingBoard.history : []),
+      { text: messageText, selectedTeams, updatedAt, updatedBy }
+    ];
     state.dashboardMessageBoard = normalizeDashboardMessageBoard({
       text: messageText,
       selectedTeams,
       updatedAt,
-      updatedBy
+      updatedBy,
+      history
     });
 
     saveState();
-    alert('Message board updated. Selected team members will see a pop-up the next time they log in or refresh their page.');
+    alert('Message posted. It has been added to the message board timeline.');
     render();
   });
 
-  document.getElementById('dashboard-message-board-clear')?.addEventListener('click', () => {
-    const currentUser = getCurrentUser();
-    if (!isAdminUser(currentUser)) return;
-    const shouldClear = confirm('Clear the dashboard message board?');
-    if (!shouldClear) return;
-    state.dashboardMessageBoard = normalizeDashboardMessageBoard({
-      text: '',
-      selectedTeams: [],
-      updatedAt: getCurrentIsoTimestamp(),
-      updatedBy: String(currentUser?.name || currentUser?.username || 'Admin').trim()
-    });
-    saveState();
+  document.getElementById('toggle-dashboard-message-timeline')?.addEventListener('click', () => {
+    state.ui.dashboardMessageTimelineCollapsed = !Boolean(state.ui.dashboardMessageTimelineCollapsed);
+    saveUiState();
     render();
   });
 
