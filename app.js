@@ -743,15 +743,7 @@ function getLocationDepartment(location) {
 }
 
 function getLocationCatalogForScope(departmentScope = getCurrentUserDepartmentScope()) {
-  const locations = getLocationCatalog();
-  if (!departmentScope) return locations;
-  const usedByScopedAgent = new Set(
-    state.shifts
-      .filter((shift) => isAgentInDepartmentScope(shift.agentId, departmentScope))
-      .map((shift) => String(shift.location || '').trim())
-      .filter(Boolean)
-  );
-  return locations.filter((location) => getLocationDepartment(location) === departmentScope || usedByScopedAgent.has(location));
+  return getLocationCatalog();
 }
 
 function setLocationDepartment(location, department) {
@@ -5917,10 +5909,7 @@ function renderCalendarShiftCard(shift, options = {}) {
 }
 
 function getAllLocations() {
-  return Array.from(new Set([...getLocationCatalogForScope(), ...state.shifts
-    .filter((shift) => isAgentInDepartmentScope(shift.agentId, getCurrentUserDepartmentScope()))
-    .map((shift) => shift.location)
-    .filter(Boolean)])).sort();
+  return Array.from(new Set([...getLocationCatalog(), ...state.shifts.map((shift) => shift.location).filter(Boolean)])).sort();
 }
 
 function getCalendarWeekDates(referenceDateValue) {
@@ -6073,8 +6062,7 @@ function renderAgentNavigationLinks() {
     '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>',
     '<a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>',
     '<a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Completed requests</button></a>',
-    '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>',
-    '<a href="index.html?view=profile" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">My profile</button></a>'
+    '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'
   ].join('');
 }
 
