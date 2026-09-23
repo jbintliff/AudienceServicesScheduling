@@ -704,7 +704,18 @@ function removeRoleDepartment(roleName) {
 }
 
 function getRoleCatalogForScope(departmentScope) {
+  if (departmentScope === 'Box Office') {
+    return getRoleCatalog().filter((role) => getRoleDepartment(role) === 'Box Office');
+  }
   return getRoleCatalog().filter((role) => isDateEntryInDepartmentScope(getRoleDepartment(role), departmentScope));
+}
+
+function isRoleInDepartmentScope(role, departmentScope = getCurrentUserDepartmentScope()) {
+  if (!departmentScope) return true;
+  const roleDepartment = getRoleDepartment(role);
+  return departmentScope === 'Box Office'
+    ? roleDepartment === 'Box Office'
+    : isDateEntryInDepartmentScope(roleDepartment, departmentScope);
 }
 
 function bulkAssignUnassignedRolesToDepartment(department) {
@@ -3869,6 +3880,7 @@ function getRoleLegendItems(departmentScope = getCurrentUserDepartmentScope()) {
   const assignedRoles = state.agents
     .filter((agent) => isAgentInDepartmentScope(agent, departmentScope))
     .map((agent) => String(agent.role || '').trim())
+    .filter((role) => !departmentScope || (departmentScope === 'Box Office' ? getRoleDepartment(role) === 'Box Office' : isDateEntryInDepartmentScope(getRoleDepartment(role), departmentScope)))
     .filter(Boolean);
   return Array.from(new Set([...normalizedBaseRoles, ...assignedRoles]));
 }
@@ -5740,6 +5752,7 @@ function getAgentViewShifts(options = {}) {
   const publishedOnly = options.publishedOnly !== false;
   return state.shifts.filter((shift) => {
     if (Number(shift.agentId) !== currentId) return false;
+    if (!isRoleInDepartmentScope(shift.role)) return false;
     if (!publishedOnly) return true;
     return isPublishedShift(shift);
   });
@@ -5759,7 +5772,8 @@ function getFilteredCalendarShifts() {
     const matchesDate = !selectedDate || (shift.date || '') === selectedDate;
     const matchesLocation = filters.location === 'All' || shift.location === filters.location;
     const matchesDepartment = isAgentInDepartmentScope(shift.agentId, departmentScope);
-    if (!matchesDay || !matchesAgent || !matchesRole || !matchesAgentName || !matchesDate || !matchesLocation || !matchesDepartment) return false;
+    const matchesRoleDepartment = isRoleInDepartmentScope(shift.role, departmentScope);
+    if (!matchesDay || !matchesAgent || !matchesRole || !matchesAgentName || !matchesDate || !matchesLocation || !matchesDepartment || !matchesRoleDepartment) return false;
     if (!search) return true;
     const agent = getAgent(shift.agentId);
     return [shift.role, shift.day, shift.location, shift.start, shift.end, agent?.name].join(' ').toLowerCase().includes(search);
