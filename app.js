@@ -6377,7 +6377,8 @@ function renderCalendarPage(currentUser) {
         .calendar-view button { padding: 6px 8px; min-height: 32px; }
         .calendar-view .day-row { gap: 6px; }
         .calendar-view .day-card { padding: 7px !important; min-height: 0; }
-        .calendar-view .shift { padding: 6px !important; margin-bottom: 4px; line-height: 1.2; }
+        .calendar-view .shift { padding: 6px !important; margin-bottom: 4px; line-height: 1.2; color: #000; }
+        .calendar-view .shift .muted { color: #000 !important; }
         .calendar-view .calendar-shift-actions { gap: 4px; margin-top: 4px !important; }
         .calendar-view .calendar-shift-actions button { padding: 4px 6px; min-height: 28px; }
         .calendar-view h1 { margin: 0; font-size: 1.45rem; }
