@@ -595,6 +595,7 @@ let lastCalendarFeedSyncAt = loadLastCalendarFeedSyncAt();
 const pendingSharedWriteKeys = new Set();
 let backendSnapshotSyncTimer = null;
 let isPushingLocalSnapshot = false;
+let backendSnapshotWriteChain = Promise.resolve();
 let adminManagerNotice = null;
 let adminProfileNotice = null;
 const attemptedResetTokenLookups = new Set();
@@ -1042,7 +1043,7 @@ async function deletePolicyFileFromBackend(policyId) {
   return didDelete;
 }
 
-async function pushSharedKeyToBackend(key, rawValue) {
+async function performSharedKeyPush(key, rawValue) {
   if (!backendApiBase) return false;
   const previousWrite = sharedKeyWriteQueues.get(key) || Promise.resolve();
   const nextWrite = previousWrite.catch(() => {}).then(async () => {
@@ -1072,6 +1073,16 @@ async function pushSharedKeyToBackend(key, rawValue) {
   }
 }
 
+function enqueueBackendWrite(writeOperation) {
+  const nextWrite = backendSnapshotWriteChain.then(writeOperation);
+  backendSnapshotWriteChain = nextWrite.catch(() => false);
+  return nextWrite;
+}
+
+function pushSharedKeyToBackend(key, rawValue) {
+  return enqueueBackendWrite(() => performSharedKeyPush(key, rawValue));
+}
+
 async function fetchBackendSnapshot() {
   const response = await requestBackend('/snapshot');
   if (!response) return null;
@@ -1079,7 +1090,7 @@ async function fetchBackendSnapshot() {
   return payload?.store && typeof payload.store === 'object' ? payload.store : null;
 }
 
-async function pushLocalSnapshotToBackend() {
+async function performLocalSnapshotPush() {
   if (!backendApiBase) return false;
   if (getLocalAgentCount() === 0) return false;
   const store = {};
@@ -1099,6 +1110,10 @@ async function pushLocalSnapshotToBackend() {
     pendingSharedWriteKeys.clear();
   }
   return didSync;
+}
+
+function pushLocalSnapshotToBackend() {
+  return enqueueBackendWrite(() => performLocalSnapshotPush());
 }
 
 async function flushLocalSnapshotSync() {
@@ -6300,15 +6315,134 @@ function renderProfilePage(currentUser) {
   const isAgentView = isAgentLikeUser(currentUser);
   const isAbsenceManagerView = isTeamLeadUser(currentUser);
   if (isAdminAssistantUser(currentUser)) {
+    const assistantDepartment = normalizeDepartment(currentUser?.department);
     root.innerHTML = `
       <div class="app">
-        <div class="panel">
-          <h1>Profile</h1>
-          <p class="muted">Admin assistant accounts can manage schedules and availability only.</p>
-          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
+        <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+          <div>
+            <h1>Admin assistant profile</h1>
+            <p class="muted">Update your own account details. Schedule and availability access is managed separately.</p>
+          </div>
+          <div class="row">
+            ${renderAdminNavigationLinks()}
+            ${renderUserNavChip(currentUser)}
+            <button id="logout-btn" class="secondary" type="button">Log out</button>
+          </div>
+        </div>
+
+        <div class="grid" style="margin-top:16px;">
+          <div class="stack">
+            <div class="panel">
+              <div class="card">
+                ${currentUser?.profilePhotoDataUrl ? `<div style="margin-bottom:10px;"><img src="${escapeHtml(currentUser.profilePhotoDataUrl)}" alt="Profile photo" style="width:84px; height:84px; border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,0.35);" /></div>` : ''}
+                <div><strong>Name:</strong> ${escapeHtml(currentUser?.name || currentUser?.username || 'Not set')}</div>
+                <div><strong>Job title:</strong> ${escapeHtml(currentUser?.jobTitle || 'Admin assistant')}</div>
+                <div><strong>Department:</strong> ${escapeHtml(assistantDepartment || 'Not set')}</div>
+                <div><strong>Email:</strong> ${escapeHtml(currentUser?.email || 'Not set')}</div>
+                <div><strong>Phone:</strong> ${escapeHtml(currentUser?.phone || 'Not set')}</div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h2>Profile photo</h2>
+              <form id="upload-profile-photo-form" class="stack" style="margin-top:10px;">
+                <input name="profilePhoto" type="file" accept="image/*" required />
+                <div class="row" style="gap:8px;">
+                  <button type="submit">Upload photo</button>
+                  ${currentUser?.profilePhotoDataUrl ? '<button id="remove-profile-photo" type="button" class="danger">Remove photo</button>' : ''}
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="stack">
+            <div class="panel">
+              <h2>Edit profile</h2>
+              <form id="admin-assistant-update-profile-form" class="stack" style="margin-top:10px;">
+                <input name="name" placeholder="Name" value="${escapeHtml(currentUser?.name || currentUser?.username || '')}" required />
+                <input name="jobTitle" placeholder="Job title" value="${escapeHtml(currentUser?.jobTitle || 'Admin assistant')}" required />
+                <select name="department">
+                  <option value="" ${!assistantDepartment ? 'selected' : ''}>No department</option>
+                  ${departmentOptions.map((department) => `<option value="${department}" ${assistantDepartment === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+                </select>
+                <input name="email" type="email" placeholder="Email" value="${escapeHtml(currentUser?.email || '')}" required autocomplete="email" />
+                <input name="phone" type="tel" placeholder="Phone" value="${escapeHtml(currentUser?.phone || '')}" required autocomplete="tel" />
+                <button type="submit">Save profile</button>
+              </form>
+            </div>
+
+            <div class="panel">
+              <h2>Reset password</h2>
+              <form id="admin-assistant-reset-password-form" class="stack" style="margin-top:10px;">
+                <input name="currentPassword" type="password" placeholder="Current password" required autocomplete="current-password" />
+                <input name="newPassword" type="password" placeholder="New password" required autocomplete="new-password" />
+                <input name="confirmPassword" type="password" placeholder="Confirm new password" required autocomplete="new-password" />
+                <button type="submit">Update password</button>
+              </form>
+            </div>
+          </div>
         </div>
       </div>
     `;
+
+    document.getElementById('admin-assistant-update-profile-form')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      const name = String(formData.get('name') || '').trim();
+      const jobTitle = String(formData.get('jobTitle') || '').trim();
+      const department = normalizeDepartment(formData.get('department'));
+      const email = normalizeEmail(formData.get('email'));
+      const phone = normalizePhone(formData.get('phone'));
+      if (!name || !jobTitle || !email || !phone) {
+        alert('All profile fields are required.');
+        return;
+      }
+      const emailInUse = authUsers.some((user) => user.id !== currentUser.id && normalizeEmail(user.email) === email);
+      if (emailInUse) {
+        alert('That email address is already in use by another account.');
+        return;
+      }
+      const profileUpdatedAt = getCurrentIsoTimestamp();
+      authUsers = authUsers.map((user) => user.id === currentUser.id
+        ? { ...user, name, jobTitle, department, email, phone, updatedAt: profileUpdatedAt, profileUpdatedAt }
+        : user);
+      if (!saveAuthUsers()) {
+        alert('Unable to save profile changes right now. Please try again.');
+        render();
+        return;
+      }
+      alert('Profile updated successfully.');
+      render();
+    });
+
+    document.getElementById('admin-assistant-reset-password-form')?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      const currentPassword = String(formData.get('currentPassword') || '');
+      const newPassword = String(formData.get('newPassword') || '');
+      const confirmPassword = String(formData.get('confirmPassword') || '');
+      if (currentPassword !== currentUser.password) {
+        alert('Current password is incorrect.');
+        return;
+      }
+      const passwordPolicyError = getNewPasswordPolicyError(newPassword);
+      if (passwordPolicyError) {
+        alert(passwordPolicyError);
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        alert('New password and confirmation do not match.');
+        return;
+      }
+      authUsers = authUsers.map((user) => user.id === currentUser.id
+        ? { ...user, password: newPassword, passwordUpdatedAt: getCurrentIsoTimestamp() }
+        : user);
+      saveAuthUsers();
+      alert('Password updated successfully.');
+      render();
+    });
+
+    bindProfilePhotoHandlers();
     document.getElementById('logout-btn')?.addEventListener('click', () => {
       clearSession();
       render();
