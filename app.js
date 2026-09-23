@@ -43,6 +43,7 @@ const shiftStatuses = {
 const shiftAbsenceReasonOptions = ['sick', 'emergency', 'no reason', 'transportation issue'];
 const userRoles = {
   admin: 'admin',
+  adminAssistant: 'admin-assistant',
   agent: 'agent',
   teamLead: 'team-lead'
 };
@@ -635,12 +636,21 @@ function normalizeShiftAbsenceReason(value) {
 function normalizeUserRole(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === userRoles.admin) return userRoles.admin;
+  if (normalized === userRoles.adminAssistant || normalized === 'admin assistant') return userRoles.adminAssistant;
   if (normalized === userRoles.teamLead || normalized === 'absence-manager') return userRoles.teamLead;
   return userRoles.agent;
 }
 
 function isAdminUser(user) {
   return normalizeUserRole(user?.role) === userRoles.admin;
+}
+
+function isAdminAssistantUser(user) {
+  return normalizeUserRole(user?.role) === userRoles.adminAssistant;
+}
+
+function canManageAvailability(user) {
+  return isAdminUser(user) || isAdminAssistantUser(user);
 }
 
 function isAgentUser(user) {
@@ -660,7 +670,7 @@ function canMarkShiftAbsences(user) {
 }
 
 function canManageSchedule(user) {
-  return isAdminUser(user);
+  return isAdminUser(user) || isAdminAssistantUser(user);
 }
 
 function normalizeLocationCatalog(values) {
@@ -2263,6 +2273,7 @@ function renderUserNavChip(user) {
 function getUserRoleLabel(roleValue) {
   const role = normalizeUserRole(roleValue);
   if (role === userRoles.admin) return 'admin';
+  if (role === userRoles.adminAssistant) return 'admin assistant';
   if (role === userRoles.teamLead) return 'team lead';
   return 'agent';
 }
@@ -5950,6 +5961,13 @@ async function importData(file) {
 }
 
 function renderAdminNavigationLinks(options = {}) {
+  if (isAdminAssistantUser(getCurrentUser())) {
+    return [
+      '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>',
+      '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>',
+      '<a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability</button></a>'
+    ].join('');
+  }
   const isBoxOfficeScoped = getCurrentUserDepartmentScope() === 'Box Office';
   const includeExport = options?.includeExport !== false && !isBoxOfficeScoped;
   const includeImport = options?.includeImport !== false && !isBoxOfficeScoped;
@@ -6281,11 +6299,27 @@ function renderProfilePage(currentUser) {
   const isAdminView = isAdminUser(currentUser);
   const isAgentView = isAgentLikeUser(currentUser);
   const isAbsenceManagerView = isTeamLeadUser(currentUser);
+  if (isAdminAssistantUser(currentUser)) {
+    root.innerHTML = `
+      <div class="app">
+        <div class="panel">
+          <h1>Profile</h1>
+          <p class="muted">Admin assistant accounts can manage schedules and availability only.</p>
+          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
+        </div>
+      </div>
+    `;
+    document.getElementById('logout-btn')?.addEventListener('click', () => {
+      clearSession();
+      render();
+    });
+    return;
+  }
   if (isAdminView) {
     const currentManagedTeams = getManagedTeamsForUser(currentUser);
     const isBoxOfficeScopedAdmin = getCurrentUserDepartmentScope() === 'Box Office';
     const adminUsers = authUsers
-      .filter((user) => isAdminUser(user))
+      .filter((user) => isAdminUser(user) || isAdminAssistantUser(user))
       .sort((left, right) => String(left.name || left.username || '').localeCompare(String(right.name || right.username || ''), undefined, { sensitivity: 'base' }));
 
     root.innerHTML = `
@@ -6382,6 +6416,7 @@ function renderProfilePage(currentUser) {
                     </select>
                     <select name="accessRole" required>
                       <option value="${userRoles.admin}">Admin (full access)</option>
+                      <option value="${userRoles.adminAssistant}">Admin assistant (schedule and availability)</option>
                     </select>
                   </div>
                   <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -6426,6 +6461,7 @@ function renderProfilePage(currentUser) {
                       <div class="row" style="gap:8px; flex-wrap:wrap;">
                         <select name="accessRole" required>
                           <option value="${userRoles.admin}" ${isAdminUser(adminUser) ? 'selected' : ''}>Admin (full access)</option>
+                          <option value="${userRoles.adminAssistant}" ${isAdminAssistantUser(adminUser) ? 'selected' : ''}>Admin assistant (schedule and availability)</option>
                         </select>
                       </div>
                       <label class="stack" style="gap:4px;">
@@ -6615,7 +6651,7 @@ function renderProfilePage(currentUser) {
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         const adminId = Number(form.getAttribute('data-update-admin-form'));
-        const adminUser = authUsers.find((user) => isAdminUser(user) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user)) && Number(user.id) === adminId);
         if (!adminUser) return;
 
         const formData = new FormData(form);
@@ -6645,7 +6681,7 @@ function renderProfilePage(currentUser) {
           && adminUser.isActive !== false
           && getActiveAdminCount() <= 1;
         if (demotingLastActiveAdmin) {
-          alert('You cannot change the last active admin to team lead.');
+          alert('You cannot change the last active admin to a non-admin role.');
           return;
         }
 
@@ -6736,7 +6772,7 @@ function renderProfilePage(currentUser) {
     document.querySelectorAll('[data-resend-admin-invite]').forEach((button) => {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-resend-admin-invite'));
-        const adminUser = authUsers.find((user) => isAdminUser(user) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user)) && Number(user.id) === adminId);
         if (!adminUser?.email) {
           alert('This manager needs a valid email before sending an invite.');
           return;
@@ -6764,7 +6800,7 @@ function renderProfilePage(currentUser) {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-toggle-admin-active'));
         const activeUser = getCurrentUser();
-        const adminUser = authUsers.find((user) => isAdminUser(user) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user)) && Number(user.id) === adminId);
         if (!adminUser) return;
         if (getCurrentUserDepartmentScope() === 'Box Office' && adminUser.department === 'Audience Services') {
           alert('Box Office admin accounts cannot deactivate Audience Services managers.');
@@ -6811,7 +6847,7 @@ function renderProfilePage(currentUser) {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-remove-admin'));
         const activeUser = getCurrentUser();
-        const adminUser = authUsers.find((user) => isAdminUser(user) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user)) && Number(user.id) === adminId);
         if (!adminUser) return;
         if (getCurrentUserDepartmentScope() === 'Box Office') {
           alert('Box Office admin accounts cannot remove other managers.');
@@ -7246,7 +7282,7 @@ function initializeAdminOptionsCollapsiblePanels() {
 }
 
 function renderAdminOptionsPage(currentUser) {
-  const isAdminView = currentUser.role === 'admin';
+  const isAdminView = isAdminUser(currentUser);
   if (!isAdminView) {
     root.innerHTML = `
       <div class="app">
@@ -7571,7 +7607,23 @@ function renderAdminOptionsPage(currentUser) {
 }
 
 function renderPoliciesPage(currentUser) {
-  const isAdminView = currentUser.role === 'admin';
+  const isAdminView = isAdminUser(currentUser);
+  if (isAdminAssistantUser(currentUser)) {
+    root.innerHTML = `
+      <div class="app">
+        <div class="panel">
+          <h1>Policies</h1>
+          <p class="muted">This page is not available for admin assistant accounts.</p>
+          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
+        </div>
+      </div>
+    `;
+    document.getElementById('logout-btn')?.addEventListener('click', () => {
+      clearSession();
+      render();
+    });
+    return;
+  }
   const policiesDepartmentScope = getCurrentUserDepartmentScope();
   const policies = [...(Array.isArray(state.policies) ? state.policies : [])]
     .filter((policy) => isDateEntryInDepartmentScope(policy.department, policiesDepartmentScope))
@@ -7789,7 +7841,7 @@ function renderPendingRequestsPage(currentUser) {
 }
 
 function renderEmailOutboxPage(currentUser) {
-  const isAdminView = currentUser.role === 'admin';
+  const isAdminView = isAdminUser(currentUser);
   if (!isAdminView || getCurrentUserDepartmentScope() === 'Box Office') {
     root.innerHTML = `
       <div class="app">
@@ -7851,7 +7903,7 @@ function renderEmailOutboxPage(currentUser) {
 }
 
 function renderAgentsPage(currentUser) {
-  const isAdminView = currentUser.role === 'admin';
+  const isAdminView = isAdminUser(currentUser);
   if (!isAdminView) {
     root.innerHTML = `
       <div class="app">
@@ -8034,7 +8086,7 @@ function getAvailabilityCalendarCells(monthValue, requests) {
 }
 
 function renderAvailabilityRequestsPage(currentUser) {
-  const isAdminView = currentUser.role === 'admin';
+  const isAdminView = canManageAvailability(currentUser);
   if (!isAdminView) {
     root.innerHTML = `
       <div class="app">
@@ -8589,7 +8641,7 @@ function render() {
 
       <div class="grid" style="margin-top:16px;${!isAgentView ? ' grid-template-columns:1fr;' : ''}">
         <div class="stack">
-          ${!isAgentView ? `
+          ${!isAgentView && !isAdminAssistantUser(currentUser) ? `
             <div style="display:grid; gap:12px; grid-template-columns:1fr; align-items:start;">
               <div class="stack">
                 <div class="panel">
@@ -10837,7 +10889,7 @@ function bindEvents() {
   document.getElementById('add-manual-pto-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     const currentUser = getCurrentUser();
-    if (currentUser?.role !== 'admin') return;
+    if (!canManageAvailability(currentUser)) return;
 
     const formData = new FormData(event.currentTarget);
     const requestKind = String(formData.get('requestKind') || 'one-time-availability').trim();
@@ -11760,6 +11812,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-approve-availability-request-ids]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (!canManageAvailability(getCurrentUser())) return;
       const ids = String(button.getAttribute('data-approve-availability-request-ids') || '')
         .split(',')
         .map((value) => Number(value))
@@ -11802,6 +11855,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-reject-availability-request-ids]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (!canManageAvailability(getCurrentUser())) return;
       const ids = String(button.getAttribute('data-reject-availability-request-ids') || '')
         .split(',')
         .map((value) => Number(value))
@@ -11840,6 +11894,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-delete-availability-request-ids]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (!canManageAvailability(getCurrentUser())) return;
       const ids = String(button.getAttribute('data-delete-availability-request-ids') || '')
         .split(',')
         .map((value) => Number(value))
@@ -11894,6 +11949,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-edit-availability-request]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (!canManageAvailability(getCurrentUser())) return;
       const id = Number(button.getAttribute('data-edit-availability-request'));
       const allAvailabilityRequests = getAllAvailabilityRequests();
       const request = allAvailabilityRequests.find((item) => Number(item.id) === id);
