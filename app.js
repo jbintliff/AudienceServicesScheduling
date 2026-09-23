@@ -498,9 +498,9 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', department: 'Audience Services', role: 'In-person', payRate: 24, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', department: 'Audience Services', role: 'WFH', payRate: 18, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Available' },
-    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', department: 'Box Office', role: 'Booth Duty', payRate: 15, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', department: 'Audience Services', role: 'In-person', payRate: 24, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', department: 'Audience Services', role: 'WFH', payRate: 18, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', department: 'Box Office', role: 'Booth Duty', payRate: 15, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -3051,6 +3051,13 @@ function normalizeMaxInOfficeShifts(value) {
   return Math.floor(parsed);
 }
 
+function normalizeMaxShiftsPerWeek(value) {
+  if (value === '' || value === null || typeof value === 'undefined') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.floor(parsed);
+}
+
 function normalizeAttendancePoints(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
@@ -3514,6 +3521,7 @@ function loadState() {
       ? parsed.agents.map((agent) => {
           const maxInOfficeShiftsRaw = typeof agent.maxInOfficeShifts === 'undefined' ? null : agent.maxInOfficeShifts;
           const maxInOfficeShifts = normalizeMaxInOfficeShifts(maxInOfficeShiftsRaw);
+          const maxShiftsPerWeek = normalizeMaxShiftsPerWeek(agent.maxShiftsPerWeek);
           const attendancePoints = normalizeAttendancePoints(agent.attendancePoints);
           const linkedUser = authUsersForLookup.find((user) => isAgentLikeUser(user) && Number(user.agentId) === Number(agent.id)) || null;
           const linkedUserPronouns = normalizePronouns(linkedUser?.pronouns || '');
@@ -3528,7 +3536,8 @@ function loadState() {
             attendancePoints,
             pronouns,
             skills,
-            maxInOfficeShifts
+            maxInOfficeShifts,
+            maxShiftsPerWeek
           };
         })
       : createDefaultState().agents;
@@ -4465,7 +4474,7 @@ function promptInOfficeOverride(agentName, projectedInOfficeCount, maxInOfficeSh
 
 async function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, options = {}) {
   const activeUser = getCurrentUser();
-  if (activeUser?.role !== 'admin') {
+  if (!canManageSchedule(activeUser)) {
     return true;
   }
 
@@ -4473,6 +4482,14 @@ async function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, en
   const requestedRole = String(options.role || '').trim();
 
   const targetAgent = getAgent(agentId);
+  const maxShiftsPerWeek = normalizeMaxShiftsPerWeek(targetAgent?.maxShiftsPerWeek);
+  if (Number.isFinite(maxShiftsPerWeek) && maxShiftsPerWeek >= 0) {
+    const projectedShiftCount = getAssignedShiftCount(agentId, date, { excludingShiftId: replacingShiftId }) + 1;
+    if (projectedShiftCount > maxShiftsPerWeek) {
+      const shouldContinue = confirm(`${targetAgent?.name || 'This agent'} would be scheduled for ${projectedShiftCount} shifts this week, above the maximum of ${maxShiftsPerWeek}. Schedule anyway?`);
+      if (!shouldContinue) return false;
+    }
+  }
 
   const roleToEvaluate = requestedRole || targetAgent?.role || getPrimaryRole();
   if (!canAssignAgentToShiftRole(agentId, roleToEvaluate)) {
@@ -4738,6 +4755,12 @@ function claimUnassignedShiftForAgent(shiftId, agentId) {
   if (shift.agentId) {
     return { ok: false, message: 'This shift has already been picked up by another agent.' };
   }
+  const targetAgent = getAgent(normalizedAgentId);
+  const maxShiftsPerWeek = normalizeMaxShiftsPerWeek(targetAgent?.maxShiftsPerWeek);
+  if (Number.isFinite(maxShiftsPerWeek) && getAssignedShiftCount(normalizedAgentId, shift.date) + 1 > maxShiftsPerWeek) {
+    const shouldContinue = confirm(`${targetAgent?.name || 'You'} would be scheduled for ${getAssignedShiftCount(normalizedAgentId, shift.date) + 1} shifts this week, above the maximum of ${maxShiftsPerWeek}. Pick up this shift anyway?`);
+    if (!shouldContinue) return { ok: false, message: 'Shift pickup cancelled.' };
+  }
   state.shifts = state.shifts.map((item) => Number(item.id) === normalizedShiftId
     ? { ...item, agentId: normalizedAgentId, updatedAt: getCurrentIsoTimestamp() }
     : item);
@@ -4764,6 +4787,7 @@ function saveAgentDetails(agentId, values) {
   const pronouns = normalizePronouns(values?.pronouns);
   const skills = normalizeAgentSkills(values?.skills);
   const maxInOfficeShifts = normalizeMaxInOfficeShifts(values?.maxInOfficeShifts);
+  const maxShiftsPerWeek = normalizeMaxShiftsPerWeek(values?.maxShiftsPerWeek);
 
   if (!name) {
     return { ok: false, message: 'Name is required for each agent.' };
@@ -4791,6 +4815,7 @@ function saveAgentDetails(agentId, values) {
         pronouns,
         skills,
         maxInOfficeShifts,
+        maxShiftsPerWeek,
         updatedAt: profileUpdatedAt,
         profileUpdatedAt
       }
@@ -4906,6 +4931,10 @@ function openAgentEditModal(agent, onSave) {
             <span>Max in-office shifts</span>
             <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" />
           </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Max shifts per week</span>
+            <input name="maxShiftsPerWeek" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(agent.maxShiftsPerWeek ?? '')}" />
+          </label>
         </div>
         <div class="card" style="padding:10px; margin-top:2px;">
           <div style="font-weight:600; margin-bottom:6px;">Skills</div>
@@ -4960,7 +4989,8 @@ function openAgentEditModal(agent, onSave) {
       attendancePoints: formData.get('attendancePoints'),
       pronouns: formData.get('pronouns'),
       skills: formData.getAll('skills'),
-      maxInOfficeShifts: formData.get('maxInOfficeShifts')
+      maxInOfficeShifts: formData.get('maxInOfficeShifts'),
+      maxShiftsPerWeek: formData.get('maxShiftsPerWeek')
     });
     if (!result?.ok) {
       alert(result?.message || 'Unable to save agent details.');
@@ -5706,6 +5736,17 @@ function getAssignedHours(agentId, referenceDateValue = '') {
     .filter((shift) => Number(shift.agentId) === normalizedAgentId)
     .filter((shift) => shiftIsInWeek(shift, weekDates))
     .reduce((sum, shift) => sum + shift.durationHours, 0);
+}
+
+function getAssignedShiftCount(agentId, referenceDateValue = '', options = {}) {
+  const normalizedAgentId = Number(agentId);
+  const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
+  const excludingShiftId = Number(options.excludingShiftId) || null;
+  return state.shifts
+    .filter((shift) => Number(shift.agentId) === normalizedAgentId)
+    .filter((shift) => shiftIsInWeek(shift, weekDates))
+    .filter((shift) => !excludingShiftId || Number(shift.id) !== excludingShiftId)
+    .length;
 }
 
 function isInOfficeRole(role) {
@@ -8372,6 +8413,7 @@ function renderAgentsPage(currentUser) {
             </select>
             <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
             <input name="pronouns" placeholder="Pronouns (e.g. she/her)" maxlength="80" />
+            <input name="maxShiftsPerWeek" type="number" inputmode="numeric" step="1" min="0" placeholder="Max shifts/week" />
             <button type="submit" style="white-space:nowrap;">Add agent</button>
           </div>
         </form>` : ''}
@@ -8388,7 +8430,7 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Managed by:</strong> ${escapeHtml(getTeamManagerSummary(agent.team))}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
                   <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(agent.pronouns) || 'Not set')}</div>
-                  <div><strong>Targets:</strong> in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
+                  <div><strong>Targets:</strong> shifts/week max ${escapeHtml(agent.maxShiftsPerWeek ?? 'Not set')}, in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
                 </div>
                 <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
                   ${canEditAgentProfiles ? `<button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:6px 9px;">Edit</button>` : ''}
@@ -10488,6 +10530,7 @@ function bindEvents() {
     const payRateRaw = formData.get('payRate')?.toString().trim() || '0';
     const payRate = parseCurrencyAmount(payRateRaw);
     const maxInOfficeShifts = normalizeMaxInOfficeShifts(formData.get('maxInOfficeShifts'));
+    const maxShiftsPerWeek = normalizeMaxShiftsPerWeek(formData.get('maxShiftsPerWeek'));
     if (!name) {
       alert('Name is required to add an agent.');
       return;
@@ -10526,6 +10569,7 @@ function bindEvents() {
       pronouns: normalizePronouns(formData.get('pronouns')),
       skills: [],
       maxInOfficeShifts,
+      maxShiftsPerWeek,
       availability: 'Available',
       createdAt,
       profileUpdatedAt: createdAt
