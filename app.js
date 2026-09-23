@@ -6043,6 +6043,7 @@ function renderCalendarShiftCard(shift, options = {}) {
   const showRoleLocation = options.showRoleLocation !== false;
   const showTimeRange = options.showTimeRange !== false;
   const absenceReason = normalizeShiftAbsenceReason(shift?.absenceReason);
+  const canMarkThisShiftAbsent = canMarkAbsence && isPublishedShift(shift);
 
   return `
     <div class="shift ${canManageCalendar && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="${canManageCalendar ? 'true' : 'false'}" data-shift-id="${shift.id}" style="${getShiftStyle(shift)} user-select:text; -webkit-user-select:text;">
@@ -6051,11 +6052,11 @@ function renderCalendarShiftCard(shift, options = {}) {
         <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>
       </div>
       ${showRoleLocation ? `${getShiftRoleLocationHtml(shift)}${showTimeRange ? `<br />${formatTimeRange(shift.start, shift.end)}` : ''}` : (showTimeRange ? `${formatTimeRange(shift.start, shift.end)}` : '')}
-      ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}</div><div class="row calendar-shift-actions" style="margin-top:6px;">${canManageCalendar ? `<button type="button" class="secondary" data-copy-dup-shift="${shift.id}">Copy</button><button type="button" class="secondary" data-edit-shift="${shift.id}">Edit</button>` : ''}${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}</div>` : ''}
+      ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}</div><div class="row calendar-shift-actions" style="margin-top:6px;">${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}</div>` : ''}
       ${isAgentView ? `
         <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
         <div class="row" style="margin-top:6px;">
-          ${canMarkAbsence ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}
+          ${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}
           ${canAgentOfferShift(shift, currentAgentId) ? `<button type="button" class="secondary" data-offer-shift="${shift.id}">${isShiftOfferedForPickup(shift) ? 'Cancel offer' : 'Offer shift'}</button>` : ''}
           ${canAgentPickUpOfferedShift(shift, currentAgentId) ? `<button type="button" class="success" data-pickup-offered-shift="${shift.id}">Pick up shift</button>` : ''}
         </div>
@@ -6377,10 +6378,10 @@ function renderCalendarPage(currentUser) {
         .calendar-view button { padding: 6px 8px; min-height: 32px; }
         .calendar-view .day-row { gap: 6px; }
         .calendar-view .day-card { padding: 7px !important; min-height: 0; }
-        .calendar-view .shift { padding: 6px !important; margin-bottom: 4px; line-height: 1.2; color: #000; }
+        .calendar-view .shift { padding: 6px !important; margin-bottom: 4px; line-height: 1.2; color: #000; overflow: hidden; }
         .calendar-view .shift .muted { color: #000 !important; }
-        .calendar-view .calendar-shift-actions { gap: 4px; margin-top: 4px !important; }
-        .calendar-view .calendar-shift-actions button { padding: 4px 6px; min-height: 28px; }
+        .calendar-view .calendar-shift-actions { gap: 4px; margin-top: 4px !important; flex-wrap: wrap; }
+        .calendar-view .calendar-shift-actions button { padding: 3px 5px; min-height: 26px; font-size: 0.75rem; flex: 1 1 auto; min-width: 0; }
         .calendar-view h1 { margin: 0; font-size: 1.45rem; }
         .calendar-view h2 { margin-top: 0; margin-bottom: 6px; }
         .calendar-view h3 { margin-top: 0; margin-bottom: 6px; }
@@ -12161,10 +12162,12 @@ function bindEvents() {
     render();
   });
 
-  document.querySelectorAll('[data-edit-shift]').forEach((button) => {
-    button.addEventListener('click', () => {
+  document.querySelectorAll('.shift[data-shift-id]').forEach((shiftElement) => {
+    shiftElement.addEventListener('dblclick', (event) => {
       if (!canManageCalendar) return;
-      const id = Number(button.getAttribute('data-edit-shift'));
+      if (event.target.closest('button, input, select, textarea, a')) return;
+      event.preventDefault();
+      const id = Number(shiftElement.getAttribute('data-shift-id'));
       const shift = state.shifts.find((item) => item.id === id);
       if (!shift) return;
       openShiftEditModal(shift, (updatedShift) => {
@@ -12219,7 +12222,7 @@ function bindEvents() {
       if (!canMarkAbsence) return;
       const id = Number(button.getAttribute('data-mark-shift-absent'));
       const shift = state.shifts.find((item) => Number(item.id) === id);
-      if (!shift) return;
+      if (!shift || !isPublishedShift(shift)) return;
       openShiftAbsenceModal(shift, (absenceReason) => {
         state.shifts = state.shifts.map((item) => Number(item.id) === id
           ? {
@@ -12240,7 +12243,7 @@ function bindEvents() {
       if (!canMarkAbsence) return;
       const id = Number(button.getAttribute('data-clear-shift-absent'));
       const shift = state.shifts.find((item) => Number(item.id) === id);
-      if (!shift) return;
+      if (!shift || !isPublishedShift(shift)) return;
       const shouldClear = confirm('Clear this shift absence flag?');
       if (!shouldClear) return;
       state.shifts = state.shifts.map((item) => Number(item.id) === id
@@ -12624,11 +12627,11 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll('[data-copy-dup-shift]').forEach((button) => {
-    button.addEventListener('click', async (event) => {
-      event.preventDefault();
+  document.querySelectorAll('.shift[data-shift-id]').forEach((shiftElement) => {
+    shiftElement.addEventListener('contextmenu', (event) => {
       if (!canManageCalendar) return;
-      const id = Number(button.getAttribute('data-copy-dup-shift'));
+      event.preventDefault();
+      const id = Number(shiftElement.getAttribute('data-shift-id'));
       const shift = state.shifts.find((item) => item.id === id);
       if (!shift) return;
       copiedShiftTemplate = { ...shift };
