@@ -8319,7 +8319,7 @@ function getAvailabilityRequestTypeMeta(request) {
     return {
       key: 'availability-recurring',
       label: 'Recurring availability',
-      style: 'background:#C49583; color:#2E2422; border:1px solid rgba(46,36,34,0.2);'
+      style: 'background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);'
     };
   }
   return {
@@ -8492,7 +8492,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
           <span class="chip" style="background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);">PTO</span>
           <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
-          <span class="chip" style="background:#C49583; color:#2E2422; border:1px solid rgba(46,36,34,0.2);">Recurring availability</span>
+          <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Recurring availability</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
         </div>
         <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
@@ -9656,7 +9656,7 @@ function renderPublicAvailabilityViewPage() {
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
           <span class="chip" style="background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);">PTO</span>
           <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
-          <span class="chip" style="background:#C49583; color:#2E2422; border:1px solid rgba(46,36,34,0.2);">Recurring availability</span>
+          <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Recurring availability</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
         </div>
         <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
