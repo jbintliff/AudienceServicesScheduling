@@ -6377,11 +6377,12 @@ function renderCalendarPage(currentUser) {
         .calendar-view select,
         .calendar-view button { padding: 6px 8px; min-height: 32px; }
         .calendar-view .day-row { gap: 6px; }
-        .calendar-view .day-card { padding: 7px !important; min-height: 0; }
-        .calendar-view .shift { padding: 6px !important; margin-bottom: 4px; line-height: 1.2; color: #000; overflow: hidden; }
+        .calendar-view .day-card { padding: 5px !important; min-height: 0; }
+        .calendar-view .shift { padding: 4px !important; margin-bottom: 3px; line-height: 1.05; font-size: 0.78rem; color: #000; overflow: hidden; }
+        .calendar-view .shift strong { font-size: 0.8rem; }
         .calendar-view .shift .muted { color: #000 !important; }
-        .calendar-view .calendar-shift-actions { gap: 4px; margin-top: 4px !important; flex-wrap: wrap; }
-        .calendar-view .calendar-shift-actions button { padding: 3px 5px; min-height: 26px; font-size: 0.75rem; flex: 1 1 auto; min-width: 0; }
+        .calendar-view .calendar-shift-actions { gap: 3px; margin-top: 3px !important; flex-wrap: wrap; }
+        .calendar-view .calendar-shift-actions button { padding: 2px 4px; min-height: 23px; font-size: 0.68rem; flex: 1 1 auto; min-width: 0; }
         .calendar-view h1 { margin: 0; font-size: 1.45rem; }
         .calendar-view h2 { margin-top: 0; margin-bottom: 6px; }
         .calendar-view h3 { margin-top: 0; margin-bottom: 6px; }
