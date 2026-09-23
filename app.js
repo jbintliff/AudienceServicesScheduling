@@ -8701,9 +8701,6 @@ function render() {
     ? []
     : getFilteredCalendarShifts().filter((shift) => shift.status === shiftStatuses.published && shiftIsInWeek(shift, plannerWeekDates));
   const sortedAdminWeeklyShifts = [...adminWeeklyShifts].sort(compareCalendarShiftDisplayOrder);
-  const dashboardDepartmentScope = getCurrentUserDepartmentScope();
-  const scopedSwapRequests = state.swapRequests.filter((request) => isAgentInDepartmentScope(request.fromAgentId, dashboardDepartmentScope) || isAgentInDepartmentScope(request.toAgentId, dashboardDepartmentScope));
-  const swapAlertCount = scopedSwapRequests.length;
   const agentViewShifts = getAgentViewShifts();
   const todayDay = days[(new Date().getDay() + 6) % 7] || 'Mon';
   const selectedAgentScheduleView = ['day', 'week', 'month'].includes(state.ui.agentScheduleView) ? state.ui.agentScheduleView : 'week';
@@ -8727,7 +8724,7 @@ function render() {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>${isAgentView ? 'My scheduling view' : 'Agent Scheduling Hub'}</h1>
-          <p class="muted">${isAgentView ? 'View your schedule and request swaps without the admin management tools.' : 'A fuller staffing workspace for agents, templates, drag-and-drop scheduling, pay tracking, and swap alerts.'}</p>
+          <p class="muted">${isAgentView ? 'View your schedule and request swaps without the admin management tools.' : 'A fuller staffing workspace for agents, templates, drag-and-drop scheduling, and pay tracking.'}</p>
           <p class="muted">${escapeHtml(getLastSyncStatusText())}</p>
         </div>
         <div class="row">
@@ -8916,32 +8913,6 @@ function render() {
                     ${dashboardMessageBoard.updatedAt ? `<div class="muted" style="margin-top:8px;">Posted ${escapeHtml(new Date(dashboardMessageBoard.updatedAt).toLocaleString())}${dashboardMessageBoard.updatedBy ? ` by ${escapeHtml(dashboardMessageBoard.updatedBy)}` : ''}</div>` : ''}
                   </div>
                 ` : ''}
-
-                <div class="panel">
-                  <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <h2 style="margin:0;">Swap alerts</h2>
-                    <button id="toggle-swap-alerts" class="secondary" type="button">${state.ui.swapAlertsCollapsed ? 'Show alerts' : 'Hide alerts'}</button>
-                  </div>
-                  <div class="muted" style="margin-bottom:8px;">${swapAlertCount} alert${swapAlertCount === 1 ? '' : 's'}</div>
-                  ${state.ui.swapAlertsCollapsed ? '<div class="muted">Swap alerts are hidden.</div>' : `
-                    <div class="request-list" style="margin-top:12px;">
-                      ${scopedSwapRequests.map((request) => `
-                        <div class="card">
-                          <div class="row" style="justify-content:space-between;">
-                            <div>
-                              <strong>${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} → ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</strong>
-                              <div class="muted">From shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'from'))}</div>
-                              <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
-                              <div class="muted">Approval state: ${escapeHtml(getSwapApprovalText(request))}</div>
-                              <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
-                            </div>
-                            <span class="status-badge ${request.status || 'pending'}">${request.status || 'pending'}</span>
-                          </div>
-                        </div>
-                      `).join('')}
-                    </div>
-                  `}
-                </div>
 
               </div>
             </div>
@@ -10897,12 +10868,6 @@ function bindEvents() {
 
   document.getElementById('toggle-availability-requests')?.addEventListener('click', () => {
     state.ui.availabilityRequestsCollapsed = !state.ui.availabilityRequestsCollapsed;
-    saveUiState();
-    render();
-  });
-
-  document.getElementById('toggle-swap-alerts')?.addEventListener('click', () => {
-    state.ui.swapAlertsCollapsed = !state.ui.swapAlertsCollapsed;
     saveUiState();
     render();
   });
