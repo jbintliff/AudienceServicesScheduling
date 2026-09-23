@@ -6567,7 +6567,7 @@ function renderProfilePage(currentUser) {
 
         <div class="grid" style="margin-top:16px; grid-template-columns:1fr;">
           <div class="stack">
-            <div class="panel">
+            <div class="panel" style="display:none;">
               <h2>Managers</h2>
               <p class="muted">Add additional manager accounts so multiple admins can access the site.</p>
               ${adminManagerNotice ? `
@@ -7454,6 +7454,102 @@ function initializeAdminOptionsCollapsiblePanels() {
   });
 }
 
+function renderManagerManagementPanel(currentUser) {
+  const isBoxOfficeScopedAdmin = getCurrentUserDepartmentScope() === 'Box Office';
+  const adminUsers = authUsers
+    .filter((user) => isAdminUser(user) || isAdminAssistantUser(user))
+    .sort((left, right) => String(left.name || left.username || '').localeCompare(String(right.name || right.username || ''), undefined, { sensitivity: 'base' }));
+
+  return `
+    <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-managers">
+      <h2>Managers</h2>
+      <p class="muted">Add and manage manager accounts from Admin Options.</p>
+      ${adminManagerNotice ? `
+        <div class="card" style="margin-bottom:12px; border-color:${adminManagerNotice.type === 'success' ? '#7AACAF' : '#AB5C57'};">
+          <div>${escapeHtml(adminManagerNotice.text || '')}</div>
+          ${adminManagerNotice.resetLink ? `<div style="margin-top:8px;"><a href="${escapeHtml(adminManagerNotice.resetLink)}" style="color:#17383B;">Open reset link</a></div>` : ''}
+        </div>` : ''}
+      <details class="card" style="margin-top:10px; padding:12px;">
+        <summary style="cursor:pointer; font-weight:600;">Add new manager</summary>
+        <form id="add-admin-form" class="stack" style="margin-top:10px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <input name="name" placeholder="Manager name" required />
+            <input name="jobTitle" placeholder="Job title" value="Scheduling Manager" required />
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <select name="department">
+              <option value="">No department</option>
+              ${departmentOptions.map((department) => `<option value="${department}">${escapeHtml(department)}</option>`).join('')}
+            </select>
+            <select name="accessRole" required>
+              <option value="${userRoles.admin}">Admin (full access)</option>
+              <option value="${userRoles.adminAssistant}">Admin assistant (schedule and availability)</option>
+            </select>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <input name="email" type="email" placeholder="Email (optional)" autocomplete="email" />
+            <input name="phone" type="tel" placeholder="Phone (optional)" autocomplete="tel" />
+          </div>
+          <label class="stack" style="gap:4px;">
+            <span class="muted">Managed teams</span>
+            <select name="managedTeams" multiple size="${Math.min(teamOptions.length, 4)}" style="min-height:90px;">
+              ${teamOptions.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join('')}
+            </select>
+          </label>
+          <button type="submit">Add manager</button>
+        </form>
+      </details>
+      <div class="request-list" style="margin-top:12px; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));">
+        ${adminUsers.map((adminUser) => {
+          const isManagerCardCollapsed = Boolean(state.ui.collapsedManagerCards?.[adminUser.id]);
+          return `
+            <div class="card">
+              <form class="stack" data-update-admin-form="${adminUser.id}">
+                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+                  <strong>${escapeHtml(adminUser.name || adminUser.username || 'Manager')}</strong>
+                  <div class="row" style="gap:8px; align-items:center;">
+                    <div class="muted">Status: ${escapeHtml(adminUser.isActive === false ? 'Inactive' : 'Active')} • Access: ${escapeHtml(getUserRoleLabel(adminUser.role))}</div>
+                    <button type="button" class="secondary" data-toggle-manager-card="${adminUser.id}" title="${isManagerCardCollapsed ? 'Expand' : 'Collapse'}" aria-label="${isManagerCardCollapsed ? 'Expand' : 'Collapse'}">${isManagerCardCollapsed ? '\u25B6' : '\u25BC'}</button>
+                  </div>
+                </div>
+                <div data-manager-card-body="${adminUser.id}" class="stack" style="${isManagerCardCollapsed ? 'display:none;' : ''}">
+                  <div class="row" style="gap:8px; flex-wrap:wrap;">
+                    <input name="name" value="${escapeHtml(adminUser.name || '')}" placeholder="Manager name" required />
+                    <input name="jobTitle" value="${escapeHtml(adminUser.jobTitle || 'Scheduling Manager')}" placeholder="Job title" required />
+                    <select name="department">
+                      <option value="" ${!adminUser.department ? 'selected' : ''}>No department</option>
+                      ${departmentOptions.map((department) => `<option value="${department}" ${adminUser.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div class="row" style="gap:8px; flex-wrap:wrap;">
+                    <input name="email" type="email" value="${escapeHtml(adminUser.email || '')}" placeholder="Email (optional)" autocomplete="email" />
+                    <input name="phone" type="tel" value="${escapeHtml(adminUser.phone || '')}" placeholder="Phone (optional)" autocomplete="tel" />
+                  </div>
+                  <select name="accessRole" required>
+                    <option value="${userRoles.admin}" ${isAdminUser(adminUser) ? 'selected' : ''}>Admin (full access)</option>
+                    <option value="${userRoles.adminAssistant}" ${isAdminAssistantUser(adminUser) ? 'selected' : ''}>Admin assistant (schedule and availability)</option>
+                  </select>
+                  <label class="stack" style="gap:4px;">
+                    <span class="muted">Managed teams</span>
+                    <select name="managedTeams" multiple size="${Math.min(teamOptions.length, 4)}" style="min-height:90px;">
+                      ${teamOptions.map((team) => `<option value="${escapeHtml(team)}" ${getManagedTeamsForUser(adminUser).includes(team) ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
+                    </select>
+                  </label>
+                  <div class="row" style="gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+                    <button type="submit" class="secondary">Save manager</button>
+                    <button type="button" class="secondary" data-resend-admin-invite="${adminUser.id}">Resend invite</button>
+                    ${isBoxOfficeScopedAdmin && adminUser.department === 'Audience Services' ? '' : `<button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>`}
+                    ${isBoxOfficeScopedAdmin ? '' : `<button type="button" class="danger" data-remove-admin="${adminUser.id}">Remove</button>`}
+                  </div>
+                </div>
+              </form>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function renderAdminOptionsPage(currentUser) {
   const isAdminView = isAdminUser(currentUser);
   if (!isAdminView) {
@@ -7637,6 +7733,8 @@ function renderAdminOptionsPage(currentUser) {
         </div>
         </div>
         </div>
+
+        ${renderManagerManagementPanel(currentUser)}
 
         ${renderPolicyPreviewModal()}
 
