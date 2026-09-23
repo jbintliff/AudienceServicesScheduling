@@ -529,6 +529,7 @@ const defaultState = {
   roleDepartments: {},
   roleCatalog: [...roleOptions],
   locationCatalog: [...shiftLocationOptions],
+  locationDepartments: {},
   ui: {
     agentSearch: '',
     agentSort: 'name',
@@ -722,6 +723,37 @@ function getPrimaryRole() {
 
 function getLocationCatalog() {
   return normalizeLocationCatalog(state?.locationCatalog);
+}
+
+function getLocationDepartment(location) {
+  const key = String(location || '').trim().toLowerCase();
+  if (!key) return '';
+  return normalizeDepartment(state?.locationDepartments?.[key]);
+}
+
+function getLocationCatalogForScope(departmentScope = getCurrentUserDepartmentScope()) {
+  const locations = getLocationCatalog();
+  if (!departmentScope) return locations;
+  const usedByScopedAgent = new Set(
+    state.shifts
+      .filter((shift) => isAgentInDepartmentScope(shift.agentId, departmentScope))
+      .map((shift) => String(shift.location || '').trim())
+      .filter(Boolean)
+  );
+  return locations.filter((location) => getLocationDepartment(location) === departmentScope || usedByScopedAgent.has(location));
+}
+
+function setLocationDepartment(location, department) {
+  const key = String(location || '').trim().toLowerCase();
+  if (!key) return;
+  const nextDepartments = { ...(state.locationDepartments || {}) };
+  const normalizedDepartment = normalizeDepartment(department);
+  if (normalizedDepartment) {
+    nextDepartments[key] = normalizedDepartment;
+  } else {
+    delete nextDepartments[key];
+  }
+  state.locationDepartments = nextDepartments;
 }
 
 function isTemplateActive(template) {
@@ -2780,6 +2812,7 @@ function createDefaultState() {
     blackoutDates: [...defaultState.blackoutDates],
     roleColors: { ...defaultState.roleColors },
     roleDepartments: { ...defaultState.roleDepartments },
+    locationDepartments: { ...defaultState.locationDepartments },
     roleCatalog: [...defaultState.roleCatalog],
     locationCatalog: [...defaultState.locationCatalog],
     ui: getDefaultUiState()
@@ -2931,7 +2964,7 @@ function getCurrentUserDepartmentScope() {
 function isAgentInDepartmentScope(agentOrId, departmentScope) {
   if (!departmentScope) return true;
   const agent = (agentOrId && typeof agentOrId === 'object') ? agentOrId : getAgent(agentOrId);
-  if (!agent) return true;
+  if (!agent) return false;
   const agentDepartment = normalizeDepartment(agent.department);
   return agentDepartment === departmentScope;
 }
@@ -3435,6 +3468,7 @@ function loadState() {
       blackoutDates: normalizeBlackoutDateEntries(parsed.blackoutDates),
       roleColors: parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : createDefaultState().roleColors,
       roleDepartments: parsed.roleDepartments && typeof parsed.roleDepartments === 'object' && !Array.isArray(parsed.roleDepartments) ? parsed.roleDepartments : createDefaultState().roleDepartments,
+      locationDepartments: parsed.locationDepartments && typeof parsed.locationDepartments === 'object' && !Array.isArray(parsed.locationDepartments) ? parsed.locationDepartments : createDefaultState().locationDepartments,
       ui: loadUiState(parsed.ui)
     };
   } catch {
@@ -4363,7 +4397,7 @@ function openShiftEditModal(shift, onSave) {
   }
 
   const roleChoices = Array.from(new Set([...(getRoleLegendItems() || []), shift.role || getPrimaryRole()])).filter(Boolean);
-  const locationChoices = getLocationCatalog();
+  const locationChoices = getLocationCatalogForScope();
   const safeStatus = shift.status === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
   const overlay = document.createElement('div');
   overlay.id = 'shift-edit-modal-overlay';
@@ -4479,7 +4513,7 @@ function openShiftEditModal(shift, onSave) {
 
     const nextRole = normalizeRoleLabel(String(formData.get('role') || '').trim() || getPrimaryRole(), getRoleCatalog());
     const requestedLocation = String(formData.get('location') || '').trim();
-    const nextLocation = requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
+    const nextLocation = requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '';
     const nextStatus = String(formData.get('status') || '').trim() === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
 
     if (!await confirmShiftAssignmentWithTimeOffWarning(nextAgentId, nextDate, nextStart, nextEnd, {
@@ -5869,7 +5903,10 @@ function renderCalendarShiftCard(shift, options = {}) {
 }
 
 function getAllLocations() {
-  return Array.from(new Set([...getLocationCatalog(), ...state.shifts.map((shift) => shift.location).filter(Boolean)])).sort();
+  return Array.from(new Set([...getLocationCatalogForScope(), ...state.shifts
+    .filter((shift) => isAgentInDepartmentScope(shift.agentId, getCurrentUserDepartmentScope()))
+    .map((shift) => shift.location)
+    .filter(Boolean)])).sort();
 }
 
 function getCalendarWeekDates(referenceDateValue) {
@@ -5955,6 +5992,7 @@ async function importData(file) {
     state.policies = importedPolicies;
     state.roleColors = parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : {};
     state.roleDepartments = parsed.roleDepartments && typeof parsed.roleDepartments === 'object' && !Array.isArray(parsed.roleDepartments) ? parsed.roleDepartments : {};
+    state.locationDepartments = parsed.locationDepartments && typeof parsed.locationDepartments === 'object' && !Array.isArray(parsed.locationDepartments) ? parsed.locationDepartments : {};
     state.blackoutDates = normalizeBlackoutDateEntries(parsed.blackoutDates);
     state.ui = loadUiState(parsed.ui);
 
@@ -6111,7 +6149,7 @@ function renderCalendarPage(currentUser) {
                 <input name="end" type="time" value="16:00" required />
                 <select name="location">
                   <option value="">No venue</option>
-                  ${getLocationCatalog().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
+                  ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
                 </select>
                 <input name="date" type="date" required />
               </div>
@@ -7430,7 +7468,7 @@ function renderAdminOptionsPage(currentUser) {
   }
 
   const roleChoices = getRoleCatalogForScope(getCurrentUserDepartmentScope());
-  const locationChoices = getLocationCatalog();
+  const locationChoices = getLocationCatalogForScope();
   const blackoutDepartmentScope = getCurrentUserDepartmentScope();
   const scopedTemplates = state.templates.filter((template) => isDateEntryInDepartmentScope(template.department, blackoutDepartmentScope));
 
@@ -7550,10 +7588,14 @@ function renderAdminOptionsPage(currentUser) {
           ${blackoutDepartmentScope === 'Box Office' ? '' : `
           <form id="add-shift-location-form" class="row" style="margin-bottom:10px;">
             <input name="location" placeholder="Add venue" required />
+            <select name="department">
+              <option value="">All departments</option>
+              ${departmentOptions.map((department) => `<option value="${department}">${escapeHtml(department)}</option>`).join('')}
+            </select>
             <button type="submit">Add venue</button>
           </form>`}
           <div class="row" style="gap:8px; flex-wrap:wrap;">
-            ${locationChoices.map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}${blackoutDepartmentScope === 'Box Office' ? '' : `<button type="button" class="danger" data-remove-shift-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button>`}</span>`).join('')}
+            ${locationChoices.map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}${blackoutDepartmentScope === 'Box Office' ? '' : `<select data-location-department-select="${escapeHtml(location)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!getLocationDepartment(location) ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${getLocationDepartment(location) === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-shift-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button>`}</span>`).join('')}
           </div>
         </div>
 
@@ -8238,7 +8280,7 @@ function renderAvailabilityRequestsPage(currentUser) {
   }
 
   const allAvailabilityRequests = getAllAvailabilityRequests();
-  const departmentScope = isAdminUser(currentUser) ? '' : getCurrentUserDepartmentScope();
+  const departmentScope = getCurrentUserDepartmentScope();
   const visibleAgents = getFilteredAgents();
   const adminVisibleAvailabilityRequests = allAvailabilityRequests.filter(
     (request) => normalizeAvailabilityRequestStatus(request.status) !== 'deleted' && isAgentInDepartmentScope(request.agentId, departmentScope)
@@ -10336,7 +10378,7 @@ function bindEvents() {
     const start = formData.get('start')?.toString();
     const end = formData.get('end')?.toString();
     const requestedLocation = formData.get('location')?.toString().trim() || '';
-    const location = requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
+    const location = requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '';
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
     if (!day || !role || !start || !end || !date) {
@@ -10404,7 +10446,7 @@ function bindEvents() {
     }
     if (locationInput instanceof HTMLSelectElement) {
       const requestedLocation = String(template.location || '').trim();
-      locationInput.value = getLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
+      locationInput.value = getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '';
     }
   });
 
@@ -10449,7 +10491,7 @@ function bindEvents() {
       durationHours: getDurationHours(start, end),
       active,
       role: requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '',
-      location: requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : '',
+      location: requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '',
       department: normalizeDepartment(formData.get('department'))
     });
     saveState();
@@ -10488,7 +10530,7 @@ function bindEvents() {
             durationHours: getDurationHours(start, end),
             active,
             role: requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '',
-            location: requestedLocation && getLocationCatalog().includes(requestedLocation) ? requestedLocation : '',
+            location: requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '',
             department: normalizeDepartment(formData.get('department'))
           }
         : template);
@@ -10675,14 +10717,27 @@ function bindEvents() {
     }
     const formData = new FormData(event.currentTarget);
     const location = String(formData.get('location') || '').trim();
+    const department = normalizeDepartment(formData.get('department'));
     if (!location) return;
     if (getLocationCatalog().some((item) => item.toLowerCase() === location.toLowerCase())) {
       alert('That venue already exists.');
       return;
     }
     state.locationCatalog = [...getLocationCatalog(), location];
+    setLocationDepartment(location, department);
     saveState();
     render();
+  });
+
+  document.querySelectorAll('[data-location-department-select]').forEach((select) => {
+    select.addEventListener('change', () => {
+      if (getCurrentUserDepartmentScope() === 'Box Office') return;
+      const location = String(select.getAttribute('data-location-department-select') || '').trim();
+      if (!location) return;
+      setLocationDepartment(location, select.value);
+      saveState();
+      render();
+    });
   });
 
   document.querySelectorAll('[data-remove-shift-location]').forEach((button) => {
@@ -10700,6 +10755,7 @@ function bindEvents() {
         return;
       }
       state.locationCatalog = getLocationCatalog().filter((item) => item !== location);
+      setLocationDepartment(location, '');
       saveState();
       render();
     });
