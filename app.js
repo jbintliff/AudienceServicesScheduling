@@ -2282,7 +2282,7 @@ function renderUserNavChip(user) {
   const avatarMarkup = photoDataUrl
     ? `<img src="${escapeHtml(photoDataUrl)}" alt="Profile" style="width:22px; height:22px; border-radius:999px; object-fit:cover; border:1px solid rgba(255,255,255,0.45);" />`
     : `<span style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:999px; border:1px solid rgba(255,255,255,0.45); background:rgba(255,255,255,0.12); color:#fff; font-size:0.75rem; font-weight:700;">${escapeHtml(fallbackInitial)}</span>`;
-  return `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${avatarMarkup}<span>${escapeHtml(displayName)} (${escapeHtml(roleLabel)})</span></span>`;
+  return `<a href="index.html?view=profile" class="chip" style="display:inline-flex; align-items:center; gap:6px; color:inherit; text-decoration:none;" title="Open your profile">${avatarMarkup}<span>${escapeHtml(displayName)} (${escapeHtml(roleLabel)})</span></a>`;
 }
 
 function getUserRoleLabel(roleValue) {
@@ -6000,7 +6000,6 @@ function renderAdminNavigationLinks(options = {}) {
       <summary class="secondary" style="list-style:none; cursor:pointer; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.08); color:#fff; user-select:none;">Admin</summary>
       <div style="position:absolute; top:calc(100% + 6px); left:0; min-width:220px; background:#0b1220; border:1px solid rgba(255,255,255,0.18); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; z-index:1000;">
         <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Admin Options</a>
-        <a href="index.html?view=profile" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Admin Profile</a>
         ${isBoxOfficeScoped ? '' : '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Email Outbox</a>'}
         ${includeExport ? '<button id="export-data-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export JSON</button>' : ''}
         ${includeImport ? '<label class="secondary" style="display:block; width:100%; box-sizing:border-box; color:#fff; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); cursor:pointer;"><input id="import-data-input" type="file" accept="application/json" hidden />Import JSON</label>' : ''}
