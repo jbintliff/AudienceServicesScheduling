@@ -44,6 +44,7 @@ const shiftAbsenceReasonOptions = ['sick', 'emergency', 'no reason', 'transporta
 const userRoles = {
   admin: 'admin',
   adminAssistant: 'admin-assistant',
+  adminAssistantProfiles: 'admin-assistant-profiles',
   agent: 'agent',
   teamLead: 'team-lead'
 };
@@ -639,6 +640,7 @@ function normalizeUserRole(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === userRoles.admin) return userRoles.admin;
   if (normalized === userRoles.adminAssistant || normalized === 'admin assistant') return userRoles.adminAssistant;
+  if (normalized === userRoles.adminAssistantProfiles || normalized === 'admin assistant profiles') return userRoles.adminAssistantProfiles;
   if (normalized === userRoles.teamLead || normalized === 'absence-manager') return userRoles.teamLead;
   return userRoles.agent;
 }
@@ -651,8 +653,12 @@ function isAdminAssistantUser(user) {
   return normalizeUserRole(user?.role) === userRoles.adminAssistant;
 }
 
+function isAdminAssistantProfilesUser(user) {
+  return normalizeUserRole(user?.role) === userRoles.adminAssistantProfiles;
+}
+
 function canManageAvailability(user) {
-  return isAdminUser(user) || isAdminAssistantUser(user);
+  return isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user);
 }
 
 function isAgentUser(user) {
@@ -672,7 +678,7 @@ function canMarkShiftAbsences(user) {
 }
 
 function canManageSchedule(user) {
-  return isAdminUser(user) || isAdminAssistantUser(user);
+  return isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user);
 }
 
 function normalizeLocationCatalog(values) {
@@ -2324,6 +2330,7 @@ function getUserRoleLabel(roleValue) {
   const role = normalizeUserRole(roleValue);
   if (role === userRoles.admin) return 'admin';
   if (role === userRoles.adminAssistant) return 'admin assistant';
+  if (role === userRoles.adminAssistantProfiles) return 'admin assistant + profiles';
   if (role === userRoles.teamLead) return 'team lead';
   return 'agent';
 }
@@ -6017,11 +6024,15 @@ async function importData(file) {
 }
 
 function renderAdminNavigationLinks(options = {}) {
-  if (isAdminAssistantUser(getCurrentUser())) {
+  if (isAdminAssistantUser(getCurrentUser()) || isAdminAssistantProfilesUser(getCurrentUser())) {
+    const profileLink = isAdminAssistantProfilesUser(getCurrentUser())
+      ? '<a href="index.html?view=agents" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Agents</button></a>'
+      : '';
     return [
       '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>',
       '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>',
-      '<a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability</button></a>'
+      '<a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability</button></a>',
+      profileLink
     ].join('');
   }
   const isBoxOfficeScoped = getCurrentUserDepartmentScope() === 'Box Office';
@@ -6353,7 +6364,7 @@ function renderProfilePage(currentUser) {
   const isAdminView = isAdminUser(currentUser);
   const isAgentView = isAgentLikeUser(currentUser);
   const isAbsenceManagerView = isTeamLeadUser(currentUser);
-  if (isAdminAssistantUser(currentUser)) {
+  if (isAdminAssistantUser(currentUser) || isAdminAssistantProfilesUser(currentUser)) {
     const assistantDepartment = normalizeDepartment(currentUser?.department);
     root.innerHTML = `
       <div class="app">
@@ -6492,7 +6503,7 @@ function renderProfilePage(currentUser) {
     const currentManagedTeams = getManagedTeamsForUser(currentUser);
     const isBoxOfficeScopedAdmin = getCurrentUserDepartmentScope() === 'Box Office';
     const adminUsers = authUsers
-      .filter((user) => isAdminUser(user) || isAdminAssistantUser(user))
+      .filter((user) => isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user))
       .sort((left, right) => String(left.name || left.username || '').localeCompare(String(right.name || right.username || ''), undefined, { sensitivity: 'base' }));
 
     root.innerHTML = `
@@ -6590,6 +6601,7 @@ function renderProfilePage(currentUser) {
                     <select name="accessRole" required>
                       <option value="${userRoles.admin}">Admin (full access)</option>
                       <option value="${userRoles.adminAssistant}">Admin assistant (schedule and availability)</option>
+                      <option value="${userRoles.adminAssistantProfiles}">Admin assistant + agent profiles</option>
                     </select>
                   </div>
                   <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -6635,6 +6647,7 @@ function renderProfilePage(currentUser) {
                         <select name="accessRole" required>
                           <option value="${userRoles.admin}" ${isAdminUser(adminUser) ? 'selected' : ''}>Admin (full access)</option>
                           <option value="${userRoles.adminAssistant}" ${isAdminAssistantUser(adminUser) ? 'selected' : ''}>Admin assistant (schedule and availability)</option>
+                          <option value="${userRoles.adminAssistantProfiles}" ${isAdminAssistantProfilesUser(adminUser) ? 'selected' : ''}>Admin assistant + agent profiles</option>
                         </select>
                       </div>
                       <label class="stack" style="gap:4px;">
@@ -6824,7 +6837,7 @@ function renderProfilePage(currentUser) {
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         const adminId = Number(form.getAttribute('data-update-admin-form'));
-        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user)) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)) && Number(user.id) === adminId);
         if (!adminUser) return;
 
         const formData = new FormData(form);
@@ -6945,7 +6958,7 @@ function renderProfilePage(currentUser) {
     document.querySelectorAll('[data-resend-admin-invite]').forEach((button) => {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-resend-admin-invite'));
-        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user)) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)) && Number(user.id) === adminId);
         if (!adminUser?.email) {
           alert('This manager needs a valid email before sending an invite.');
           return;
@@ -6973,7 +6986,7 @@ function renderProfilePage(currentUser) {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-toggle-admin-active'));
         const activeUser = getCurrentUser();
-        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user)) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)) && Number(user.id) === adminId);
         if (!adminUser) return;
         if (getCurrentUserDepartmentScope() === 'Box Office' && adminUser.department === 'Audience Services') {
           alert('Box Office admin accounts cannot deactivate Audience Services managers.');
@@ -7020,7 +7033,7 @@ function renderProfilePage(currentUser) {
       button.addEventListener('click', () => {
         const adminId = Number(button.getAttribute('data-remove-admin'));
         const activeUser = getCurrentUser();
-        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user)) && Number(user.id) === adminId);
+        const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)) && Number(user.id) === adminId);
         if (!adminUser) return;
         if (getCurrentUserDepartmentScope() === 'Box Office') {
           alert('Box Office admin accounts cannot remove other managers.');
@@ -7457,7 +7470,7 @@ function initializeAdminOptionsCollapsiblePanels() {
 function renderManagerManagementPanel(currentUser) {
   const isBoxOfficeScopedAdmin = getCurrentUserDepartmentScope() === 'Box Office';
   const adminUsers = authUsers
-    .filter((user) => isAdminUser(user) || isAdminAssistantUser(user))
+    .filter((user) => isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user))
     .sort((left, right) => String(left.name || left.username || '').localeCompare(String(right.name || right.username || ''), undefined, { sensitivity: 'base' }));
 
   return `
@@ -7484,6 +7497,7 @@ function renderManagerManagementPanel(currentUser) {
             <select name="accessRole" required>
               <option value="${userRoles.admin}">Admin (full access)</option>
               <option value="${userRoles.adminAssistant}">Admin assistant (schedule and availability)</option>
+              <option value="${userRoles.adminAssistantProfiles}">Admin assistant + agent profiles</option>
             </select>
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -7528,6 +7542,7 @@ function renderManagerManagementPanel(currentUser) {
                   <select name="accessRole" required>
                     <option value="${userRoles.admin}" ${isAdminUser(adminUser) ? 'selected' : ''}>Admin (full access)</option>
                     <option value="${userRoles.adminAssistant}" ${isAdminAssistantUser(adminUser) ? 'selected' : ''}>Admin assistant (schedule and availability)</option>
+                    <option value="${userRoles.adminAssistantProfiles}" ${isAdminAssistantProfilesUser(adminUser) ? 'selected' : ''}>Admin assistant + agent profiles</option>
                   </select>
                   <label class="stack" style="gap:4px;">
                     <span class="muted">Managed teams</span>
@@ -7883,7 +7898,7 @@ function renderAdminOptionsPage(currentUser) {
 
 function renderPoliciesPage(currentUser) {
   const isAdminView = isAdminUser(currentUser);
-  if (isAdminAssistantUser(currentUser)) {
+  if (isAdminAssistantUser(currentUser) || isAdminAssistantProfilesUser(currentUser)) {
     root.innerHTML = `
       <div class="app">
         <div class="panel">
@@ -8178,7 +8193,8 @@ function renderEmailOutboxPage(currentUser) {
 }
 
 function renderAgentsPage(currentUser) {
-  const isAdminView = isAdminUser(currentUser);
+  const isAdminView = isAdminUser(currentUser) || isAdminAssistantProfilesUser(currentUser);
+  const canEditAgentProfiles = isAdminUser(currentUser) || isAdminAssistantProfilesUser(currentUser);
   if (!isAdminView) {
     root.innerHTML = `
       <div class="app">
@@ -8208,7 +8224,7 @@ function renderAgentsPage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>Agents</h1>
-          <p class="muted">Manage agent records, team assignments, and pay rates.</p>
+          <p class="muted">${canEditAgentProfiles && !isAdminUser(currentUser) ? 'Edit agent profile details.' : 'Manage agent records, team assignments, and pay rates.'}</p>
         </div>
         <div class="row">
           ${renderAdminNavigationLinks({ includeExport: true })}
@@ -8229,7 +8245,7 @@ function renderAgentsPage(currentUser) {
           </select>
         </div>
         <div class="muted" style="margin-bottom:6px;">Email is optional. Agents without an email can sign in with their username and temporary password.</div>
-        <form id="add-agent-form" class="stack">
+        ${isAdminUser(currentUser) ? `<form id="add-agent-form" class="stack">
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(112px, 1fr)); gap:5px; align-items:end;">
             <input name="name" placeholder="Name" required />
             <input name="email" type="email" placeholder="Email (optional)" />
@@ -8248,7 +8264,7 @@ function renderAgentsPage(currentUser) {
             <input name="pronouns" placeholder="Pronouns (e.g. she/her)" maxlength="80" />
             <button type="submit" style="white-space:nowrap;">Add agent</button>
           </div>
-        </form>
+        </form>` : ''}
         <div class="agent-list" style="margin-top:8px; display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:6px;">
           ${sortedAgents.map((agent) => `
             <div class="card" style="padding:8px;">
@@ -8265,10 +8281,8 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Targets:</strong> in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
                 </div>
                 <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
-                  <button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:6px 9px;">Edit</button>
-                  <button class="secondary" type="button" disabled title="Use Edit to make changes" style="padding:6px 9px; opacity:0.6; cursor:not-allowed;">Save</button>
-                  <button class="secondary" type="button" data-resend-agent-invite="${agent.id}" style="padding:6px 9px;">Resend</button>
-                  <button class="danger" data-remove-agent="${agent.id}" type="button" style="padding:6px 9px;">Remove</button>
+                  ${canEditAgentProfiles ? `<button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:6px 9px;">Edit</button>` : ''}
+                  ${isAdminUser(currentUser) ? `<button class="secondary" type="button" disabled title="Use Edit to make changes" style="padding:6px 9px; opacity:0.6; cursor:not-allowed;">Save</button><button class="secondary" type="button" data-resend-agent-invite="${agent.id}" style="padding:6px 9px;">Resend</button><button class="danger" data-remove-agent="${agent.id}" type="button" style="padding:6px 9px;">Remove</button>` : ''}
                 </div>
               </div>
             </div>
@@ -8913,7 +8927,7 @@ function render() {
 
       <div class="grid" style="margin-top:16px;${!isAgentView ? ' grid-template-columns:1fr;' : ''}">
         <div class="stack">
-          ${!isAgentView && !isAdminAssistantUser(currentUser) ? `
+          ${!isAgentView && !isAdminAssistantUser(currentUser) && !isAdminAssistantProfilesUser(currentUser) ? `
             <div style="display:grid; gap:12px; grid-template-columns:1fr; align-items:start;">
               <div class="stack">
                 <div class="panel">
@@ -10371,6 +10385,7 @@ function bindEvents() {
 
   document.getElementById('add-agent-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
+    if (!isAdminUser(getCurrentUser())) return;
     const formData = new FormData(event.currentTarget);
     const name = formData.get('name')?.toString().trim();
     const email = normalizeEmail(formData.get('email'));
@@ -11603,6 +11618,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-remove-agent]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (!isAdminUser(getCurrentUser())) return;
       const id = Number(button.getAttribute('data-remove-agent'));
       const agent = getAgent(id);
       if (!agent) return;
@@ -11640,6 +11656,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-resend-agent-invite]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (!isAdminUser(getCurrentUser())) return;
       const agentId = Number(button.getAttribute('data-resend-agent-invite'));
       const agent = getAgent(agentId);
       const agentUser = getUserByAgentId(agentId);
