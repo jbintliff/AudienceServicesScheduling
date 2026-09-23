@@ -6064,6 +6064,97 @@ function renderCalendarShiftCard(shift, options = {}) {
   `;
 }
 
+function isShiftAssignedToTeamLead(shift) {
+  return isTeamLeadUser(getUserByAgentId(shift?.agentId));
+}
+
+function renderAdminScheduleDayShifts(dayShifts) {
+  const shifts = Array.isArray(dayShifts) ? dayShifts : [];
+  if (shifts.length === 0) return '<div class="muted">No shifts.</div>';
+
+  const renderSection = (sectionShifts, heading) => {
+    if (sectionShifts.length === 0) return '';
+    const shiftsByTime = new Map();
+    sectionShifts.forEach((shift) => {
+      const timeKey = getShiftTimeRangeKey(shift);
+      const existing = shiftsByTime.get(timeKey) || [];
+      existing.push(shift);
+      shiftsByTime.set(timeKey, existing);
+    });
+    const timeGroups = Array.from(shiftsByTime.entries()).sort(([leftKey], [rightKey]) => {
+      const [leftStart] = String(leftKey).split('|');
+      const [rightStart] = String(rightKey).split('|');
+      return toMinutes(leftStart) - toMinutes(rightStart);
+    });
+    return `
+      <div class="muted" style="font-weight:700; margin:10px 0 6px;">${escapeHtml(heading)}</div>
+      ${timeGroups.map(([timeKey, timeGroupShifts]) => {
+        const [startTime, endTime] = String(timeKey).split('|');
+        const sortedTimeGroupShifts = [...timeGroupShifts].sort((leftShift, rightShift) => {
+          const leftName = String(getAgent(leftShift?.agentId)?.name || '');
+          const rightName = String(getAgent(rightShift?.agentId)?.name || '');
+          return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' }) || Number(leftShift?.id || 0) - Number(rightShift?.id || 0);
+        });
+        return `
+          <div class="chip" style="display:block; margin:8px 0 6px; background:#6B7280; color:#FFFFFF; border:1px solid rgba(255,255,255,0.24);">${escapeHtml(formatTimeRange(startTime, endTime))}</div>
+          ${sortedTimeGroupShifts.map((shift) => `
+            <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
+              <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}
+            </div>
+          `).join('')}
+        `;
+      }).join('')}
+    `;
+  };
+
+  const teamLeadShifts = shifts.filter((shift) => isShiftAssignedToTeamLead(shift));
+  const otherShifts = shifts.filter((shift) => !isShiftAssignedToTeamLead(shift));
+  return `${renderSection(teamLeadShifts, 'Team leads')}${renderSection(otherShifts, 'Agents')}`;
+}
+
+function renderCalendarDayShiftSections(dayShifts, options = {}) {
+  const shifts = Array.isArray(dayShifts) ? dayShifts : [];
+  if (shifts.length === 0) return '<div class="muted">No shifts.</div>';
+
+  const renderSection = (sectionShifts, heading) => {
+    if (sectionShifts.length === 0) return '';
+    const shiftsByTime = new Map();
+    sectionShifts.forEach((shift) => {
+      const timeKey = getShiftTimeRangeKey(shift);
+      const existing = shiftsByTime.get(timeKey) || [];
+      existing.push(shift);
+      shiftsByTime.set(timeKey, existing);
+    });
+    const timeGroups = Array.from(shiftsByTime.entries()).sort(([leftKey], [rightKey]) => {
+      const [leftStart] = String(leftKey).split('|');
+      const [rightStart] = String(rightKey).split('|');
+      return toMinutes(leftStart) - toMinutes(rightStart);
+    });
+    return `
+      <div class="muted" style="font-weight:700; margin:10px 0 6px;">${escapeHtml(heading)}</div>
+      ${timeGroups.map(([timeKey, timeGroupShifts]) => {
+        const [startTime, endTime] = String(timeKey).split('|');
+        const shiftsByRole = new Map();
+        timeGroupShifts.forEach((shift) => {
+          const roleLabel = getShiftRoleLocationText(shift);
+          const existing = shiftsByRole.get(roleLabel) || [];
+          existing.push(shift);
+          shiftsByRole.set(roleLabel, existing);
+        });
+        return `
+          <div class="chip" style="display:block; margin:8px 0 6px; background:#6B7280; color:#FFFFFF; border:1px solid rgba(255,255,255,0.24);">${escapeHtml(formatTimeRange(startTime, endTime))}</div>
+          ${Array.from(shiftsByRole.entries()).map(([roleLabel, roleShifts]) => `
+            <div class="muted" style="font-weight:600; margin:4px 0 6px;">${escapeHtml(roleLabel)}</div>
+            ${[...roleShifts].sort((leftShift, rightShift) => String(getAgent(leftShift?.agentId)?.name || '').localeCompare(String(getAgent(rightShift?.agentId)?.name || ''), undefined, { sensitivity: 'base' })).map((shift) => renderCalendarShiftCard(shift, options)).join('')}
+          `).join('')}
+        `;
+      }).join('')}
+    `;
+  };
+
+  return `${renderSection(shifts.filter((shift) => isShiftAssignedToTeamLead(shift)), 'Team leads')}${renderSection(shifts.filter((shift) => !isShiftAssignedToTeamLead(shift)), 'Agents')}`;
+}
+
 function getAllLocations() {
   return Array.from(new Set([...getLocationCatalog(), ...state.shifts.map((shift) => shift.location).filter(Boolean)])).sort();
 }
@@ -6424,10 +6515,15 @@ function renderCalendarPage(currentUser) {
                   ${getAvailabilityCalendarMarkers(weekDates[day]?.iso || '')}
                 </div>
               </div>
+              ${canManageCalendar ? renderCalendarDayShiftSections(
+                sortedVisibleCalendarShifts.filter((shift) => shift.day === day && isShiftAssignedToTeamLead(shift)),
+                { canManageCalendar, isAgentView, canMarkAbsence, currentAgentId, showRoleLocation: true, showTimeRange: true }
+              ) : ''}
               ${(() => {
-                const dayShifts = sortedVisibleCalendarShifts.filter((shift) => shift.day === day);
+                const allDayShifts = sortedVisibleCalendarShifts.filter((shift) => shift.day === day);
+                const dayShifts = canManageCalendar ? allDayShifts.filter((shift) => !isShiftAssignedToTeamLead(shift)) : allDayShifts;
                 if (dayShifts.length === 0) {
-                  return '<div class="muted">No shifts.</div>';
+                  return allDayShifts.length === 0 ? '<div class="muted">No shifts.</div>' : '';
                 }
 
                 const shiftsByTime = new Map();
@@ -9124,50 +9220,7 @@ function render() {
                         <h4>${day}</h4>
                         <div class="muted">${escapeHtml(plannerWeekDates[day]?.label || '')}</div>
                         ${getBlackoutDateMarker(plannerWeekDates[day]?.iso || '')}
-                        ${(() => {
-                          const dayShifts = sortedAdminWeeklyShifts.filter((shift) => shift.day === day);
-                          if (dayShifts.length === 0) {
-                            return '<div class="muted">No shifts.</div>';
-                          }
-
-                          const shiftsByTime = new Map();
-                          dayShifts.forEach((shift) => {
-                            const timeKey = getShiftTimeRangeKey(shift);
-                            const existing = shiftsByTime.get(timeKey) || [];
-                            existing.push(shift);
-                            shiftsByTime.set(timeKey, existing);
-                          });
-
-                          return Array.from(shiftsByTime.entries()).map(([timeKey, timeGroupShifts]) => {
-                            const [startTime, endTime] = String(timeKey).split('|');
-                            const timeLabel = formatTimeRange(startTime, endTime);
-                            const getRoleSortOrder = (shift) => {
-                              const normalizedRole = String(shift?.role || '').trim().toLowerCase();
-                              if (normalizedRole.includes('in-person') || normalizedRole.includes('in person')) return 0;
-                              if (normalizedRole === 'wfh' || normalizedRole.includes('work from home')) return 1;
-                              return 2;
-                            };
-
-                            const sortedTimeGroupShifts = [...timeGroupShifts].sort((leftShift, rightShift) => {
-                              const roleDiff = getRoleSortOrder(leftShift) - getRoleSortOrder(rightShift);
-                              if (roleDiff !== 0) return roleDiff;
-                              const leftName = String(getAgent(leftShift?.agentId)?.name || '');
-                              const rightName = String(getAgent(rightShift?.agentId)?.name || '');
-                              const nameDiff = leftName.localeCompare(rightName, undefined, { sensitivity: 'base' });
-                              if (nameDiff !== 0) return nameDiff;
-                              return Number(leftShift?.id || 0) - Number(rightShift?.id || 0);
-                            });
-
-                            return `
-                              <div class="chip" style="display:block; margin:8px 0 6px; background:#6B7280; color:#FFFFFF; border:1px solid rgba(255,255,255,0.24);">${escapeHtml(timeLabel)}</div>
-                              ${sortedTimeGroupShifts.map((shift) => `
-                                <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                                  <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}
-                                </div>
-                              `).join('')}
-                            `;
-                          }).join('');
-                        })()}
+                        ${renderAdminScheduleDayShifts(sortedAdminWeeklyShifts.filter((shift) => shift.day === day))}
                       </div>
                     `).join('')}
                   </div>
