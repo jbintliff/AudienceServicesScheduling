@@ -6352,6 +6352,25 @@ function renderCalendarPage(currentUser) {
 
   root.innerHTML = `
     <div class="app calendar-view">
+      <style>
+        .calendar-view { padding-top: 10px; padding-bottom: 14px; }
+        .calendar-view > .row:first-child { margin-bottom: 8px !important; }
+        .calendar-view > .panel { margin-bottom: 8px !important; padding: 10px !important; }
+        .calendar-view .panel { padding: 10px !important; }
+        .calendar-view .row { gap: 6px; }
+        .calendar-view input,
+        .calendar-view select,
+        .calendar-view button { padding: 6px 8px; min-height: 32px; }
+        .calendar-view .day-row { gap: 6px; }
+        .calendar-view .day-card { padding: 7px !important; min-height: 0; }
+        .calendar-view .shift { padding: 6px !important; margin-bottom: 4px; line-height: 1.2; }
+        .calendar-view .calendar-shift-actions { gap: 4px; margin-top: 4px !important; }
+        .calendar-view .calendar-shift-actions button { padding: 4px 6px; min-height: 28px; }
+        .calendar-view h1 { margin: 0; font-size: 1.45rem; }
+        .calendar-view h2 { margin-top: 0; margin-bottom: 6px; }
+        .calendar-view h3 { margin-top: 0; margin-bottom: 6px; }
+        .calendar-view .muted { line-height: 1.25; }
+      </style>
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>${isAgentView ? 'My calendar' : 'Calendar view'}</h1>
