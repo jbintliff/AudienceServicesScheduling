@@ -589,6 +589,7 @@ let currentSession = loadSession();
 let isPasswordRecoveryFlowActive = false;
 let draggedShiftId = null;
 let copiedShiftTemplate = null;
+let copiedScheduleTemplate = null;
 let selectedCalendarShiftIds = new Set();
 let memoryAvailabilityInbox = [];
 let memoryEmailOutbox = [];
@@ -6412,7 +6413,7 @@ function renderCalendarPage(currentUser) {
             <button id="calendar-previous-week" class="secondary" type="button">Previous week</button>
             <button id="calendar-current-week" class="secondary" type="button">Current week</button>
             <button id="calendar-next-week" class="secondary" type="button">Next week</button>
-            <input id="calendar-week-reference" type="date" value="${escapeHtml(weekReference)}" />
+            <input id="calendar-week-reference" type="date" lang="en-GB" value="${escapeHtml(weekReference)}" />
           </div>
         </div>
       </div>
@@ -6442,7 +6443,7 @@ function renderCalendarPage(currentUser) {
                   <option value="">No venue</option>
                   ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
                 </select>
-                <input name="date" type="date" required />
+                <input name="date" type="date" lang="en-GB" required />
               </div>
               <button type="submit">Add shift</button>
             </form>
@@ -6457,7 +6458,7 @@ function renderCalendarPage(currentUser) {
                   <option value="">Select agent</option>
                   ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
                 </select>
-                <input name="unavailableDate" type="date" required />
+                <input name="unavailableDate" type="date" lang="en-GB" required />
                 <input name="unavailableStart" type="time" value="09:00" required />
                 <input name="unavailableEnd" type="time" value="17:00" required />
               </div>
@@ -6504,7 +6505,7 @@ function renderCalendarPage(currentUser) {
               <option value="" ${!calendarFilters.agentName ? 'selected' : ''}>All agent names</option>
               ${agentNameItems.map((name) => `<option value="${escapeHtml(name)}" ${String(calendarFilters.agentName || '') === String(name) ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
             </select>
-            <input id="calendar-date-filter" type="date" value="${escapeHtml(calendarFilters.date)}" />
+            <input id="calendar-date-filter" type="date" lang="en-GB" value="${escapeHtml(calendarFilters.date)}" />
             <select id="calendar-day-filter">
               <option value="All" ${calendarFilters.day === 'All' ? 'selected' : ''}>All days</option>
               ${days.map((day) => `<option value="${day}" ${calendarFilters.day === day ? 'selected' : ''}>${day}</option>`).join('')}
@@ -6525,13 +6526,13 @@ function renderCalendarPage(currentUser) {
             <button id="calendar-filters-reset" class="secondary" type="button">Reset filters</button>
           </div>
         </div>
-        ${canManageCalendar ? `<div class="muted" style="margin-bottom:10px;">${copiedShiftTemplate ? `Copied: ${escapeHtml(getShiftSummary(copiedShiftTemplate))}` : 'Copy a shift, then use Paste here on any day.'}</div>` : ''}
+        ${canManageCalendar ? `<div class="muted" style="margin-bottom:10px;">${copiedScheduleTemplate ? `Copied full schedule: ${copiedScheduleTemplate.length} shift${copiedScheduleTemplate.length === 1 ? '' : 's'}` : (copiedShiftTemplate ? `Copied: ${escapeHtml(getShiftSummary(copiedShiftTemplate))}` : 'Right-click a shift or use Copy full schedule, then click a destination day.')}</div>` : ''}
         <div class="row" style="margin-bottom:10px;">
           ${getRoleLegendItems().map((role) => `
             <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
           `).join('')}
         </div>
-        ${canManageCalendar ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
+        ${canManageCalendar ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-copy-full-schedule>Copy full schedule</button><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
         <div class="day-row">
           ${days.map((day) => {
             const dayDate = String(weekDates[day]?.iso || '').slice(0, 10);
@@ -6549,7 +6550,7 @@ function renderCalendarPage(currentUser) {
                     <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
                   </div>
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
-                  ${canManageCalendar ? `<div style="margin-top:6px;"><button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate ? '' : 'disabled'}>Paste here</button></div>` : ''}
+                  ${canManageCalendar ? `<div style="margin-top:6px;"><button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate || copiedScheduleTemplate ? '' : 'disabled'}>Paste here</button></div>` : ''}
                   ${getAvailabilityCalendarMarkers(weekDates[day]?.iso || '')}
                 </div>
               </div>
@@ -12654,12 +12655,45 @@ function bindEvents() {
       const shift = state.shifts.find((item) => item.id === id);
       if (!shift) return;
       copiedShiftTemplate = { ...shift };
+      copiedScheduleTemplate = null;
       render();
     });
   });
 
+  document.querySelector('[data-copy-full-schedule]')?.addEventListener('click', () => {
+    if (!canManageCalendar) return;
+    const visibleShifts = getFilteredCalendarShifts().filter((shift) => shiftIsInWeek(shift, getCalendarWeekDates(getActiveCalendarWeekReference())));
+    if (visibleShifts.length === 0) return;
+    copiedScheduleTemplate = visibleShifts.map((shift) => ({ ...shift }));
+    copiedShiftTemplate = null;
+    render();
+  });
+
   const pasteCopiedShiftToDay = async (day) => {
-      if (!canManageCalendar || !copiedShiftTemplate || !day) return;
+      if (!canManageCalendar || (!copiedShiftTemplate && !copiedScheduleTemplate) || !day) return;
+      if (copiedScheduleTemplate) {
+        const sourceWeekDates = getCalendarWeekDates(getActiveCalendarWeekReference());
+        const targetDayIndex = days.indexOf(day);
+        const sourceStartIndex = Math.min(...copiedScheduleTemplate.map((shift) => days.indexOf(shift.day)).filter((index) => index >= 0));
+        const pastedShifts = [];
+        for (const sourceShift of copiedScheduleTemplate) {
+          const sourceIndex = days.indexOf(sourceShift.day);
+          if (sourceIndex < 0) continue;
+          const targetIndex = (targetDayIndex + (sourceIndex - sourceStartIndex) + days.length) % days.length;
+          const targetDay = days[targetIndex];
+          const pastedShift = cloneShift(sourceShift, targetDay);
+          if (!await confirmShiftAssignmentWithTimeOffWarning(pastedShift.agentId, pastedShift.date, pastedShift.start, pastedShift.end, {
+            durationHours: pastedShift.durationHours,
+            role: pastedShift.role
+          })) return;
+          pastedShifts.push(pastedShift);
+        }
+        if (pastedShifts.length === 0) return;
+        state.shifts.push(...pastedShifts);
+        saveState();
+        render();
+        return;
+      }
       const pastedShift = cloneShift(copiedShiftTemplate, day);
       if (!await confirmShiftAssignmentWithTimeOffWarning(pastedShift.agentId, pastedShift.date, pastedShift.start, pastedShift.end, {
         durationHours: pastedShift.durationHours,
@@ -12679,7 +12713,7 @@ function bindEvents() {
 
   document.querySelectorAll('.day-card[data-day]').forEach((card) => {
     card.addEventListener('click', async (event) => {
-      if (!canManageCalendar || !copiedShiftTemplate) return;
+      if (!canManageCalendar || (!copiedShiftTemplate && !copiedScheduleTemplate)) return;
       if (event.target.closest('button, input, select, textarea, a, .shift')) return;
       await pasteCopiedShiftToDay(card.getAttribute('data-day'));
     });
