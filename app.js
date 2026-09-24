@@ -1,6 +1,7 @@
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['WFH', 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
-const teamOptions = ['Patron Services Representative', 'Patron Services', 'Patron Services Associate', 'Audience Services Management', 'Box Office'];
+const defaultTeamOptions = ['Patron Services Representative', 'Patron Services', 'Patron Services Associate', 'Audience Services Management', 'Box Office'];
+let teamOptions = [...defaultTeamOptions];
 const departmentOptions = ['Patron Services', 'Box Office'];
 const agentSkillOptions = [
   { value: 'single-tickets', label: 'Single Tickets' },
@@ -527,6 +528,8 @@ const defaultState = {
   },
   policies: [],
   blackoutDates: [],
+  teamCatalog: [...defaultTeamOptions],
+  teamColors: {},
   roleColors: {},
   agentLocationColors: {},
   roleDepartments: {},
@@ -586,6 +589,7 @@ const defaultAuthUsers = [
 ];
 
 const state = loadState();
+teamOptions = normalizeTeamCatalog(state.teamCatalog);
 let authUsers = loadAuthUsers();
 let currentSession = loadSession();
 // While true, background/periodic render() calls must not replace the pre-session password recovery screens.
@@ -2831,6 +2835,8 @@ function createDefaultState() {
     },
     policies: defaultState.policies.map((policy) => ({ ...policy })),
     blackoutDates: [...defaultState.blackoutDates],
+    teamCatalog: [...defaultState.teamCatalog],
+    teamColors: { ...defaultState.teamColors },
     roleColors: { ...defaultState.roleColors },
     agentLocationColors: { ...defaultState.agentLocationColors },
     roleDepartments: { ...defaultState.roleDepartments },
@@ -2840,6 +2846,51 @@ function createDefaultState() {
     agentLocationCatalog: [...defaultState.agentLocationCatalog],
     ui: getDefaultUiState()
   };
+}
+
+function normalizeTeamCatalog(value) {
+  const seed = Array.isArray(value) && value.length > 0 ? value : defaultTeamOptions;
+  const normalized = Array.from(new Set(seed
+    .map((team) => String(team || '').trim())
+    .filter(Boolean)));
+  return normalized.length > 0 ? normalized : [...defaultTeamOptions];
+}
+
+function getTeamCatalog() {
+  const fromState = Array.isArray(state?.teamCatalog) ? state.teamCatalog : [];
+  const normalized = normalizeTeamCatalog(fromState.length > 0 ? fromState : teamOptions);
+  if (Array.isArray(state?.teamCatalog)) {
+    state.teamCatalog = normalized;
+  }
+  teamOptions = normalized;
+  return normalized;
+}
+
+function getDefaultTeamColorMap() {
+  return {
+    'patron services representative': '#7AACAF',
+    'patron services': '#E7D2A8',
+    'patron services associate': '#F4A997',
+    'audience services management': '#A9B4E4',
+    'box office': '#608186',
+    default: '#C49583'
+  };
+}
+
+function getTeamColor(team) {
+  const normalizedTeam = String(team || '').trim();
+  const lookupKey = normalizedTeam.toLowerCase();
+  const savedColor = state.teamColors?.[lookupKey];
+  if (savedColor) return savedColor;
+  const defaultMap = getDefaultTeamColorMap();
+  if (defaultMap[lookupKey]) return defaultMap[lookupKey];
+  if (!normalizedTeam) return defaultMap.default;
+  let hash = 0;
+  for (let index = 0; index < normalizedTeam.length; index += 1) {
+    hash = normalizedTeam.charCodeAt(index) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 70%, 45%)`;
 }
 
 function normalizeRoleLabel(role, availableRoles = null) {
@@ -2863,9 +2914,10 @@ function normalizeRoleLabel(role, availableRoles = null) {
 
 function normalizeTeamLabel(team) {
   const normalizedTeam = String(team || '').trim().toLowerCase();
-  if (!normalizedTeam) return teamOptions[0];
-  const matchedTeam = teamOptions.find((item) => item.toLowerCase() === normalizedTeam);
-  return matchedTeam || teamOptions[0];
+  const teamCatalog = getTeamCatalog();
+  if (!normalizedTeam) return teamCatalog[0] || defaultTeamOptions[0];
+  const matchedTeam = teamCatalog.find((item) => item.toLowerCase() === normalizedTeam);
+  return matchedTeam || teamCatalog[0] || defaultTeamOptions[0];
 }
 
 function normalizeDepartment(department) {
@@ -2878,7 +2930,7 @@ function normalizeDepartment(department) {
 function normalizeManagedTeamValue(value) {
   const normalizedTeam = String(value || '').trim();
   if (!normalizedTeam) return '';
-  const matchedTeam = teamOptions.find((item) => item.toLowerCase() === normalizedTeam.toLowerCase());
+  const matchedTeam = getTeamCatalog().find((item) => item.toLowerCase() === normalizedTeam.toLowerCase());
   return matchedTeam || '';
 }
 
@@ -2959,7 +3011,7 @@ function getAllowedDashboardMessageTeamsForUser(user) {
   if (userDepartment === 'Box Office') {
     return ['Box Office'];
   }
-  return [...teamOptions];
+  return [...getTeamCatalog()];
 }
 
 function getDashboardMessageRecipientEmails(selectedTeams) {
@@ -3578,6 +3630,8 @@ function loadState() {
       agents: normalizedAgents,
       templates: normalizeTemplates(parsed.templates, normalizedRoleCatalog, normalizedLocationCatalog),
       policies: normalizePolicies(parsed.policies),
+      teamCatalog: normalizeTeamCatalog(parsed.teamCatalog),
+      teamColors: parsed.teamColors && typeof parsed.teamColors === 'object' ? parsed.teamColors : createDefaultState().teamColors,
       roleCatalog: normalizedRoleCatalog,
       locationCatalog: normalizedLocationCatalog,
       agentLocationCatalog: normalizedAgentLocationCatalog,
@@ -3640,6 +3694,8 @@ function getPersistableStateSnapshot() {
 }
 
 function saveState() {
+  state.teamCatalog = normalizeTeamCatalog(Array.isArray(state.teamCatalog) && state.teamCatalog.length > 0 ? state.teamCatalog : teamOptions);
+  teamOptions = [...state.teamCatalog];
   const persistableState = getPersistableStateSnapshot();
   const didSaveState = safeSetLocalStorage(storageKey, JSON.stringify(persistableState));
   const didSaveInbox = safeSetLocalStorage(availabilityInboxKey, JSON.stringify(state.availabilityRequests));
@@ -6003,6 +6059,8 @@ function getFilteredAgents() {
 
 function getTeamBadgeStyle(team) {
   const normalizedTeam = normalizeTeamLabel(team);
+  const color = getTeamColor(normalizedTeam);
+  const textColor = ['#ffffff', '#111111'].includes(color.toLowerCase()) ? '#111111' : '#111111';
   if (normalizedTeam === 'Patron Services Representative') {
     return 'background:#7AACAF; color:#17383B; border:1px solid rgba(23,56,59,0.25);';
   }
@@ -6018,7 +6076,7 @@ function getTeamBadgeStyle(team) {
   if (normalizedTeam === 'Box Office') {
     return 'background:#608186; color:#EAF3F3; border:1px solid rgba(23,56,59,0.25);';
   }
-  return 'background:#C49583; color:#2E2422; border:1px solid rgba(46,36,34,0.2);';
+  return `background:${color}; color:${textColor}; border:1px solid rgba(17,17,17,0.15);`;
 }
 
 function getCurrentAgentId() {
@@ -8252,7 +8310,31 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
-        <div style="display:contents;">
+        <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; grid-column:1 / -1;">
+        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-teams">
+          <h2>Teams</h2>
+          <p class="muted">Manage team names and colors used across the dashboard and agent profiles.</p>
+          <form id="add-team-form" class="row" style="margin-bottom:10px;">
+            <input name="team" placeholder="Add team" required />
+            <button type="submit">Add team</button>
+          </form>
+          <div class="row" style="gap:8px; flex-wrap:wrap;">
+            ${getTeamCatalog().map((team) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(team)}<button type="button" class="danger" data-remove-team="${escapeHtml(team)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
+          </div>
+          <div class="row" style="justify-content:space-between; align-items:center; margin-top:14px; margin-bottom:8px;">
+            <h3 style="margin:0;">Team colors</h3>
+            <button id="reset-team-colors" class="secondary" type="button">Reset team colors</button>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:center; width:100%;">
+            ${getTeamCatalog().map((team) => `
+              <label class="chip" style="background:${getTeamColor(team)}; color:#111; border:1px solid rgba(255,255,255,0.45); cursor:pointer; justify-content:center; width:100%; margin:0;" title="Click to change color">
+                ${escapeHtml(team)}
+                <input type="color" data-team-color="${escapeHtml(team)}" value="${escapeHtml(getTeamColor(team))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
+              </label>
+            `).join('')}
+          </div>
+        </div>
+
         <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-agent-locations">
           <h2>Locations</h2>
           <p class="muted">Manage the Location options assigned to agent profiles. These are separate from shift Venues.</p>
@@ -8293,6 +8375,8 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
+        </div>
+
         <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-policies" style="grid-column:1 / -1;">
           <h2>Policies</h2>
           <p class="muted">Upload policy files that agents can view and download from the Policies page.</p>
@@ -8326,7 +8410,6 @@ function renderAdminOptionsPage(currentUser) {
               </div>
             `).join('') || '<div class="muted">No policy files uploaded yet.</div>'}
           </div>
-        </div>
         </div>
         </div>
 
@@ -11378,6 +11461,68 @@ function bindEvents() {
       return;
     }
     state.agentLocationCatalog = [...getAgentLocationCatalog(), location];
+    saveState();
+    render();
+  });
+
+  document.getElementById('add-team-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const team = String(formData.get('team') || '').trim();
+    if (!team) return;
+    if (getTeamCatalog().some((item) => item.toLowerCase() === team.toLowerCase())) {
+      alert('That team already exists.');
+      return;
+    }
+    state.teamCatalog = [...getTeamCatalog(), team];
+    teamOptions = [...state.teamCatalog];
+    saveState();
+    render();
+  });
+
+  document.querySelectorAll('[data-remove-team]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const team = String(button.getAttribute('data-remove-team') || '').trim();
+      if (!team) return;
+      const teamInUse = state.agents.some((agent) => normalizeTeamLabel(agent.team) === team)
+        || state.dashboardMessageBoard?.selectedTeams?.some((selectedTeam) => normalizeManagedTeamValue(selectedTeam) === team);
+      if (teamInUse) {
+        alert('That team is assigned to an agent and cannot be removed yet.');
+        return;
+      }
+      const nextTeamCatalog = getTeamCatalog().filter((item) => item !== team);
+      if (nextTeamCatalog.length === 0) {
+        alert('At least one team must remain available.');
+        return;
+      }
+      state.teamCatalog = nextTeamCatalog;
+      teamOptions = [...state.teamCatalog];
+      if (state.teamColors && typeof state.teamColors === 'object') {
+        const colorKey = team.toLowerCase();
+        if (state.teamColors[colorKey]) {
+          delete state.teamColors[colorKey];
+        }
+      }
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-team-color]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const teamName = String(input.getAttribute('data-team-color') || '').trim();
+      if (!teamName) return;
+      state.teamColors = {
+        ...(state.teamColors || {}),
+        [teamName.toLowerCase()]: input.value
+      };
+      saveState();
+      render();
+    });
+  });
+
+  document.getElementById('reset-team-colors')?.addEventListener('click', () => {
+    state.teamColors = {};
     saveState();
     render();
   });
