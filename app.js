@@ -8285,12 +8285,14 @@ function renderAdminOptionsPage(currentUser) {
         </div>
         </div>
 
-        ${renderManagerManagementPanel(currentUser)}
+        <div style="grid-column:1 / -1;">
+          ${renderManagerManagementPanel(currentUser)}
+        </div>
 
         ${renderPolicyPreviewModal()}
 
         ${blackoutDepartmentScope === 'Box Office' ? '' : `
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px;">
+        <div style="grid-column:1 / -1; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px;">
         <details class="panel">
           <summary style="cursor:pointer; font-size:1.17em; font-weight:bold;">Backend sync</summary>
           <p class="muted" style="margin-top:10px;">Use a shared API URL so admin and agent data stays synchronized across devices.</p>
