@@ -4046,8 +4046,11 @@ function resolveShiftLocationValue(candidateLocation, currentLocation) {
   if (candidateLocation === '__clear__') {
     return '';
   }
-  if (typeof candidateLocation === 'string' && candidateLocation.trim() !== '') {
+  if (typeof candidateLocation === 'string') {
     const trimmedValue = candidateLocation.trim();
+    if (trimmedValue === '') {
+      return '';
+    }
     return getLocationCatalogForScope().includes(trimmedValue) ? trimmedValue : currentLocation;
   }
   return currentLocation;
@@ -4648,7 +4651,7 @@ function openShiftEditModal(shift, onSave) {
           <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
             <span>Location</span>
             <select name="location">
-              <option value="">No location</option>
+              <option value="__clear__">No location</option>
               ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(shift.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
             </select>
           </label>
