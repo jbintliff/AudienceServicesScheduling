@@ -4025,11 +4025,23 @@ function cloneShift(shift, dayOverride) {
     id: createId(),
     day: nextDay,
     date: nextDate,
+    location: String(shift?.location || '').trim(),
     status: shiftStatuses.draft,
     createdAt,
     updatedAt: createdAt,
     publishedAt: ''
   };
+}
+
+function resolveShiftLocationValue(candidateLocation, currentLocation) {
+  if (candidateLocation === '__clear__') {
+    return '';
+  }
+  if (typeof candidateLocation === 'string' && candidateLocation.trim() !== '') {
+    const trimmedValue = candidateLocation.trim();
+    return getLocationCatalogForScope().includes(trimmedValue) ? trimmedValue : currentLocation;
+  }
+  return currentLocation;
 }
 
 function getRoleLegendItems(departmentScope = getCurrentUserDepartmentScope()) {
@@ -4699,7 +4711,7 @@ function openShiftEditModal(shift, onSave) {
     const nextRole = normalizeRoleLabel(String(formData.get('role') || '').trim() || getPrimaryRole(), getRoleCatalog());
     const nextAgentLocation = normalizeAgentLocation(formData.get('agentLocation'));
     const requestedLocation = String(formData.get('location') || '').trim();
-    const nextLocation = requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '';
+    const nextLocation = resolveShiftLocationValue(requestedLocation, shift.location);
     const nextStatus = String(formData.get('status') || '').trim() === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
 
     if (!await confirmShiftAssignmentWithTimeOffWarning(nextAgentId, nextDate, nextStart, nextEnd, {
@@ -12447,7 +12459,7 @@ function bindEvents() {
         const nextStart = start || shift.start;
         const nextEnd = end || shift.end;
         const nextRole = role === null ? '' : (role ? normalizeRoleLabel(role, getRoleCatalog()) : shift.role);
-        const nextLocation = location === null ? '' : (location && getLocationCatalogForScope().includes(location) ? location : shift.location);
+        const nextLocation = resolveShiftLocationValue(location, shift.location);
         if (!await confirmShiftAssignmentWithTimeOffWarning(shift.agentId, shift.date, nextStart, nextEnd, {
           replacingShiftId: Number(shift.id),
           durationHours: getDurationHours(nextStart, nextEnd),
