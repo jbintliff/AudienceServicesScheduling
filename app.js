@@ -498,9 +498,9 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', department: 'Audience Services', role: 'In-person', payRate: 24, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', department: 'Audience Services', role: 'WFH', payRate: 18, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
-    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', department: 'Box Office', role: 'Booth Duty', payRate: 15, attendancePoints: 0, pronouns: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', department: 'Audience Services', role: 'In-person', payRate: 24, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', department: 'Audience Services', role: 'WFH', payRate: 18, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', department: 'Box Office', role: 'Booth Duty', payRate: 15, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -3070,6 +3070,10 @@ function normalizePronouns(value) {
   return String(value || '').trim().slice(0, 80);
 }
 
+function normalizeShiftboardId(value) {
+  return String(value || '').trim().slice(0, 80);
+}
+
 function normalizeAgentSkills(value) {
   const allowedSkills = new Set(agentSkillOptions.map((skill) => skill.value));
   const skillOrder = new Map(agentSkillOptions.map((skill, index) => [skill.value, index]));
@@ -3528,6 +3532,7 @@ function loadState() {
           const linkedUser = authUsersForLookup.find((user) => isAgentLikeUser(user) && Number(user.agentId) === Number(agent.id)) || null;
           const linkedUserPronouns = normalizePronouns(linkedUser?.pronouns || '');
           const pronouns = normalizePronouns(agent.pronouns || linkedUserPronouns);
+          const shiftboardId = normalizeShiftboardId(agent.shiftboardId);
           const skills = normalizeAgentSkills(agent.skills);
           const linkedUserEmail = normalizeEmail(linkedUser?.email || '');
           return {
@@ -3537,6 +3542,7 @@ function loadState() {
             role: normalizeRoleLabel(agent.role, normalizedRoleCatalog),
             attendancePoints,
             pronouns,
+            shiftboardId,
             skills,
             maxInOfficeShifts,
             maxShiftsPerWeek
@@ -4789,6 +4795,7 @@ function saveAgentDetails(agentId, values) {
   const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
   const attendancePoints = normalizeAttendancePoints(values?.attendancePoints);
   const pronouns = normalizePronouns(values?.pronouns);
+  const shiftboardId = normalizeShiftboardId(values?.shiftboardId);
   const skills = normalizeAgentSkills(values?.skills);
   const maxInOfficeShifts = normalizeMaxInOfficeShifts(values?.maxInOfficeShifts);
   const maxShiftsPerWeek = normalizeMaxShiftsPerWeek(values?.maxShiftsPerWeek);
@@ -4817,6 +4824,7 @@ function saveAgentDetails(agentId, values) {
         payRate,
         attendancePoints,
         pronouns,
+        shiftboardId,
         skills,
         maxInOfficeShifts,
         maxShiftsPerWeek,
@@ -4932,6 +4940,10 @@ function openAgentEditModal(agent, onSave) {
             <input name="pronouns" placeholder="e.g. she/her" value="${escapeHtml(normalizePronouns(agent.pronouns))}" maxlength="80" />
           </label>
           <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Shiftboard ID</span>
+            <input name="shiftboardId" placeholder="Shiftboard ID" value="${escapeHtml(normalizeShiftboardId(agent.shiftboardId))}" maxlength="80" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
             <span>Max in-office shifts</span>
             <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(agent.maxInOfficeShifts ?? '')}" />
           </label>
@@ -4992,6 +5004,7 @@ function openAgentEditModal(agent, onSave) {
       payRate: formData.get('payRate'),
       attendancePoints: formData.get('attendancePoints'),
       pronouns: formData.get('pronouns'),
+      shiftboardId: formData.get('shiftboardId'),
       skills: formData.getAll('skills'),
       maxInOfficeShifts: formData.get('maxInOfficeShifts'),
       maxShiftsPerWeek: formData.get('maxShiftsPerWeek')
@@ -6316,7 +6329,7 @@ function exportPublishedScheduleCsv(fromDate, toDate) {
     '',
     shift.role || '',
     shift.location || '',
-    getAgentAccountEmail(shift.agentId) || getAgent(shift.agentId)?.name || '',
+    normalizeShiftboardId(getAgent(shift.agentId)?.shiftboardId) || getAgentAccountEmail(shift.agentId) || getAgent(shift.agentId)?.name || '',
     shift.title || '',
     shift.details || '',
     shift.roomFloor || '',
@@ -7694,6 +7707,7 @@ function renderProfilePage(currentUser) {
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
               <div><strong>Attendance points:</strong> ${escapeHtml(normalizeAttendancePoints(viewAgent?.attendancePoints))}</div>
               <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(viewAgent?.pronouns) || 'Not set')}</div>
+              <div><strong>Shiftboard ID:</strong> ${escapeHtml(normalizeShiftboardId(viewAgent?.shiftboardId) || 'Not set')}</div>
               <div><strong>Skills:</strong> ${escapeHtml(getAgentSkillsSummary(viewAgent?.skills))}</div>
               <div><strong>Email:</strong> ${escapeHtml(activeAgentUser?.email || 'Not set')}</div>
               <div><strong>Phone:</strong> ${escapeHtml(activeAgentUser?.phone || 'Not set')}</div>
@@ -8660,6 +8674,7 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Managed by:</strong> ${escapeHtml(getTeamManagerSummary(agent.team))}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
                   <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(agent.pronouns) || 'Not set')}</div>
+                  <div><strong>Shiftboard ID:</strong> ${escapeHtml(normalizeShiftboardId(agent.shiftboardId) || 'Not set')}</div>
                   <div><strong>Targets:</strong> shifts/week max ${escapeHtml(agent.maxShiftsPerWeek ?? 'Not set')}, in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
                 </div>
                 <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
