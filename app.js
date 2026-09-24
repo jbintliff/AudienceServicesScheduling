@@ -11,6 +11,7 @@ const agentSkillOptions = [
 ];
 const boothDutySkillValue = 'booth-duty';
 const shiftLocationOptions = ['Academy of Music', 'Kimmel Center', 'Miller Theater'];
+const agentLocationOptions = ['In Person/ TP', 'Work From Home'];
 const storageKey = 'agent-scheduler-state-v4';
 const authUsersKey = 'agent-scheduler-users-v1';
 const sessionKey = 'agent-scheduler-session-v1';
@@ -498,9 +499,9 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', department: 'Audience Services', role: 'In-person', payRate: 24, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', department: 'Audience Services', role: 'WFH', payRate: 18, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
-    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', department: 'Box Office', role: 'Booth Duty', payRate: 15, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', department: 'Audience Services', role: 'In-person', location: 'In Person/ TP', payRate: 24, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', department: 'Audience Services', role: 'WFH', location: 'Work From Home', payRate: 18, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', department: 'Box Office', role: 'Booth Duty', location: '', payRate: 15, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -530,6 +531,7 @@ const defaultState = {
   roleDepartments: {},
   roleCatalog: [...roleOptions],
   locationCatalog: [...shiftLocationOptions],
+  agentLocationCatalog: [...agentLocationOptions],
   locationDepartments: {},
   ui: {
     agentSearch: '',
@@ -741,6 +743,10 @@ function getPrimaryRole() {
 
 function getLocationCatalog() {
   return normalizeLocationCatalog(state?.locationCatalog);
+}
+
+function getAgentLocationCatalog() {
+  return normalizeOptionCatalog(state?.agentLocationCatalog, agentLocationOptions);
 }
 
 function getLocationDepartment(location) {
@@ -2829,6 +2835,7 @@ function createDefaultState() {
     locationDepartments: { ...defaultState.locationDepartments },
     roleCatalog: [...defaultState.roleCatalog],
     locationCatalog: [...defaultState.locationCatalog],
+    agentLocationCatalog: [...defaultState.agentLocationCatalog],
     ui: getDefaultUiState()
   };
 }
@@ -3072,6 +3079,13 @@ function normalizePronouns(value) {
 
 function normalizeShiftboardId(value) {
   return String(value || '').trim().slice(0, 80);
+}
+
+function normalizeAgentLocation(value, catalog = null) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  const locations = Array.isArray(catalog) ? catalog : getAgentLocationCatalog();
+  return locations.find((location) => location.toLowerCase() === normalized) || '';
 }
 
 function normalizeAgentSkills(value) {
@@ -3523,6 +3537,7 @@ function loadState() {
     const authUsersForLookup = loadAuthUsers();
     const normalizedRoleCatalog = normalizeRoleCatalog(parsed.roleCatalog);
     const normalizedLocationCatalog = normalizeLocationCatalog(parsed.locationCatalog);
+    const normalizedAgentLocationCatalog = normalizeOptionCatalog(parsed.agentLocationCatalog, agentLocationOptions);
     const normalizedAgents = Array.isArray(parsed.agents)
       ? parsed.agents.map((agent) => {
           const maxInOfficeShiftsRaw = typeof agent.maxInOfficeShifts === 'undefined' ? null : agent.maxInOfficeShifts;
@@ -3540,6 +3555,7 @@ function loadState() {
             email: normalizeEmail(agent.email || linkedUserEmail),
             team: normalizeTeamLabel(agent.team),
             role: normalizeRoleLabel(agent.role, normalizedRoleCatalog),
+            location: normalizeAgentLocation(agent.location, normalizedAgentLocationCatalog),
             attendancePoints,
             pronouns,
             shiftboardId,
@@ -3562,6 +3578,7 @@ function loadState() {
       policies: normalizePolicies(parsed.policies),
       roleCatalog: normalizedRoleCatalog,
       locationCatalog: normalizedLocationCatalog,
+      agentLocationCatalog: normalizedAgentLocationCatalog,
       shifts: Array.isArray(parsed.shifts)
         ? parsed.shifts.map((shift) => {
             const normalizedShift = {
@@ -4792,6 +4809,7 @@ function saveAgentDetails(agentId, values) {
   const accessRole = requestedAccessRole === userRoles.admin ? userRoles.agent : requestedAccessRole;
   const team = normalizeTeamLabel(String(values?.team || '').trim() || teamOptions[0]);
   const department = normalizeDepartment(values?.department);
+  const location = normalizeAgentLocation(values?.location);
   const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
   const attendancePoints = normalizeAttendancePoints(values?.attendancePoints);
   const pronouns = normalizePronouns(values?.pronouns);
@@ -4821,6 +4839,7 @@ function saveAgentDetails(agentId, values) {
         email,
         team,
         department,
+        location,
         payRate,
         attendancePoints,
         pronouns,
@@ -4925,6 +4944,13 @@ function openAgentEditModal(agent, onSave) {
               ${departmentOptions.map((department) => `<option value="${department}" ${agent.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
             </select>
           </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Location</span>
+            <select name="location">
+              <option value="">No location</option>
+              ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}" ${normalizeAgentLocation(agent.location) === location ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
+            </select>
+          </label>
         </div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px;">
           <label style="display:flex; flex-direction:column; gap:6px;">
@@ -5001,6 +5027,7 @@ function openAgentEditModal(agent, onSave) {
       accessRole: formData.get('accessRole'),
       team: formData.get('team'),
       department: formData.get('department'),
+      location: formData.get('location'),
       payRate: formData.get('payRate'),
       attendancePoints: formData.get('attendancePoints'),
       pronouns: formData.get('pronouns'),
@@ -6360,6 +6387,7 @@ async function importData(file) {
     state.roleColors = parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : {};
     state.roleDepartments = parsed.roleDepartments && typeof parsed.roleDepartments === 'object' && !Array.isArray(parsed.roleDepartments) ? parsed.roleDepartments : {};
     state.locationDepartments = parsed.locationDepartments && typeof parsed.locationDepartments === 'object' && !Array.isArray(parsed.locationDepartments) ? parsed.locationDepartments : {};
+    state.agentLocationCatalog = normalizeOptionCatalog(parsed.agentLocationCatalog, agentLocationOptions);
     state.blackoutDates = normalizeBlackoutDateEntries(parsed.blackoutDates);
     state.ui = loadUiState(parsed.ui);
 
@@ -6538,15 +6566,16 @@ function renderCalendarPage(currentUser) {
                   <option value="">Unassigned (optional)</option>
                   ${[...agentCatalog].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
                 </select>
-                <select name="role" required>
+                <select name="role">
+                  <option value="">No role</option>
                   ${getRoleLegendItems().map((role) => `<option value="${role}">${escapeHtml(role)}</option>`).join('')}
                 </select>
               </div>
               <div class="row">
                 <input name="start" type="time" value="08:00" required />
                 <input name="end" type="time" value="16:00" required />
-                <select name="location">
-                  <option value="">No venue</option>
+                <select name="location" required>
+                  <option value="">Select venue</option>
                   ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
                 </select>
                 <input name="date" type="date" required />
@@ -7703,6 +7732,7 @@ function renderProfilePage(currentUser) {
               ${activeAgentUser?.profilePhotoDataUrl ? `<div style="margin-bottom:10px;"><img src="${escapeHtml(activeAgentUser.profilePhotoDataUrl)}" alt="Profile photo" style="width:84px; height:84px; border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,0.35);" /></div>` : ''}
               <div><strong>Name:</strong> ${escapeHtml(viewAgent?.name || 'Not set')}</div>
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
+              <div><strong>Location:</strong> ${escapeHtml(normalizeAgentLocation(viewAgent?.location) || 'Not set')}</div>
               <div><strong>Department:</strong> ${escapeHtml(viewAgent?.department || 'Not set')}</div>
               <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
               <div><strong>Attendance points:</strong> ${escapeHtml(normalizeAttendancePoints(viewAgent?.attendancePoints))}</div>
@@ -8091,6 +8121,18 @@ function renderAdminOptionsPage(currentUser) {
         </div>
 
         <div class="stack">
+        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-agent-locations">
+          <h2>Agent Locations</h2>
+          <p class="muted">Manage the Location options assigned to agent profiles. These are separate from shift Venues.</p>
+          <form id="add-agent-location-form" class="row" style="margin-bottom:10px;">
+            <input name="location" placeholder="Add agent location" required />
+            <button type="submit">Add location</button>
+          </form>
+          <div class="row" style="gap:8px; flex-wrap:wrap;">
+            ${getAgentLocationCatalog().map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}<button type="button" class="danger" data-remove-agent-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
+          </div>
+        </div>
+
         <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-venues">
           <h2>Venues</h2>
           ${blackoutDepartmentScope === 'Box Office' ? '' : `
@@ -8655,6 +8697,10 @@ function renderAgentsPage(currentUser) {
               <option value="">No department</option>
               ${departmentOptions.map((department) => `<option value="${department}">${escapeHtml(department)}</option>`).join('')}
             </select>
+            <select name="location">
+              <option value="">No location</option>
+              ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
+            </select>
             <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
             <input name="pronouns" placeholder="Pronouns (e.g. she/her)" maxlength="80" />
             <input name="maxShiftsPerWeek" type="number" inputmode="numeric" step="1" min="0" placeholder="Max shifts/week" />
@@ -8670,6 +8716,7 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Access level:</strong> ${escapeHtml(getUserRoleLabel(getUserByAgentId(agent.id)?.role || userRoles.agent))}</div>
                   <div><strong>Team:</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span></div>
                   <div><strong>Department:</strong> ${escapeHtml(agent.department || 'Not set')}</div>
+                  <div><strong>Location:</strong> ${escapeHtml(normalizeAgentLocation(agent.location) || 'Not set')}</div>
                   <div><strong>Email:</strong> ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   <div><strong>Managed by:</strong> ${escapeHtml(getTeamManagerSummary(agent.team))}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
@@ -10765,6 +10812,7 @@ function bindEvents() {
       email,
       team: normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]),
       department: normalizeDepartment(formData.get('department')),
+      location: normalizeAgentLocation(formData.get('location')),
       role,
       payRate,
       attendancePoints: 0,
@@ -10828,15 +10876,16 @@ function bindEvents() {
     }
     const formData = new FormData(event.currentTarget);
     const agentId = formData.get('agentId') ? Number(formData.get('agentId')) : null;
-    const role = normalizeRoleLabel(formData.get('role')?.toString().trim() || getAgent(agentId)?.role || getPrimaryRole(), getRoleCatalog());
+    const requestedRole = formData.get('role')?.toString().trim() || '';
+    const role = requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '';
     const start = formData.get('start')?.toString();
     const end = formData.get('end')?.toString();
     const requestedLocation = formData.get('location')?.toString().trim() || '';
     const location = requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '';
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
-    if (!day || !role || !start || !end || !date) {
-      alert('Choose a role, date, start time, and end time before adding the shift.');
+    if (!day || !start || !end || !date || !location) {
+      alert('Choose a venue, date, start time, and end time before adding the shift.');
       return;
     }
     if (toMinutes(end) <= toMinutes(start)) {
@@ -11181,6 +11230,36 @@ function bindEvents() {
     setLocationDepartment(location, department);
     saveState();
     render();
+  });
+
+  document.getElementById('add-agent-location-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!isAdminUser(getCurrentUser())) return;
+    const location = normalizeShiftboardId(new FormData(event.currentTarget).get('location'));
+    if (!location) return;
+    if (getAgentLocationCatalog().some((item) => item.toLowerCase() === location.toLowerCase())) {
+      alert('That agent location already exists.');
+      return;
+    }
+    state.agentLocationCatalog = [...getAgentLocationCatalog(), location];
+    saveState();
+    render();
+  });
+
+  document.querySelectorAll('[data-remove-agent-location]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!isAdminUser(getCurrentUser())) return;
+      const location = String(button.getAttribute('data-remove-agent-location') || '').trim();
+      if (!location) return;
+      const locationInUse = state.agents.some((agent) => normalizeAgentLocation(agent.location) === location);
+      if (locationInUse) {
+        alert('That agent location is assigned to an agent and cannot be removed yet.');
+        return;
+      }
+      state.agentLocationCatalog = getAgentLocationCatalog().filter((item) => item !== location);
+      saveState();
+      render();
+    });
   });
 
   document.querySelectorAll('[data-location-department-select]').forEach((select) => {
