@@ -6380,7 +6380,7 @@ function renderCalendarPage(currentUser) {
         .calendar-view .day-row { gap: 6px; }
         .calendar-view .day-card { padding: 4px !important; min-height: 0; }
         .calendar-view .shift { padding: 3px !important; margin-bottom: 2px; line-height: 1; font-size: 0.7rem; color: #000; overflow: hidden; }
-        .calendar-view .shift strong { font-size: 0.72rem; }
+        .calendar-view .shift strong { font-size: 0.84rem; }
         .calendar-view .shift .muted { color: #000 !important; }
         .calendar-view .calendar-shift-actions { gap: 2px; margin-top: 2px !important; flex-wrap: wrap; }
         .calendar-view .calendar-shift-actions button { padding: 1px 3px; min-height: 20px; font-size: 0.62rem; flex: 1 1 auto; min-width: 0; }
