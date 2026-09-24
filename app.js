@@ -3585,12 +3585,9 @@ function loadState() {
         ? parsed.shifts.map((shift) => {
             const rawLocation = String(shift.location || '').trim();
             const normalizedLocation = normalizedLocationCatalog.includes(rawLocation) ? rawLocation : '';
-            const matchingAgent = normalizedAgents.find((agent) => Number(agent.id) === Number(shift.agentId));
-            const agentLocation = normalizeAgentLocation(matchingAgent?.location);
-            const finalLocation = normalizedLocation && normalizedLocation !== agentLocation ? normalizedLocation : '';
             const normalizedShift = {
               ...shift,
-              location: finalLocation,
+              location: normalizedLocation,
               role: normalizeRoleLabel(shift.role || roleByAgentId[String(shift.agentId)] || normalizedRoleCatalog[0], normalizedRoleCatalog),
               status: shift.status === shiftStatuses.draft || shift.status === shiftStatuses.published
                 ? shift.status
@@ -4649,9 +4646,9 @@ function openShiftEditModal(shift, onSave) {
             </select>
           </label>
           <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
-            <span>Venue</span>
+            <span>Location</span>
             <select name="location">
-              <option value="">No venue</option>
+              <option value="">No location</option>
               ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(shift.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
             </select>
           </label>
@@ -4721,7 +4718,6 @@ function openShiftEditModal(shift, onSave) {
     }
 
     const nextRole = normalizeRoleLabel(String(formData.get('role') || '').trim() || getPrimaryRole(), getRoleCatalog());
-    const nextAgentLocation = normalizeAgentLocation(formData.get('agentLocation'));
     const requestedLocation = String(formData.get('location') || '').trim();
     const nextLocation = resolveShiftLocationValue(requestedLocation, shift.location);
     const nextStatus = String(formData.get('status') || '').trim() === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
@@ -4742,7 +4738,6 @@ function openShiftEditModal(shift, onSave) {
       start: nextStart,
       end: nextEnd,
       role: nextRole,
-      agentLocation: nextAgentLocation,
       location: nextLocation,
       status: nextStatus,
       durationHours: getDurationHours(nextStart, nextEnd),
@@ -5119,7 +5114,7 @@ function openBulkShiftEditModal(shifts, onSave) {
         </div>
         <label style="display:flex; flex-direction:column; gap:6px;"><span>Role</span><select name="role"><option value="">Leave unchanged</option><option value="__clear__">Clear role</option>${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}</select></label>
         <label style="display:flex; flex-direction:column; gap:6px;"><span>Agent Location</span><select name="agentLocation"><option value="">Leave unchanged</option><option value="__clear__">Clear agent location</option>${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}</select></label>
-        <label style="display:flex; flex-direction:column; gap:6px;"><span>Location / venue</span><select name="location"><option value="">Leave unchanged</option><option value="__clear__">Clear location / venue</option>${getLocationCatalogForScope().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}</select></label>
+        <label style="display:flex; flex-direction:column; gap:6px;"><span>Shift location</span><select name="location"><option value="">Leave unchanged</option><option value="__clear__">Clear shift location</option>${getLocationCatalogForScope().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}</select></label>
         <div class="row" style="justify-content:flex-end; margin-top:8px;"><button type="button" id="bulk-shift-edit-cancel" class="secondary">Cancel</button><button type="submit">Apply changes</button></div>
       </form>
     </div>
@@ -11003,7 +10998,6 @@ function bindEvents() {
     const agentId = formData.get('agentId') ? Number(formData.get('agentId')) : null;
     const requestedRole = formData.get('role')?.toString().trim() || '';
     const role = requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '';
-    const agentLocation = normalizeAgentLocation(formData.get('agentLocation'));
     const start = formData.get('start')?.toString();
     const end = formData.get('end')?.toString();
     const requestedLocation = formData.get('location')?.toString().trim() || '';
@@ -11039,11 +11033,6 @@ function bindEvents() {
       updatedAt: createdAt,
       publishedAt: ''
     });
-    if (agentId && agentLocation) {
-      state.agents = state.agents.map((agent) => Number(agent.id) === agentId
-        ? { ...agent, location: agentLocation, updatedAt: createdAt, profileUpdatedAt: createdAt }
-        : agent);
-    }
     saveState();
     if (!didPersistShifts()) {
       void saveStateToBackendFallback();
@@ -12576,18 +12565,12 @@ function bindEvents() {
         const nowIso = getCurrentIsoTimestamp();
         const finalizedShift = {
           ...updatedShift,
-          agentLocation: undefined,
           updatedAt: nowIso,
           publishedAt: updatedShift.status === shiftStatuses.published
             ? (updatedShift.publishedAt || shift.publishedAt || nowIso)
             : ''
         };
         state.shifts = state.shifts.map((item) => item.id === id ? finalizedShift : item);
-        if (updatedShift.agentId && updatedShift.agentLocation !== undefined) {
-          state.agents = state.agents.map((agent) => Number(agent.id) === Number(updatedShift.agentId)
-            ? { ...agent, location: updatedShift.agentLocation, updatedAt: nowIso, profileUpdatedAt: nowIso }
-            : agent);
-        }
         if (shouldNotify && shouldSendPublishedScheduleEmails(1)) {
           sendShiftPublishedEmail(finalizedShift);
         }
