@@ -4655,6 +4655,13 @@ function openShiftEditModal(shift, onSave) {
               ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(shift.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
             </select>
           </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Venue</span>
+            <select name="venue">
+              <option value="">No venue</option>
+              ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(shift.venue || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
+            </select>
+          </label>
         </div>
 
         <div class="row" style="flex-wrap:wrap;">
@@ -4723,6 +4730,8 @@ function openShiftEditModal(shift, onSave) {
     const nextRole = normalizeRoleLabel(String(formData.get('role') || '').trim() || getPrimaryRole(), getRoleCatalog());
     const requestedLocation = String(formData.get('location') || '').trim();
     const nextLocation = resolveShiftLocationValue(requestedLocation, shift.location);
+    const requestedVenue = String(formData.get('venue') || '').trim();
+    const nextVenue = requestedVenue === '' ? '' : (getLocationCatalogForScope().includes(requestedVenue) ? requestedVenue : shift.venue || '');
     const nextStatus = String(formData.get('status') || '').trim() === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
 
     if (!await confirmShiftAssignmentWithTimeOffWarning(nextAgentId, nextDate, nextStart, nextEnd, {
@@ -4742,6 +4751,7 @@ function openShiftEditModal(shift, onSave) {
       end: nextEnd,
       role: nextRole,
       location: nextLocation,
+      venue: nextVenue,
       status: nextStatus,
       durationHours: getDurationHours(nextStart, nextEnd),
       updatedAt: getCurrentIsoTimestamp(),
@@ -5118,6 +5128,7 @@ function openBulkShiftEditModal(shifts, onSave) {
         <label style="display:flex; flex-direction:column; gap:6px;"><span>Role</span><select name="role"><option value="">Leave unchanged</option><option value="__clear__">Clear role</option>${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}</select></label>
         <label style="display:flex; flex-direction:column; gap:6px;"><span>Agent Location</span><select name="agentLocation"><option value="">Leave unchanged</option><option value="__clear__">Clear agent location</option>${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}</select></label>
         <label style="display:flex; flex-direction:column; gap:6px;"><span>Shift location</span><select name="location"><option value="">Leave unchanged</option><option value="__clear__">Clear shift location</option>${getLocationCatalogForScope().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}</select></label>
+        <label style="display:flex; flex-direction:column; gap:6px;"><span>Venue</span><select name="venue"><option value="">Leave unchanged</option><option value="__clear__">Clear venue</option>${getLocationCatalogForScope().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}</select></label>
         <div class="row" style="justify-content:flex-end; margin-top:8px;"><button type="button" id="bulk-shift-edit-cancel" class="secondary">Cancel</button><button type="submit">Apply changes</button></div>
       </form>
     </div>
@@ -5133,7 +5144,8 @@ function openBulkShiftEditModal(shifts, onSave) {
     const roleValue = String(formData.get('role') || '').trim();
     const agentLocationValue = String(formData.get('agentLocation') || '').trim();
     const locationValue = String(formData.get('location') || '').trim();
-    if (!start && !end && !roleValue && !agentLocationValue && !locationValue) {
+    const venueValue = String(formData.get('venue') || '').trim();
+    if (!start && !end && !roleValue && !agentLocationValue && !locationValue && !venueValue) {
       alert('Choose at least one field to change.');
       return;
     }
@@ -5146,7 +5158,8 @@ function openBulkShiftEditModal(shifts, onSave) {
       end,
       role: roleValue === '__clear__' ? null : roleValue,
       agentLocation: agentLocationValue === '__clear__' ? null : agentLocationValue,
-      location: locationValue === '__clear__' ? null : locationValue
+      location: locationValue === '__clear__' ? null : locationValue,
+      venue: venueValue === '__clear__' ? null : venueValue
     });
     if (didSave) closeModal();
   });
@@ -6189,15 +6202,21 @@ function formatTimeRange(startTime, endTime) {
 function getShiftRoleLocationText(shift) {
   const role = String(shift?.role || getPrimaryRole()).trim() || getPrimaryRole();
   const location = String(shift?.location || '').trim();
-  return location ? `${role} • ${location}` : role;
+  const venue = String(shift?.venue || '').trim();
+  if (location && venue) return `${role} • ${location} • ${venue}`;
+  if (location) return `${role} • ${location}`;
+  if (venue) return `${role} • ${venue}`;
+  return role;
 }
 
 function getShiftRoleLocationHtml(shift) {
   const role = String(shift?.role || getPrimaryRole()).trim() || getPrimaryRole();
   const location = String(shift?.location || '').trim();
-  return location
-    ? `${escapeHtml(role)}<br />${escapeHtml(location)}`
-    : `${escapeHtml(role)}`;
+  const venue = String(shift?.venue || '').trim();
+  if (location && venue) return `${escapeHtml(role)}<br />${escapeHtml(location)}<br />${escapeHtml(venue)}`;
+  if (location) return `${escapeHtml(role)}<br />${escapeHtml(location)}`;
+  if (venue) return `${escapeHtml(role)}<br />${escapeHtml(venue)}`;
+  return `${escapeHtml(role)}`;
 }
 
 function getShiftSummary(shift, includeDay = true) {
@@ -6690,6 +6709,10 @@ function renderCalendarPage(currentUser) {
                 <input name="end" type="time" value="16:00" required />
                 <select name="location" required>
                   <option value="">Select location</option>
+                  ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
+                </select>
+                <select name="venue">
+                  <option value="">No venue</option>
                   ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
                 </select>
                 <input name="date" type="date" required />
@@ -11001,6 +11024,8 @@ function bindEvents() {
     const end = formData.get('end')?.toString();
     const requestedLocation = formData.get('location')?.toString().trim() || '';
     const location = requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '';
+    const requestedVenue = formData.get('venue')?.toString().trim() || '';
+    const venue = requestedVenue && getLocationCatalogForScope().includes(requestedVenue) ? requestedVenue : '';
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
     if (!day || !start || !end || !date || !location) {
@@ -11027,6 +11052,7 @@ function bindEvents() {
       end,
       durationHours: getDurationHours(start, end),
       location,
+      venue,
       status: shiftStatuses.draft,
       createdAt,
       updatedAt: createdAt,
@@ -12453,13 +12479,14 @@ function bindEvents() {
     if (!canManageCalendar || selectedCalendarShiftIds.size === 0) return;
     const selectedShifts = state.shifts.filter((shift) => selectedCalendarShiftIds.has(Number(shift.id)));
     if (selectedShifts.length === 0) return;
-    openBulkShiftEditModal(selectedShifts, async ({ start, end, role, agentLocation, location }) => {
+    openBulkShiftEditModal(selectedShifts, async ({ start, end, role, agentLocation, location, venue }) => {
       const updatedShifts = [];
       for (const shift of selectedShifts) {
         const nextStart = start || shift.start;
         const nextEnd = end || shift.end;
         const nextRole = role === null ? '' : (role ? normalizeRoleLabel(role, getRoleCatalog()) : shift.role);
         const nextLocation = resolveShiftLocationValue(location, shift.location);
+        const nextVenue = venue === undefined ? shift.venue || '' : (venue === null ? '' : (getLocationCatalogForScope().includes(venue) ? venue : shift.venue || ''));
         if (!await confirmShiftAssignmentWithTimeOffWarning(shift.agentId, shift.date, nextStart, nextEnd, {
           replacingShiftId: Number(shift.id),
           durationHours: getDurationHours(nextStart, nextEnd),
@@ -12471,6 +12498,7 @@ function bindEvents() {
           end: nextEnd,
           role: nextRole,
           location: nextLocation,
+          venue: nextVenue,
           durationHours: getDurationHours(nextStart, nextEnd),
           updatedAt: getCurrentIsoTimestamp()
         });
