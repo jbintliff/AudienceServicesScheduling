@@ -1,7 +1,7 @@
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['WFH', 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
-const teamOptions = ['Audience Services Representative', 'Audience Services Associate', 'Audience Services Management', 'Box Office'];
-const departmentOptions = ['Audience Services', 'Box Office'];
+const teamOptions = ['Patron Services Representative', 'Patron Services Associate', 'Patron Services Management', 'Box Office'];
+const departmentOptions = ['Patron Services', 'Box Office'];
 const agentSkillOptions = [
   { value: 'single-tickets', label: 'Single Tickets' },
   { value: 'subscrptions', label: 'Subscriptions' },
@@ -499,9 +499,9 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', department: 'Audience Services', role: 'WFH', location: 'In Person/ TP', payRate: 24, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', department: 'Audience Services', role: 'WFH', location: 'Work From Home', payRate: 18, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
-    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', department: 'Box Office', role: 'Booth Duty', location: '', payRate: 15, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Unavailable' }
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Patron Services Representative', department: 'Patron Services', role: 'WFH', location: 'In Person/ TP', payRate: 24, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Patron Services Associate', department: 'Patron Services', role: 'WFH', location: 'Work From Home', payRate: 18, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Patron Services Representative', department: 'Box Office', role: 'Booth Duty', location: '', payRate: 15, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Unavailable' }
   ],
   templates: [
     { id: 1, name: 'Full Time 6pm', start: '09:10', end: '18:00', durationHours: 8.8 },
@@ -579,7 +579,7 @@ const defaultState = {
 };
 
 const defaultAuthUsers = [
-  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', department: 'Audience Services', email: 'jbintliff@ensembleartsphilly.org', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.admin },
+  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', department: 'Patron Services', email: 'jbintliff@ensembleartsphilly.org', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.admin },
   { id: 1002, username: 'maya', email: 'maya@scheduler.local', phone: '215-555-0101', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 1 },
   { id: 1003, username: 'luis', email: 'luis@scheduler.local', phone: '215-555-0102', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 2 },
   { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 3 }
@@ -6003,13 +6003,13 @@ function getFilteredAgents() {
 
 function getTeamBadgeStyle(team) {
   const normalizedTeam = normalizeTeamLabel(team);
-  if (normalizedTeam === 'Audience Services Representative') {
+  if (normalizedTeam === 'Patron Services Representative') {
     return 'background:#7AACAF; color:#17383B; border:1px solid rgba(23,56,59,0.25);';
   }
-  if (normalizedTeam === 'Audience Services Associate') {
+  if (normalizedTeam === 'Patron Services Associate') {
     return 'background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);';
   }
-  if (normalizedTeam === 'Audience Services Management') {
+  if (normalizedTeam === 'Patron Services Management') {
     return 'background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);';
   }
   if (normalizedTeam === 'Box Office') {
@@ -6134,9 +6134,9 @@ function getCalendarShiftSortMinutes(timeValue) {
 
 function getAgentTeamSortPriority(agentId) {
   const normalizedTeam = normalizeTeamLabel(getAgent(agentId)?.team || '');
-  if (normalizedTeam === 'Audience Services Representative') return 0;
-  if (normalizedTeam === 'Audience Services Associate') return 1;
-  if (normalizedTeam === 'Audience Services Management') return 2;
+  if (normalizedTeam === 'Patron Services Representative') return 0;
+  if (normalizedTeam === 'Patron Services Associate') return 1;
+  if (normalizedTeam === 'Patron Services Management') return 2;
   return 3;
 }
 
@@ -6302,8 +6302,8 @@ function renderAdminScheduleDayShifts(dayShifts) {
           shiftsByTeam.set(teamName, existing);
         });
         const sortedTeamGroups = Array.from(shiftsByTeam.entries()).sort(([leftTeam], [rightTeam]) => {
-          const leftPriority = leftTeam === 'Audience Services Representative' ? 0 : (leftTeam === 'Audience Services Associate' ? 1 : 2);
-          const rightPriority = rightTeam === 'Audience Services Representative' ? 0 : (rightTeam === 'Audience Services Associate' ? 1 : 2);
+          const leftPriority = leftTeam === 'Patron Services Representative' ? 0 : (leftTeam === 'Patron Services Associate' ? 1 : 2);
+          const rightPriority = rightTeam === 'Patron Services Representative' ? 0 : (rightTeam === 'Patron Services Associate' ? 1 : 2);
           return leftPriority - rightPriority || leftTeam.localeCompare(rightTeam);
         });
         return `
@@ -6356,8 +6356,8 @@ function renderCalendarDayShiftSections(dayShifts, options = {}) {
           shiftsByTeam.set(teamName, existing);
         });
         const sortedTeamGroups = Array.from(shiftsByTeam.entries()).sort(([leftTeam], [rightTeam]) => {
-          const leftPriority = leftTeam === 'Audience Services Representative' ? 0 : (leftTeam === 'Audience Services Associate' ? 1 : 2);
-          const rightPriority = rightTeam === 'Audience Services Representative' ? 0 : (rightTeam === 'Audience Services Associate' ? 1 : 2);
+          const leftPriority = leftTeam === 'Patron Services Representative' ? 0 : (leftTeam === 'Patron Services Associate' ? 1 : 2);
+          const rightPriority = rightTeam === 'Patron Services Representative' ? 0 : (rightTeam === 'Patron Services Associate' ? 1 : 2);
           return leftPriority - rightPriority || leftTeam.localeCompare(rightTeam);
         });
         return `
@@ -7223,7 +7223,7 @@ function renderProfilePage(currentUser) {
                       <div class="row" style="gap:8px; flex-wrap:wrap; justify-content:flex-end;">
                         <button type="submit" class="secondary">Save manager</button>
                         <button type="button" class="secondary" data-resend-admin-invite="${adminUser.id}">Resend invite</button>
-                        ${isBoxOfficeScopedAdmin && adminUser.department === 'Audience Services' ? '' : `<button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>`}
+                        ${isBoxOfficeScopedAdmin && adminUser.department === 'Patron Services' ? '' : `<button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>`}
                         ${isBoxOfficeScopedAdmin ? '' : `<button type="button" class="danger" data-remove-admin="${adminUser.id}">Remove</button>`}
                       </div>
                       </div>
@@ -7552,8 +7552,8 @@ function renderProfilePage(currentUser) {
         const activeUser = getCurrentUser();
         const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)) && Number(user.id) === adminId);
         if (!adminUser) return;
-        if (getCurrentUserDepartmentScope() === 'Box Office' && adminUser.department === 'Audience Services') {
-          alert('Box Office admin accounts cannot deactivate Audience Services managers.');
+        if (getCurrentUserDepartmentScope() === 'Box Office' && adminUser.department === 'Patron Services') {
+          alert('Box Office admin accounts cannot deactivate Patron Services managers.');
           return;
         }
         const isDeactivating = adminUser.isActive !== false;
@@ -8122,7 +8122,7 @@ function renderManagerManagementPanel(currentUser) {
                   <div class="row" style="gap:8px; flex-wrap:wrap; justify-content:flex-end;">
                     <button type="submit" class="secondary">Save manager</button>
                     <button type="button" class="secondary" data-resend-admin-invite="${adminUser.id}">Resend invite</button>
-                    ${isBoxOfficeScopedAdmin && adminUser.department === 'Audience Services' ? '' : `<button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>`}
+                    ${isBoxOfficeScopedAdmin && adminUser.department === 'Patron Services' ? '' : `<button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>`}
                     ${isBoxOfficeScopedAdmin ? '' : `<button type="button" class="danger" data-remove-admin="${adminUser.id}">Remove</button>`}
                   </div>
                 </div>
