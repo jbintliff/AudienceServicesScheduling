@@ -1972,6 +1972,7 @@ function retryUndeliveredOutboxEmails() {
   if (settings.outgoingEnabled === false) {
     return { attempted: 0, skipped: true, reason: 'outgoing-disabled' };
   }
+  const emailDeliverySettings = loadEmailDeliverySettings();
   if (!settings.enabled || !settings.webhookUrl) {
     return { attempted: 0, skipped: true, reason: 'webhook-disabled' };
   }
@@ -6045,13 +6046,14 @@ function renderCalendarShiftCard(shift, options = {}) {
   const showRoleLocation = options.showRoleLocation !== false;
   const showTimeRange = options.showTimeRange !== false;
   const absenceReason = normalizeShiftAbsenceReason(shift?.absenceReason);
+  const weeklyShiftCount = shift?.agentId ? getAssignedShiftCount(shift.agentId, getActiveCalendarWeekReference()) : 0;
   const canMarkThisShiftAbsent = canMarkAbsence && isPublishedShift(shift);
 
   return `
     <div class="shift ${canManageCalendar && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="${canManageCalendar ? 'true' : 'false'}" data-shift-id="${shift.id}" style="${getShiftStyle(shift)} user-select:text; -webkit-user-select:text;">
       <div class="row" style="justify-content:flex-start; align-items:center; gap:6px; margin-bottom:2px;">
         ${canManageCalendar ? `<input type="checkbox" data-shift-select-checkbox="${shift.id}" ${selectedCalendarShiftIds.has(Number(shift.id)) ? 'checked' : ''} aria-label="Select shift for bulk actions" />` : ''}
-        <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>
+        <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}${shift?.agentId ? ` <span class="muted" style="font-weight:400;">(${weeklyShiftCount} this week)</span>` : ''}</strong>
       </div>
       ${showRoleLocation ? `${getShiftRoleLocationHtml(shift)}${showTimeRange ? `<br />${formatTimeRange(shift.start, shift.end)}` : ''}` : (showTimeRange ? `${formatTimeRange(shift.start, shift.end)}` : '')}
       ${!isAgentView ? `<div class="row" style="align-items:center; gap:4px; margin-top:3px;">${absenceReason ? `<span class="muted" style="text-transform:capitalize;">absent (${escapeHtml(absenceReason)})</span>` : ''}${canManageCalendar ? (shift.status === shiftStatuses.published ? `<button type="button" class="secondary" data-unpublish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Unpublish</button>` : `<button type="button" class="success" data-publish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Publish</button>`) : ''}</div><div class="row calendar-shift-actions" style="margin-top:2px;">${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}</div>` : ''}
@@ -6111,7 +6113,7 @@ function renderAdminScheduleDayShifts(dayShifts) {
             <div class="muted" style="font-weight:600; margin:4px 0 6px;">${escapeHtml(teamName)}</div>
             ${[...teamShifts].sort((leftShift, rightShift) => String(getAgent(leftShift?.agentId)?.name || '').localeCompare(String(getAgent(rightShift?.agentId)?.name || ''), undefined, { sensitivity: 'base' })).map((shift) => `
               <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}
+                <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}${shift?.agentId ? ` <span style="font-weight:400;">(${getAssignedShiftCount(shift.agentId, getActiveCalendarWeekReference())} this week)</span>` : ''}</strong><br />${getShiftRoleLocationHtml(shift)}
               </div>
             `).join('')}
           `).join('')}
@@ -6413,7 +6415,7 @@ function renderCalendarPage(currentUser) {
             <button id="calendar-previous-week" class="secondary" type="button">Previous week</button>
             <button id="calendar-current-week" class="secondary" type="button">Current week</button>
             <button id="calendar-next-week" class="secondary" type="button">Next week</button>
-            <input id="calendar-week-reference" type="date" lang="en-GB" value="${escapeHtml(weekReference)}" />
+            <input id="calendar-week-reference" type="date" value="${escapeHtml(weekReference)}" />
           </div>
         </div>
       </div>
@@ -6443,7 +6445,7 @@ function renderCalendarPage(currentUser) {
                   <option value="">No venue</option>
                   ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
                 </select>
-                <input name="date" type="date" lang="en-GB" required />
+                <input name="date" type="date" required />
               </div>
               <button type="submit">Add shift</button>
             </form>
@@ -6458,7 +6460,7 @@ function renderCalendarPage(currentUser) {
                   <option value="">Select agent</option>
                   ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
                 </select>
-                <input name="unavailableDate" type="date" lang="en-GB" required />
+                <input name="unavailableDate" type="date" required />
                 <input name="unavailableStart" type="time" value="09:00" required />
                 <input name="unavailableEnd" type="time" value="17:00" required />
               </div>
@@ -6505,7 +6507,7 @@ function renderCalendarPage(currentUser) {
               <option value="" ${!calendarFilters.agentName ? 'selected' : ''}>All agent names</option>
               ${agentNameItems.map((name) => `<option value="${escapeHtml(name)}" ${String(calendarFilters.agentName || '') === String(name) ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
             </select>
-            <input id="calendar-date-filter" type="date" lang="en-GB" value="${escapeHtml(calendarFilters.date)}" />
+            <input id="calendar-date-filter" type="date" value="${escapeHtml(calendarFilters.date)}" />
             <select id="calendar-day-filter">
               <option value="All" ${calendarFilters.day === 'All' ? 'selected' : ''}>All days</option>
               ${days.map((day) => `<option value="${day}" ${calendarFilters.day === day ? 'selected' : ''}>${day}</option>`).join('')}
