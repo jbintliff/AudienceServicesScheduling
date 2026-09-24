@@ -6331,7 +6331,7 @@ function exportPublishedScheduleCsv(fromDate, toDate) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `published-schedule-${fromDate}-to-${toDate}.csv`;
+  link.download = `ShiftboardShiftUpload-STANDARD-${fromDate}-to-${toDate}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }
