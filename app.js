@@ -8127,7 +8127,7 @@ function renderAdminOptionsPage(currentUser) {
         </div>
       </div>
 
-      <div class="grid" style="grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px;">
+      <div class="grid" style="grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px;">
         <div class="panel">
           <h2>Shift templates${blackoutDepartmentScope ? ` (${escapeHtml(blackoutDepartmentScope)})` : ' (All departments)'}</h2>
           <form id="add-shift-template-form" class="stack" style="margin-bottom:12px;">
