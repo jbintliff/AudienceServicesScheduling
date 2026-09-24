@@ -3959,9 +3959,20 @@ function getRoleColor(role) {
   return getGeneratedRoleColor(normalizedRole);
 }
 
-function getShiftRoleColor(shift) {
-  const role = shift.role || getAgent(shift.agentId)?.role;
-  return getRoleColor(role);
+const defaultLocationColorMap = {
+  'academy of music': '#A9B4E4',
+  'kimmel center': '#F4A997',
+  'miller theater': '#7AACAF',
+  default: '#9BB7D4'
+};
+
+function getShiftLocationColor(shift) {
+  const normalizedLocation = String(shift?.location || '').trim().toLowerCase();
+  return defaultLocationColorMap[normalizedLocation] || (normalizedLocation ? getGeneratedRoleColor(normalizedLocation) : defaultLocationColorMap.default);
+}
+
+function getShiftRoleOutlineColor(shift) {
+  return getRoleColor(shift?.role || getAgent(shift?.agentId)?.role);
 }
 
 function isShiftOfferedForPickup(shift) {
@@ -3983,9 +3994,10 @@ function getShiftStyle(shift) {
   const hasAttentionBorder = isShiftOfferedForPickup(shift) || Boolean(normalizeShiftAbsenceReason(shift?.absenceReason));
   const attentionBorder = hasAttentionBorder ? ' border:2px dashed rgba(255,255,255,0.8);' : '';
   const absentFade = normalizeShiftAbsenceReason(shift?.absenceReason) ? ' opacity:0.72;' : '';
-  const shiftColor = isShiftAssignedToTeamLead(shift) ? '#9BB7D4' : getShiftRoleColor(shift);
+  const shiftColor = getShiftLocationColor(shift);
+  const roleOutline = getShiftRoleOutlineColor(shift);
   const draftFade = shift?.status === shiftStatuses.published ? '' : ' opacity:0.52;';
-  return `background:${shiftColor}; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}${absentFade || draftFade}`;
+  return `background:${shiftColor}; outline:2px solid ${roleOutline}; outline-offset:-2px; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}${absentFade || draftFade}`;
 }
 
 function getPlannerWeekIsoDateForDay(dayLabel) {
