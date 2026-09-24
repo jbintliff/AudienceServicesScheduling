@@ -5074,6 +5074,7 @@ function openBulkShiftEditModal(shifts, onSave) {
           <label style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:150px;"><span>End time</span><input name="end" type="time" /></label>
         </div>
         <label style="display:flex; flex-direction:column; gap:6px;"><span>Role</span><select name="role"><option value="">Leave unchanged</option><option value="__clear__">Clear role</option>${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}</select></label>
+        <label style="display:flex; flex-direction:column; gap:6px;"><span>Agent Location</span><select name="agentLocation"><option value="">Leave unchanged</option><option value="__clear__">Clear agent location</option>${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}</select></label>
         <label style="display:flex; flex-direction:column; gap:6px;"><span>Location / venue</span><select name="location"><option value="">Leave unchanged</option><option value="__clear__">Clear location / venue</option>${getLocationCatalogForScope().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}</select></label>
         <div class="row" style="justify-content:flex-end; margin-top:8px;"><button type="button" id="bulk-shift-edit-cancel" class="secondary">Cancel</button><button type="submit">Apply changes</button></div>
       </form>
@@ -5088,8 +5089,9 @@ function openBulkShiftEditModal(shifts, onSave) {
     const start = String(formData.get('start') || '').trim();
     const end = String(formData.get('end') || '').trim();
     const roleValue = String(formData.get('role') || '').trim();
+    const agentLocationValue = String(formData.get('agentLocation') || '').trim();
     const locationValue = String(formData.get('location') || '').trim();
-    if (!start && !end && !roleValue && !locationValue) {
+    if (!start && !end && !roleValue && !agentLocationValue && !locationValue) {
       alert('Choose at least one field to change.');
       return;
     }
@@ -5101,6 +5103,7 @@ function openBulkShiftEditModal(shifts, onSave) {
       start,
       end,
       role: roleValue === '__clear__' ? null : roleValue,
+      agentLocation: agentLocationValue === '__clear__' ? null : agentLocationValue,
       location: locationValue === '__clear__' ? null : locationValue
     });
     if (didSave) closeModal();
@@ -12389,7 +12392,7 @@ function bindEvents() {
     if (!canManageCalendar || selectedCalendarShiftIds.size === 0) return;
     const selectedShifts = state.shifts.filter((shift) => selectedCalendarShiftIds.has(Number(shift.id)));
     if (selectedShifts.length === 0) return;
-    openBulkShiftEditModal(selectedShifts, async ({ start, end, role, location }) => {
+    openBulkShiftEditModal(selectedShifts, async ({ start, end, role, agentLocation, location }) => {
       const updatedShifts = [];
       for (const shift of selectedShifts) {
         const nextStart = start || shift.start;
@@ -12413,6 +12416,12 @@ function bindEvents() {
       }
       const updatedById = new Map(updatedShifts.map((shift) => [Number(shift.id), shift]));
       state.shifts = state.shifts.map((shift) => updatedById.get(Number(shift.id)) || shift);
+      if (agentLocation !== undefined) {
+        const selectedAgentIds = new Set(selectedShifts.map((shift) => Number(shift.agentId)).filter(Boolean));
+        state.agents = state.agents.map((agent) => selectedAgentIds.has(Number(agent.id))
+          ? { ...agent, location: agentLocation === null ? '' : normalizeAgentLocation(agentLocation), profileUpdatedAt: getCurrentIsoTimestamp(), updatedAt: getCurrentIsoTimestamp() }
+          : agent);
+      }
       saveState();
       selectedCalendarShiftIds.clear();
       render();
