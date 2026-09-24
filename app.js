@@ -8127,7 +8127,7 @@ function renderAdminOptionsPage(currentUser) {
         </div>
       </div>
 
-      <div class="grid" style="grid-template-columns:1fr; gap:12px;">
+      <div class="grid" style="grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px;">
         <div class="panel">
           <h2>Shift templates${blackoutDepartmentScope ? ` (${escapeHtml(blackoutDepartmentScope)})` : ' (All departments)'}</h2>
           <form id="add-shift-template-form" class="stack" style="margin-bottom:12px;">
@@ -8135,14 +8135,6 @@ function renderAdminOptionsPage(currentUser) {
               <input name="name" placeholder="Template name" required />
               <input name="start" type="time" value="08:00" required />
               <input name="end" type="time" value="16:00" required />
-              <select name="role">
-                <option value="">No default role</option>
-                ${roleChoices.map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
-              </select>
-              <select name="location">
-                <option value="">No default venue</option>
-                ${locationChoices.map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
-              </select>
               <select name="department">
                 <option value="" ${!blackoutDepartmentScope ? 'selected' : ''}>All departments</option>
                 ${departmentOptions.map((department) => `<option value="${department}" ${blackoutDepartmentScope === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
@@ -8162,14 +8154,6 @@ function renderAdminOptionsPage(currentUser) {
                     <input name="name" value="${escapeHtml(template.name || '')}" required />
                     <input name="start" type="time" value="${escapeHtml(normalizeTimeInputValue(template.start || '08:00') || '08:00')}" required />
                     <input name="end" type="time" value="${escapeHtml(normalizeTimeInputValue(template.end || '16:00') || '16:00')}" required />
-                    <select name="role">
-                      <option value="">No default role</option>
-                      ${roleChoices.map((role) => `<option value="${escapeHtml(role)}" ${String(template.role || '') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
-                    </select>
-                    <select name="location">
-                      <option value="">No default venue</option>
-                      ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(template.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
-                    </select>
                     <select name="department">
                       <option value="" ${!template.department ? 'selected' : ''}>All departments</option>
                       ${departmentOptions.map((department) => `<option value="${department}" ${template.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
@@ -8188,7 +8172,7 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px; align-items:start;">
+        <div style="display:contents;">
         <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-roles">
           <h2>Roles${blackoutDepartmentScope ? ` (${escapeHtml(blackoutDepartmentScope)})` : ' (All departments)'}</h2>
           <form id="add-shift-role-form" class="row" style="margin-bottom:10px;">
@@ -8223,7 +8207,7 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
-        <div class="stack">
+        <div style="display:contents;">
         <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-agent-locations">
           <h2>Agent Locations</h2>
           <p class="muted">Manage the Location options assigned to agent profiles. These are separate from shift Venues.</p>
@@ -11090,8 +11074,6 @@ function bindEvents() {
     const name = String(formData.get('name') || '').trim();
     const start = String(formData.get('start') || '').trim();
     const end = String(formData.get('end') || '').trim();
-    const requestedRole = String(formData.get('role') || '').trim();
-    const requestedLocation = String(formData.get('location') || '').trim();
     const active = formData.get('active') !== null;
     if (!name || !start || !end || toMinutes(end) <= toMinutes(start)) {
       alert('Template name, start, and end are required. Use 12-hour time (for example, 8:00 AM). End time must be later than start time.');
@@ -11105,8 +11087,8 @@ function bindEvents() {
       end,
       durationHours: getDurationHours(start, end),
       active,
-      role: requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '',
-      location: requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '',
+      role: '',
+      location: '',
       department: normalizeDepartment(formData.get('department'))
     });
     saveState();
@@ -11128,8 +11110,6 @@ function bindEvents() {
       const name = String(formData.get('name') || '').trim();
       const start = String(formData.get('start') || '').trim();
       const end = String(formData.get('end') || '').trim();
-      const requestedRole = String(formData.get('role') || '').trim();
-      const requestedLocation = String(formData.get('location') || '').trim();
       const active = formData.get('active') !== null;
       if (!name || !start || !end || toMinutes(end) <= toMinutes(start)) {
         alert('Template name, start, and end are required. Use 12-hour time (for example, 8:00 AM). End time must be later than start time.');
@@ -11144,8 +11124,8 @@ function bindEvents() {
             end,
             durationHours: getDurationHours(start, end),
             active,
-            role: requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '',
-            location: requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '',
+            role: '',
+            location: '',
             department: normalizeDepartment(formData.get('department'))
           }
         : template);
