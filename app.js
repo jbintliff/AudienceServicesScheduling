@@ -12658,12 +12658,8 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll('[data-paste-shift-day]').forEach((button) => {
-    button.addEventListener('click', async (event) => {
-      event.preventDefault();
-      if (!canManageCalendar) return;
-      const day = button.getAttribute('data-paste-shift-day');
-      if (!copiedShiftTemplate || !day) return;
+  const pasteCopiedShiftToDay = async (day) => {
+      if (!canManageCalendar || !copiedShiftTemplate || !day) return;
       const pastedShift = cloneShift(copiedShiftTemplate, day);
       if (!await confirmShiftAssignmentWithTimeOffWarning(pastedShift.agentId, pastedShift.date, pastedShift.start, pastedShift.end, {
         durationHours: pastedShift.durationHours,
@@ -12672,6 +12668,20 @@ function bindEvents() {
       state.shifts.push(pastedShift);
       saveState();
       render();
+  };
+
+  document.querySelectorAll('[data-paste-shift-day]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      await pasteCopiedShiftToDay(button.getAttribute('data-paste-shift-day'));
+    });
+  });
+
+  document.querySelectorAll('.day-card[data-day]').forEach((card) => {
+    card.addEventListener('click', async (event) => {
+      if (!canManageCalendar || !copiedShiftTemplate) return;
+      if (event.target.closest('button, input, select, textarea, a, .shift')) return;
+      await pasteCopiedShiftToDay(card.getAttribute('data-day'));
     });
   });
 
