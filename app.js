@@ -3960,14 +3960,13 @@ function getRoleColor(role) {
 }
 
 const defaultLocationColorMap = {
-  'academy of music': '#A9B4E4',
-  'kimmel center': '#F4A997',
-  'miller theater': '#7AACAF',
+  'in person/ tp': '#A9B4E4',
+  'work from home': '#7AACAF',
   default: '#9BB7D4'
 };
 
 function getShiftLocationColor(shift) {
-  const normalizedLocation = String(shift?.location || '').trim().toLowerCase();
+  const normalizedLocation = String(getAgent(shift?.agentId)?.location || '').trim().toLowerCase();
   return defaultLocationColorMap[normalizedLocation] || (normalizedLocation ? getGeneratedRoleColor(normalizedLocation) : defaultLocationColorMap.default);
 }
 
