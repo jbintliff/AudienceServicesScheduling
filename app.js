@@ -3961,7 +3961,7 @@ function getShiftStyle(shift) {
   const attentionBorder = hasAttentionBorder ? ' border:2px dashed rgba(255,255,255,0.8);' : '';
   const absentFade = normalizeShiftAbsenceReason(shift?.absenceReason) ? ' opacity:0.72;' : '';
   const shiftColor = isShiftAssignedToTeamLead(shift) ? '#9BB7D4' : getShiftRoleColor(shift);
-  const draftFade = shift?.status === shiftStatuses.published ? '' : ' opacity:0.72;';
+  const draftFade = shift?.status === shiftStatuses.published ? '' : ' opacity:0.52;';
   return `background:${shiftColor}; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}${absentFade || draftFade}`;
 }
 
@@ -5733,6 +5733,22 @@ function getSpendByDay() {
   }, {});
 }
 
+function getScheduleDaySummary(shifts) {
+  const assignedAgentIds = new Set();
+  let cost = 0;
+  (Array.isArray(shifts) ? shifts : []).forEach((shift) => {
+    const agentId = Number(shift?.agentId);
+    const agent = getAgent(agentId);
+    if (!agentId || !agent) return;
+    assignedAgentIds.add(agentId);
+    cost += (Number(agent.payRate) || 0) * (Number(shift.durationHours) || getDurationHours(shift.start, shift.end));
+  });
+  return {
+    agentCount: assignedAgentIds.size,
+    cost
+  };
+}
+
 function getAssignedHours(agentId, referenceDateValue = '') {
   const normalizedAgentId = Number(agentId);
   const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
@@ -6057,13 +6073,14 @@ function renderCalendarShiftCard(shift, options = {}) {
   const showTimeRange = options.showTimeRange !== false;
   const absenceReason = normalizeShiftAbsenceReason(shift?.absenceReason);
   const weeklyShiftCount = shift?.agentId ? getAssignedShiftCount(shift.agentId, getActiveCalendarWeekReference()) : 0;
+  const weeklyShiftHours = shift?.agentId ? getAssignedHours(shift.agentId, getActiveCalendarWeekReference()) : 0;
   const canMarkThisShiftAbsent = canMarkAbsence && isPublishedShift(shift);
 
   return `
     <div class="shift ${canManageCalendar && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="${canManageCalendar ? 'true' : 'false'}" data-shift-id="${shift.id}" style="${getShiftStyle(shift)} user-select:text; -webkit-user-select:text;">
       <div class="row" style="justify-content:flex-start; align-items:center; gap:6px; margin-bottom:2px;">
         ${canManageCalendar ? `<input type="checkbox" data-shift-select-checkbox="${shift.id}" ${selectedCalendarShiftIds.has(Number(shift.id)) ? 'checked' : ''} aria-label="Select shift for bulk actions" />` : ''}
-        <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}${shift?.agentId ? ` <span class="muted" style="font-weight:400;">(${weeklyShiftCount} this week)</span>` : ''}</strong>
+        <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}${shift?.agentId ? ` <span class="muted" style="font-weight:400;">(${weeklyShiftCount} shifts, ${weeklyShiftHours} hrs)</span>` : ''}</strong>
       </div>
       ${showRoleLocation ? `${getShiftRoleLocationHtml(shift)}${showTimeRange ? `<br />${formatTimeRange(shift.start, shift.end)}` : ''}` : (showTimeRange ? `${formatTimeRange(shift.start, shift.end)}` : '')}
       ${!isAgentView ? `<div class="row" style="align-items:center; gap:4px; margin-top:3px;">${absenceReason ? `<span class="muted" style="text-transform:capitalize;">absent (${escapeHtml(absenceReason)})</span>` : ''}${canManageCalendar ? (shift.status === shiftStatuses.published ? `<button type="button" class="secondary" data-unpublish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Unpublish</button>` : `<button type="button" class="success" data-publish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Publish</button>`) : ''}</div><div class="row calendar-shift-actions" style="margin-top:2px;">${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}</div>` : ''}
@@ -6123,7 +6140,7 @@ function renderAdminScheduleDayShifts(dayShifts) {
             <div class="muted" style="font-weight:600; margin:4px 0 6px;">${escapeHtml(teamName)}</div>
             ${[...teamShifts].sort((leftShift, rightShift) => String(getAgent(leftShift?.agentId)?.name || '').localeCompare(String(getAgent(rightShift?.agentId)?.name || ''), undefined, { sensitivity: 'base' })).map((shift) => `
               <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}${shift?.agentId ? ` <span style="font-weight:400;">(${getAssignedShiftCount(shift.agentId, getActiveCalendarWeekReference())} this week)</span>` : ''}</strong><br />${getShiftRoleLocationHtml(shift)}
+                <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}${shift?.agentId ? ` <span style="font-weight:400;">(${getAssignedShiftCount(shift.agentId, getActiveCalendarWeekReference())} shifts, ${getAssignedHours(shift.agentId, getActiveCalendarWeekReference())} hrs)</span>` : ''}</strong><br />${getShiftRoleLocationHtml(shift)}
               </div>
             `).join('')}
           `).join('')}
@@ -6595,6 +6612,7 @@ function renderCalendarPage(currentUser) {
               .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
               .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === dayDate);
             const hasDayRequests = dayRequests.length > 0;
+            const daySummary = getScheduleDaySummary(sortedVisibleCalendarShifts.filter((shift) => shift.day === day));
             return `
             <div class="day-card" data-day="${day}" data-date="${escapeHtml(dayDate)}">
               <div class="row" style="margin-bottom:6px;">
@@ -6602,6 +6620,7 @@ function renderCalendarPage(currentUser) {
                   <div ${hasDayRequests ? `data-view-day-availability-requests="${escapeHtml(dayDate)}" style="cursor:pointer;" title="View requests for this date"` : ''}>
                     <h4 style="margin:0;">${day}</h4>
                     <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
+                    <div class="muted" style="font-size:0.72rem;">${daySummary.agentCount} agent${daySummary.agentCount === 1 ? '' : 's'} • $${daySummary.cost.toFixed(2)}</div>
                   </div>
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                   ${canManageCalendar ? `<div style="margin-top:6px;"><button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate || copiedScheduleTemplate ? '' : 'disabled'}>Paste here</button></div>` : ''}
