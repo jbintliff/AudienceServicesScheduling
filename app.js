@@ -1,6 +1,6 @@
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['WFH', 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
-const teamOptions = ['Patron Services Representative', 'Patron Services Associate', 'Patron Services Management', 'Box Office'];
+const teamOptions = ['Patron Services Representative', 'Patron Services', 'Patron Services Associate', 'Audience Services Management', 'Box Office'];
 const departmentOptions = ['Patron Services', 'Box Office'];
 const agentSkillOptions = [
   { value: 'single-tickets', label: 'Single Tickets' },
@@ -6006,10 +6006,13 @@ function getTeamBadgeStyle(team) {
   if (normalizedTeam === 'Patron Services Representative') {
     return 'background:#7AACAF; color:#17383B; border:1px solid rgba(23,56,59,0.25);';
   }
+  if (normalizedTeam === 'Patron Services') {
+    return 'background:#E7D2A8; color:#413322; border:1px solid rgba(65,51,34,0.25);';
+  }
   if (normalizedTeam === 'Patron Services Associate') {
     return 'background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);';
   }
-  if (normalizedTeam === 'Patron Services Management') {
+  if (normalizedTeam === 'Audience Services Management') {
     return 'background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);';
   }
   if (normalizedTeam === 'Box Office') {
@@ -6135,9 +6138,10 @@ function getCalendarShiftSortMinutes(timeValue) {
 function getAgentTeamSortPriority(agentId) {
   const normalizedTeam = normalizeTeamLabel(getAgent(agentId)?.team || '');
   if (normalizedTeam === 'Patron Services Representative') return 0;
-  if (normalizedTeam === 'Patron Services Associate') return 1;
-  if (normalizedTeam === 'Patron Services Management') return 2;
-  return 3;
+  if (normalizedTeam === 'Patron Services') return 1;
+  if (normalizedTeam === 'Patron Services Associate') return 2;
+  if (normalizedTeam === 'Audience Services Management') return 3;
+  return 4;
 }
 
 function compareCalendarShiftDisplayOrder(leftShift, rightShift) {
@@ -6302,8 +6306,8 @@ function renderAdminScheduleDayShifts(dayShifts) {
           shiftsByTeam.set(teamName, existing);
         });
         const sortedTeamGroups = Array.from(shiftsByTeam.entries()).sort(([leftTeam], [rightTeam]) => {
-          const leftPriority = leftTeam === 'Patron Services Representative' ? 0 : (leftTeam === 'Patron Services Associate' ? 1 : 2);
-          const rightPriority = rightTeam === 'Patron Services Representative' ? 0 : (rightTeam === 'Patron Services Associate' ? 1 : 2);
+          const leftPriority = leftTeam === 'Patron Services Representative' ? 0 : (leftTeam === 'Patron Services' ? 1 : (leftTeam === 'Patron Services Associate' ? 2 : (leftTeam === 'Audience Services Management' ? 3 : 4)));
+          const rightPriority = rightTeam === 'Patron Services Representative' ? 0 : (rightTeam === 'Patron Services' ? 1 : (rightTeam === 'Patron Services Associate' ? 2 : (rightTeam === 'Audience Services Management' ? 3 : 4)));
           return leftPriority - rightPriority || leftTeam.localeCompare(rightTeam);
         });
         return `
@@ -6356,8 +6360,8 @@ function renderCalendarDayShiftSections(dayShifts, options = {}) {
           shiftsByTeam.set(teamName, existing);
         });
         const sortedTeamGroups = Array.from(shiftsByTeam.entries()).sort(([leftTeam], [rightTeam]) => {
-          const leftPriority = leftTeam === 'Patron Services Representative' ? 0 : (leftTeam === 'Patron Services Associate' ? 1 : 2);
-          const rightPriority = rightTeam === 'Patron Services Representative' ? 0 : (rightTeam === 'Patron Services Associate' ? 1 : 2);
+          const leftPriority = leftTeam === 'Patron Services Representative' ? 0 : (leftTeam === 'Patron Services' ? 1 : (leftTeam === 'Patron Services Associate' ? 2 : (leftTeam === 'Audience Services Management' ? 3 : 4)));
+          const rightPriority = rightTeam === 'Patron Services Representative' ? 0 : (rightTeam === 'Patron Services' ? 1 : (rightTeam === 'Patron Services Associate' ? 2 : (rightTeam === 'Audience Services Management' ? 3 : 4)));
           return leftPriority - rightPriority || leftTeam.localeCompare(rightTeam);
         });
         return `
