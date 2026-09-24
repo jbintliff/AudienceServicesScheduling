@@ -3583,9 +3583,14 @@ function loadState() {
       agentLocationCatalog: normalizedAgentLocationCatalog,
       shifts: Array.isArray(parsed.shifts)
         ? parsed.shifts.map((shift) => {
+            const rawLocation = String(shift.location || '').trim();
+            const normalizedLocation = normalizedLocationCatalog.includes(rawLocation) ? rawLocation : '';
+            const matchingAgent = normalizedAgents.find((agent) => Number(agent.id) === Number(shift.agentId));
+            const agentLocation = normalizeAgentLocation(matchingAgent?.location);
+            const finalLocation = normalizedLocation && normalizedLocation !== agentLocation ? normalizedLocation : '';
             const normalizedShift = {
               ...shift,
-              location: normalizedLocationCatalog.includes(String(shift.location || '').trim()) ? shift.location : '',
+              location: finalLocation,
               role: normalizeRoleLabel(shift.role || roleByAgentId[String(shift.agentId)] || normalizedRoleCatalog[0], normalizedRoleCatalog),
               status: shift.status === shiftStatuses.draft || shift.status === shiftStatuses.published
                 ? shift.status
@@ -3969,8 +3974,15 @@ const defaultLocationColorMap = {
 };
 
 function getShiftLocationColor(shift) {
-  const normalizedLocation = String(getAgent(shift?.agentId)?.location || '').trim().toLowerCase();
-  return getAgentLocationColor(normalizedLocation);
+  const normalizedLocation = String(shift?.location || '').trim().toLowerCase();
+  return getLocationColor(normalizedLocation);
+}
+
+function getLocationColor(location) {
+  const normalizedLocation = String(location || '').trim().toLowerCase();
+  const savedColor = state.locationColors?.[normalizedLocation];
+  if (savedColor) return savedColor;
+  return defaultLocationColorMap[normalizedLocation] || (normalizedLocation ? getGeneratedRoleColor(normalizedLocation) : defaultLocationColorMap.default);
 }
 
 function getAgentLocationColor(location) {
