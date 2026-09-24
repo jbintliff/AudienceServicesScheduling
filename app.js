@@ -6053,7 +6053,7 @@ function renderCalendarShiftCard(shift, options = {}) {
         <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>
       </div>
       ${showRoleLocation ? `${getShiftRoleLocationHtml(shift)}${showTimeRange ? `<br />${formatTimeRange(shift.start, shift.end)}` : ''}` : (showTimeRange ? `${formatTimeRange(shift.start, shift.end)}` : '')}
-      ${!isAgentView ? `<div class="row" style="align-items:center; gap:4px; margin-top:3px;">${absenceReason ? `<span class="muted" style="text-transform:capitalize;">absent (${escapeHtml(absenceReason)})</span>` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Publish</button>` : ''}</div><div class="row calendar-shift-actions" style="margin-top:2px;">${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}</div>` : ''}
+      ${!isAgentView ? `<div class="row" style="align-items:center; gap:4px; margin-top:3px;">${absenceReason ? `<span class="muted" style="text-transform:capitalize;">absent (${escapeHtml(absenceReason)})</span>` : ''}${canManageCalendar ? (shift.status === shiftStatuses.published ? `<button type="button" class="secondary" data-unpublish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Unpublish</button>` : `<button type="button" class="success" data-publish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Publish</button>`) : ''}</div><div class="row calendar-shift-actions" style="margin-top:2px;">${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}</div>` : ''}
       ${isAgentView ? `
         ${(absenceReason || isShiftOfferedForPickup(shift)) ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${absenceReason ? `absent (${escapeHtml(absenceReason)})` : ''}${absenceReason && isShiftOfferedForPickup(shift) ? ' • ' : ''}${isShiftOfferedForPickup(shift) ? 'offered for pickup' : ''}</div>` : ''}
         <div class="row" style="margin-top:6px;">
@@ -12214,6 +12214,23 @@ function bindEvents() {
       if (shiftToPublish.status !== shiftStatuses.published && shouldSendEmails) {
         sendShiftPublishedEmail({ ...shiftToPublish, status: shiftStatuses.published });
       }
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-unpublish-shift]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!canManageCalendar) return;
+      const id = Number(button.getAttribute('data-unpublish-shift'));
+      const shift = state.shifts.find((item) => item.id === id);
+      if (!shift || shift.status !== shiftStatuses.published) return;
+      const shouldUnpublish = confirm('Unpublish this shift? Agents will no longer see it on their published schedule.');
+      if (!shouldUnpublish) return;
+      const updatedAt = getCurrentIsoTimestamp();
+      state.shifts = state.shifts.map((item) => item.id === id
+        ? { ...item, status: shiftStatuses.draft, publishedAt: '', updatedAt }
+        : item);
       saveState();
       render();
     });
