@@ -5746,11 +5746,21 @@ function getAssignedShiftCount(agentId, referenceDateValue = '', options = {}) {
   const normalizedAgentId = Number(agentId);
   const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
   const excludingShiftId = Number(options.excludingShiftId) || null;
-  return state.shifts
+  const assignedShiftCount = state.shifts
     .filter((shift) => Number(shift.agentId) === normalizedAgentId)
     .filter((shift) => shiftIsInWeek(shift, weekDates))
     .filter((shift) => !excludingShiftId || Number(shift.id) !== excludingShiftId)
     .length;
+  const approvedPtoCount = getAllAvailabilityRequests()
+    .filter((request) => Number(request.agentId) === normalizedAgentId)
+    .filter((request) => normalizeAvailabilityRequestStatus(request.status) === 'approved')
+    .filter((request) => String(request.unavailabilityType || '').trim() === 'PTO')
+    .filter((request) => {
+      const requestDate = String(request.unavailableDate || '').slice(0, 10);
+      return requestDate >= weekDates.Mon.iso && requestDate <= weekDates.Sun.iso;
+    })
+    .length;
+  return assignedShiftCount + approvedPtoCount;
 }
 
 function isInOfficeRole(role) {
@@ -6252,6 +6262,48 @@ async function exportData() {
   URL.revokeObjectURL(url);
 }
 
+function escapeCsvValue(value) {
+  const normalized = String(value ?? '');
+  return /[",\r\n]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized;
+}
+
+function formatShiftDateForUpload(dateValue) {
+  const normalized = String(dateValue || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+  const [year, month, day] = normalized.split('-');
+  return `${Number(month)}/${Number(day)}/${year}`;
+}
+
+function exportPublishedScheduleCsv() {
+  const headers = ['Date', 'Start', 'End', 'Team', 'Quantity', 'Auto-Assign', 'Role', 'Location', 'Assigned', 'Subject', 'Details', 'Room / Floor', 'Publish'];
+  const publishedShifts = [...state.shifts]
+    .filter((shift) => isPublishedShift(shift))
+    .sort(compareCalendarShiftDisplayOrder);
+  const rows = publishedShifts.map((shift) => [
+    formatShiftDateForUpload(shift.date),
+    formatTime12Hour(shift.start),
+    formatTime12Hour(shift.end),
+    getAgent(shift.agentId)?.team || '',
+    shift.agentId ? '1' : '',
+    '',
+    shift.role || '',
+    shift.location || '',
+    getAgentAccountEmail(shift.agentId) || getAgent(shift.agentId)?.name || '',
+    shift.title || '',
+    shift.details || '',
+    shift.roomFloor || '',
+    'Yes'
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map(escapeCsvValue).join(',')).join('\r\n');
+  const blob = new Blob([`\uFEFF${csv}\r\n`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `published-schedule-${getCurrentLocalIsoDate()}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function importData(file) {
   try {
     const fileText = await readFileAsText(file);
@@ -6313,7 +6365,7 @@ function renderAdminNavigationLinks(options = {}) {
       <div style="position:absolute; top:calc(100% + 6px); left:0; min-width:220px; background:#0b1220; border:1px solid rgba(255,255,255,0.18); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; z-index:1000;">
         <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Admin Options</a>
         ${isBoxOfficeScoped ? '' : '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Email Outbox</a>'}
-        ${includeExport ? '<button id="export-data-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export JSON</button>' : ''}
+        ${includeExport ? '<button id="export-data-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export JSON</button><button id="export-published-schedule-csv-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export published schedule CSV</button>' : ''}
         ${includeImport ? '<label class="secondary" style="display:block; width:100%; box-sizing:border-box; color:#fff; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); cursor:pointer;"><input id="import-data-input" type="file" accept="application/json" hidden />Import JSON</label>' : ''}
       </div>
     </details>
@@ -11858,6 +11910,7 @@ function bindEvents() {
   });
 
   document.getElementById('export-data-btn')?.addEventListener('click', exportData);
+  document.getElementById('export-published-schedule-csv-btn')?.addEventListener('click', exportPublishedScheduleCsv);
   document.getElementById('import-data-input')?.addEventListener('change', (event) => {
     const [file] = event.target.files || [];
     if (file) importData(file);
