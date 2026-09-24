@@ -3959,7 +3959,8 @@ function getShiftStyle(shift) {
   const attentionBorder = hasAttentionBorder ? ' border:2px dashed rgba(255,255,255,0.8);' : '';
   const absentFade = normalizeShiftAbsenceReason(shift?.absenceReason) ? ' opacity:0.72;' : '';
   const shiftColor = isShiftAssignedToTeamLead(shift) ? '#9BB7D4' : getShiftRoleColor(shift);
-  return `background:${shiftColor}; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}${absentFade}`;
+  const draftFade = shift?.status === shiftStatuses.published ? '' : ' opacity:0.72;';
+  return `background:${shiftColor}; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}${absentFade || draftFade}`;
 }
 
 function getPlannerWeekIsoDateForDay(dayLabel) {
@@ -6052,9 +6053,9 @@ function renderCalendarShiftCard(shift, options = {}) {
         <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong>
       </div>
       ${showRoleLocation ? `${getShiftRoleLocationHtml(shift)}${showTimeRange ? `<br />${formatTimeRange(shift.start, shift.end)}` : ''}` : (showTimeRange ? `${formatTimeRange(shift.start, shift.end)}` : '')}
-      ${!isAgentView ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}</div><div class="row calendar-shift-actions" style="margin-top:6px;">${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}">Publish</button>` : ''}</div>` : ''}
+      ${!isAgentView ? `<div class="row" style="align-items:center; gap:4px; margin-top:3px;">${absenceReason ? `<span class="muted" style="text-transform:capitalize;">absent (${escapeHtml(absenceReason)})</span>` : ''}${canManageCalendar && shift.status !== shiftStatuses.published ? `<button type="button" class="success" data-publish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Publish</button>` : ''}</div><div class="row calendar-shift-actions" style="margin-top:2px;">${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}</div>` : ''}
       ${isAgentView ? `
-        <div class="muted" style="margin-top:6px; text-transform:capitalize;">${escapeHtml(shift.status || shiftStatuses.draft)}${absenceReason ? ` • absent (${escapeHtml(absenceReason)})` : ''}${isShiftOfferedForPickup(shift) ? ' • offered for pickup' : ''}</div>
+        ${(absenceReason || isShiftOfferedForPickup(shift)) ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${absenceReason ? `absent (${escapeHtml(absenceReason)})` : ''}${absenceReason && isShiftOfferedForPickup(shift) ? ' • ' : ''}${isShiftOfferedForPickup(shift) ? 'offered for pickup' : ''}</div>` : ''}
         <div class="row" style="margin-top:6px;">
           ${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}
           ${canAgentOfferShift(shift, currentAgentId) ? `<button type="button" class="secondary" data-offer-shift="${shift.id}">${isShiftOfferedForPickup(shift) ? 'Cancel offer' : 'Offer shift'}</button>` : ''}
@@ -6377,12 +6378,12 @@ function renderCalendarPage(currentUser) {
         .calendar-view select,
         .calendar-view button { padding: 6px 8px; min-height: 32px; }
         .calendar-view .day-row { gap: 6px; }
-        .calendar-view .day-card { padding: 5px !important; min-height: 0; }
-        .calendar-view .shift { padding: 4px !important; margin-bottom: 3px; line-height: 1.05; font-size: 0.78rem; color: #000; overflow: hidden; }
-        .calendar-view .shift strong { font-size: 0.8rem; }
+        .calendar-view .day-card { padding: 4px !important; min-height: 0; }
+        .calendar-view .shift { padding: 3px !important; margin-bottom: 2px; line-height: 1; font-size: 0.7rem; color: #000; overflow: hidden; }
+        .calendar-view .shift strong { font-size: 0.72rem; }
         .calendar-view .shift .muted { color: #000 !important; }
-        .calendar-view .calendar-shift-actions { gap: 3px; margin-top: 3px !important; flex-wrap: wrap; }
-        .calendar-view .calendar-shift-actions button { padding: 2px 4px; min-height: 23px; font-size: 0.68rem; flex: 1 1 auto; min-width: 0; }
+        .calendar-view .calendar-shift-actions { gap: 2px; margin-top: 2px !important; flex-wrap: wrap; }
+        .calendar-view .calendar-shift-actions button { padding: 1px 3px; min-height: 20px; font-size: 0.62rem; flex: 1 1 auto; min-width: 0; }
         .calendar-view h1 { margin: 0; font-size: 1.45rem; }
         .calendar-view h2 { margin-top: 0; margin-bottom: 6px; }
         .calendar-view h3 { margin-top: 0; margin-bottom: 6px; }
