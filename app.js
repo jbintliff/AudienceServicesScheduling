@@ -6653,6 +6653,10 @@ function renderCalendarPage(currentUser) {
                   <option value="">No role</option>
                   ${getRoleLegendItems().map((role) => `<option value="${role}">${escapeHtml(role)}</option>`).join('')}
                 </select>
+                <select name="agentLocation">
+                  <option value="">No location</option>
+                  ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
+                </select>
               </div>
               <div class="row">
                 <input name="start" type="time" value="08:00" required />
@@ -10980,6 +10984,7 @@ function bindEvents() {
     const agentId = formData.get('agentId') ? Number(formData.get('agentId')) : null;
     const requestedRole = formData.get('role')?.toString().trim() || '';
     const role = requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '';
+    const agentLocation = normalizeAgentLocation(formData.get('agentLocation'));
     const start = formData.get('start')?.toString();
     const end = formData.get('end')?.toString();
     const requestedLocation = formData.get('location')?.toString().trim() || '';
@@ -11015,6 +11020,11 @@ function bindEvents() {
       updatedAt: createdAt,
       publishedAt: ''
     });
+    if (agentId && agentLocation) {
+      state.agents = state.agents.map((agent) => Number(agent.id) === agentId
+        ? { ...agent, location: agentLocation, updatedAt: createdAt, profileUpdatedAt: createdAt }
+        : agent);
+    }
     saveState();
     if (!didPersistShifts()) {
       void saveStateToBackendFallback();
