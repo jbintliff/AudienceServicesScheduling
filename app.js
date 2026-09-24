@@ -588,14 +588,6 @@ const defaultAuthUsers = [
   { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 3 }
 ];
 
-let hasStoredInPersonShifts = false;
-try {
-  const storedState = JSON.parse(localStorage.getItem(storageKey) || '{}');
-  hasStoredInPersonShifts = Array.isArray(storedState.shifts)
-    && storedState.shifts.some((shift) => isInOfficeRole(shift?.role));
-} catch {
-  hasStoredInPersonShifts = false;
-}
 const state = loadState();
 teamOptions = normalizeTeamCatalog(state.teamCatalog);
 let authUsers = loadAuthUsers();
@@ -631,9 +623,6 @@ const defaultEmailDeliverySettings = {
 let emailDeliverySettings = loadEmailDeliverySettings();
 let availabilitySubmitFallbackBound = false;
 const root = document.getElementById('root');
-if (hasStoredInPersonShifts) {
-  saveState();
-}
 
 function normalizeOptionCatalog(values, fallbackValues = []) {
   const source = Array.isArray(values) ? values : [];
