@@ -6661,8 +6661,8 @@ function renderCalendarPage(currentUser) {
               <div class="row">
                 <input name="start" type="time" value="08:00" required />
                 <input name="end" type="time" value="16:00" required />
-                <select name="location" required>
-                  <option value="">Select venue</option>
+                <select name="location">
+                  <option value="">No venue</option>
                   ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
                 </select>
                 <input name="date" type="date" required />
@@ -10991,8 +10991,8 @@ function bindEvents() {
     const location = requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '';
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
-    if (!day || !start || !end || !date || !location) {
-      alert('Choose a venue, date, start time, and end time before adding the shift.');
+    if (!day || !start || !end || !date) {
+      alert('Choose a date, start time, and end time before adding the shift.');
       return;
     }
     if (toMinutes(end) <= toMinutes(start)) {
