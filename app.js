@@ -4637,7 +4637,8 @@ function openShiftEditModal(shift, onSave) {
         <div class="row" style="flex-wrap:wrap;">
           <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
             <span>Role</span>
-            <select name="role" required>
+            <select name="role">
+              <option value="">No role</option>
               ${roleChoices.map((role) => `<option value="${escapeHtml(role)}" ${String(shift.role || '') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
             </select>
           </label>
@@ -4650,8 +4651,7 @@ function openShiftEditModal(shift, onSave) {
           </label>
           <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
             <span>Location</span>
-            <select name="location">
-              <option value="__clear__">No location</option>
+            <select name="location" required>
               ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(shift.location || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
             </select>
           </label>
@@ -6688,8 +6688,8 @@ function renderCalendarPage(currentUser) {
               <div class="row">
                 <input name="start" type="time" value="08:00" required />
                 <input name="end" type="time" value="16:00" required />
-                <select name="location">
-                  <option value="">No shift location</option>
+                <select name="location" required>
+                  <option value="">Select location</option>
                   ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
                 </select>
                 <input name="date" type="date" required />
@@ -11003,8 +11003,8 @@ function bindEvents() {
     const location = requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '';
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
-    if (!day || !start || !end || !date) {
-      alert('Choose a date, start time, and end time before adding the shift.');
+    if (!day || !start || !end || !date || !location) {
+      alert('Choose a date, start time, end time, and location before adding the shift.');
       return;
     }
     if (toMinutes(end) <= toMinutes(start)) {
