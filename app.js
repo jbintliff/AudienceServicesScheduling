@@ -6080,10 +6080,10 @@ function renderCalendarShiftCard(shift, options = {}) {
     <div class="shift ${canManageCalendar && selectedCalendarShiftIds.has(Number(shift.id)) ? 'selected' : ''}" draggable="${canManageCalendar ? 'true' : 'false'}" data-shift-id="${shift.id}" style="${getShiftStyle(shift)} user-select:text; -webkit-user-select:text;">
       <div class="row" style="justify-content:flex-start; align-items:center; gap:6px; margin-bottom:2px;">
         ${canManageCalendar ? `<input type="checkbox" data-shift-select-checkbox="${shift.id}" ${selectedCalendarShiftIds.has(Number(shift.id)) ? 'checked' : ''} aria-label="Select shift for bulk actions" />` : ''}
-        <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}${shift?.agentId ? ` <span class="muted" style="font-weight:400;">(${weeklyShiftCount} shifts, ${weeklyShiftHours} hrs)</span>` : ''}</strong>
+        <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}${shift?.agentId ? ` <span class="muted" style="font-weight:400;">(${weeklyShiftCount} shifts, ${Number(weeklyShiftHours).toFixed(2)} hrs)</span>` : ''}</strong>
       </div>
       ${showRoleLocation ? `${getShiftRoleLocationHtml(shift)}${showTimeRange ? `<br />${formatTimeRange(shift.start, shift.end)}` : ''}` : (showTimeRange ? `${formatTimeRange(shift.start, shift.end)}` : '')}
-      ${!isAgentView ? `<div class="row" style="align-items:center; gap:4px; margin-top:3px;">${absenceReason ? `<span class="muted" style="text-transform:capitalize;">absent (${escapeHtml(absenceReason)})</span>` : ''}${canManageCalendar ? (shift.status === shiftStatuses.published ? `<button type="button" class="secondary" data-unpublish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Unpublish</button>` : `<button type="button" class="success" data-publish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Publish</button>`) : ''}</div><div class="row calendar-shift-actions" style="margin-top:2px;">${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}</div>` : ''}
+      ${!isAgentView ? `<div class="row calendar-shift-actions" style="align-items:center; gap:3px; margin-top:3px; flex-wrap:wrap;"><span class="muted" style="text-transform:capitalize;">${absenceReason ? `absent (${escapeHtml(absenceReason)})` : ''}</span>${canManageCalendar ? (shift.status === shiftStatuses.published ? `<button type="button" class="secondary" data-unpublish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Unpublish</button>` : `<button type="button" class="success" data-publish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Publish</button>`) : ''}${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Clear absent</button>` : ''}` : ''}</div>` : ''}
       ${isAgentView ? `
         ${(absenceReason || isShiftOfferedForPickup(shift)) ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${absenceReason ? `absent (${escapeHtml(absenceReason)})` : ''}${absenceReason && isShiftOfferedForPickup(shift) ? ' • ' : ''}${isShiftOfferedForPickup(shift) ? 'offered for pickup' : ''}</div>` : ''}
         <div class="row" style="margin-top:6px;">
@@ -6140,7 +6140,7 @@ function renderAdminScheduleDayShifts(dayShifts) {
             <div class="muted" style="font-weight:600; margin:4px 0 6px;">${escapeHtml(teamName)}</div>
             ${[...teamShifts].sort((leftShift, rightShift) => String(getAgent(leftShift?.agentId)?.name || '').localeCompare(String(getAgent(rightShift?.agentId)?.name || ''), undefined, { sensitivity: 'base' })).map((shift) => `
               <div class="shift" draggable="true" data-shift-id="${shift.id}" style="${getShiftStyle(shift)}">
-                <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}${shift?.agentId ? ` <span style="font-weight:400;">(${getAssignedShiftCount(shift.agentId, getActiveCalendarWeekReference())} shifts, ${getAssignedHours(shift.agentId, getActiveCalendarWeekReference())} hrs)</span>` : ''}</strong><br />${getShiftRoleLocationHtml(shift)}
+                <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}${shift?.agentId ? ` <span style="font-weight:400;">(${getAssignedShiftCount(shift.agentId, getActiveCalendarWeekReference())} shifts, ${Number(getAssignedHours(shift.agentId, getActiveCalendarWeekReference())).toFixed(2)} hrs)</span>` : ''}</strong><br />${getShiftRoleLocationHtml(shift)}
               </div>
             `).join('')}
           `).join('')}
@@ -6291,10 +6291,14 @@ function formatShiftDateForUpload(dateValue) {
   return `${Number(month)}/${Number(day)}/${year}`;
 }
 
-function exportPublishedScheduleCsv() {
+function exportPublishedScheduleCsv(fromDate, toDate) {
   const headers = ['Date', 'Start', 'End', 'Team', 'Quantity', 'Auto-Assign', 'Role', 'Location', 'Assigned', 'Subject', 'Details', 'Room / Floor', 'Publish'];
   const publishedShifts = [...state.shifts]
     .filter((shift) => isPublishedShift(shift))
+    .filter((shift) => {
+      const shiftDate = String(shift.date || '').slice(0, 10);
+      return shiftDate >= fromDate && shiftDate <= toDate;
+    })
     .sort(compareCalendarShiftDisplayOrder);
   const rows = publishedShifts.map((shift) => [
     formatShiftDateForUpload(shift.date),
@@ -6316,7 +6320,7 @@ function exportPublishedScheduleCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `published-schedule-${getCurrentLocalIsoDate()}.csv`;
+  link.download = `published-schedule-${fromDate}-to-${toDate}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -6487,6 +6491,13 @@ function renderCalendarPage(currentUser) {
             <input id="calendar-week-reference" type="date" value="${escapeHtml(weekReference)}" />
           </div>
         </div>
+        ${canManageCalendar ? `
+          <form id="published-schedule-export-form" class="row" style="margin-top:8px; gap:6px; align-items:center;">
+            <span class="muted">Export published schedule:</span>
+            <label class="muted">From <input id="published-schedule-export-from" type="date" required /></label>
+            <label class="muted">To <input id="published-schedule-export-to" type="date" required /></label>
+            <button type="submit" class="secondary">Export CSV</button>
+          </form>` : ''}
       </div>
 
       ${canManageCalendar ? `
@@ -11731,6 +11742,22 @@ function bindEvents() {
     state.ui.calendar.weekReference = getShiftedWeekReference(getActiveCalendarWeekReference(), 7);
     saveUiState();
     render();
+  });
+
+  document.getElementById('published-schedule-export-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!canManageCalendar) return;
+    const fromDate = String(document.getElementById('published-schedule-export-from')?.value || '').trim();
+    const toDate = String(document.getElementById('published-schedule-export-to')?.value || '').trim();
+    if (!fromDate || !toDate) {
+      alert('Select both a From date and a To date before exporting.');
+      return;
+    }
+    if (fromDate > toDate) {
+      alert('The From date must be on or before the To date.');
+      return;
+    }
+    exportPublishedScheduleCsv(fromDate, toDate);
   });
 
   document.getElementById('weekly-week-reference')?.addEventListener('change', (event) => {
