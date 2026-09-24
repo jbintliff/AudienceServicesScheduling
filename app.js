@@ -4618,6 +4618,13 @@ function openShiftEditModal(shift, onSave) {
             </select>
           </label>
           <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Agent Location</span>
+            <select name="agentLocation">
+              <option value="">No location</option>
+              ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}" ${normalizeAgentLocation(getAgent(shift.agentId)?.location) === location ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
             <span>Venue</span>
             <select name="location">
               <option value="">No venue</option>
@@ -4690,6 +4697,7 @@ function openShiftEditModal(shift, onSave) {
     }
 
     const nextRole = normalizeRoleLabel(String(formData.get('role') || '').trim() || getPrimaryRole(), getRoleCatalog());
+    const nextAgentLocation = normalizeAgentLocation(formData.get('agentLocation'));
     const requestedLocation = String(formData.get('location') || '').trim();
     const nextLocation = requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '';
     const nextStatus = String(formData.get('status') || '').trim() === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
@@ -4710,6 +4718,7 @@ function openShiftEditModal(shift, onSave) {
       start: nextStart,
       end: nextEnd,
       role: nextRole,
+      agentLocation: nextAgentLocation,
       location: nextLocation,
       status: nextStatus,
       durationHours: getDurationHours(nextStart, nextEnd),
@@ -11045,23 +11054,14 @@ function bindEvents() {
     const template = state.templates.find((item) => Number(item.id) === templateId);
     if (!template) return;
 
-    const roleInput = form.querySelector('select[name="role"]');
     const startInput = form.querySelector('input[name="start"]');
     const endInput = form.querySelector('input[name="end"]');
-    const locationInput = form.querySelector('select[name="location"]');
 
-    if (roleInput instanceof HTMLSelectElement && template.role) {
-      roleInput.value = normalizeRoleLabel(template.role);
-    }
     if (startInput instanceof HTMLInputElement && template.start) {
       startInput.value = normalizeTimeInputValue(template.start) || template.start;
     }
     if (endInput instanceof HTMLInputElement && template.end) {
       endInput.value = normalizeTimeInputValue(template.end) || template.end;
-    }
-    if (locationInput instanceof HTMLSelectElement) {
-      const requestedLocation = String(template.location || '').trim();
-      locationInput.value = getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '';
     }
   });
 
@@ -12570,12 +12570,18 @@ function bindEvents() {
         const nowIso = getCurrentIsoTimestamp();
         const finalizedShift = {
           ...updatedShift,
+          agentLocation: undefined,
           updatedAt: nowIso,
           publishedAt: updatedShift.status === shiftStatuses.published
             ? (updatedShift.publishedAt || shift.publishedAt || nowIso)
             : ''
         };
         state.shifts = state.shifts.map((item) => item.id === id ? finalizedShift : item);
+        if (updatedShift.agentId && updatedShift.agentLocation !== undefined) {
+          state.agents = state.agents.map((agent) => Number(agent.id) === Number(updatedShift.agentId)
+            ? { ...agent, location: updatedShift.agentLocation, updatedAt: nowIso, profileUpdatedAt: nowIso }
+            : agent);
+        }
         if (shouldNotify && shouldSendPublishedScheduleEmails(1)) {
           sendShiftPublishedEmail(finalizedShift);
         }
