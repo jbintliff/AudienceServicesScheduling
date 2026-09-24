@@ -6329,7 +6329,7 @@ function exportPublishedScheduleCsv(fromDate, toDate) {
     '',
     shift.role || '',
     shift.location || '',
-    normalizeShiftboardId(getAgent(shift.agentId)?.shiftboardId) || getAgentAccountEmail(shift.agentId) || getAgent(shift.agentId)?.name || '',
+    normalizeShiftboardId(getAgent(shift.agentId)?.shiftboardId),
     shift.title || '',
     shift.details || '',
     shift.roomFloor || '',
