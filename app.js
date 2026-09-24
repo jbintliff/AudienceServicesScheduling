@@ -1243,6 +1243,21 @@ function mergeRemoteSnapshotWithPendingLocal(remoteStore) {
     const localValue = localStorage.getItem(key);
     const remoteValue = typeof remoteStore[key] === 'string' ? remoteStore[key] : null;
     if (localValue !== null && localValue !== remoteValue) {
+      if (key === storageKey) {
+        try {
+          const localState = JSON.parse(localValue || '{}');
+          const remoteState = JSON.parse(remoteValue || '{}');
+          const localAgentCount = Array.isArray(localState.agents) ? localState.agents.length : 0;
+          const remoteAgentCount = Array.isArray(remoteState.agents) ? remoteState.agents.length : 0;
+          if (localAgentCount === 0 && remoteAgentCount > 0) {
+            mergedStore[key] = remoteValue;
+            pendingSharedWriteKeys.delete(key);
+            return;
+          }
+        } catch {
+          // Fall through to the normal pending-write handling.
+        }
+      }
       mergedStore[key] = localValue;
       preservedLocalKeys.push(key);
     }
