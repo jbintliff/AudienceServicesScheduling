@@ -5047,6 +5047,51 @@ function openAgentEditModal(agent, onSave) {
   document.body.appendChild(overlay);
 }
 
+function openBulkShiftEditModal(shifts, onSave) {
+  const existingOverlay = document.getElementById('bulk-shift-edit-modal-overlay');
+  if (existingOverlay) existingOverlay.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'bulk-shift-edit-modal-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:min(560px, 100%); background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
+      <h2 style="margin:0 0 8px;">Edit ${shifts.length} selected shift${shifts.length === 1 ? '' : 's'}</h2>
+      <p class="muted" style="margin:0 0 14px;">Leave a field blank to keep each shift's current value.</p>
+      <form id="bulk-shift-edit-form" class="stack">
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:150px;"><span>Start time</span><input name="start" type="time" /></label>
+          <label style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:150px;"><span>End time</span><input name="end" type="time" /></label>
+        </div>
+        <label style="display:flex; flex-direction:column; gap:6px;"><span>Role</span><select name="role"><option value="">Leave unchanged</option>${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}</select></label>
+        <label style="display:flex; flex-direction:column; gap:6px;"><span>Venue</span><select name="location"><option value="">Leave unchanged</option>${getLocationCatalogForScope().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}</select></label>
+        <div class="row" style="justify-content:flex-end; margin-top:8px;"><button type="button" id="bulk-shift-edit-cancel" class="secondary">Cancel</button><button type="submit">Apply changes</button></div>
+      </form>
+    </div>
+  `;
+  const closeModal = () => overlay.remove();
+  overlay.addEventListener('click', (event) => { if (event.target === overlay) closeModal(); });
+  overlay.querySelector('#bulk-shift-edit-cancel')?.addEventListener('click', closeModal);
+  overlay.querySelector('#bulk-shift-edit-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const start = String(formData.get('start') || '').trim();
+    const end = String(formData.get('end') || '').trim();
+    const role = String(formData.get('role') || '').trim();
+    const location = String(formData.get('location') || '').trim();
+    if (!start && !end && !role && !location) {
+      alert('Choose at least one field to change.');
+      return;
+    }
+    if ((start && !end) || (!start && end) || (start && end && toMinutes(end) <= toMinutes(start))) {
+      alert('Enter both times, with the end time later than the start time.');
+      return;
+    }
+    const didSave = await onSave({ start, end, role, location });
+    if (didSave) closeModal();
+  });
+  document.body.appendChild(overlay);
+}
+
 function openAvailabilityRequestEditModal(request, onSave) {
   const existingOverlay = document.getElementById('availability-request-edit-modal-overlay');
   if (existingOverlay) {
@@ -6667,7 +6712,7 @@ function renderCalendarPage(currentUser) {
             <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
           `).join('')}
         </div>
-        ${canManageCalendar ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-copy-full-schedule>Copy full schedule</button><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
+        ${canManageCalendar ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-copy-full-schedule>Copy full schedule</button><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-edit-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Edit selected</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="secondary" data-unpublish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Unpublish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
         <div class="day-row">
           ${days.map((day) => {
             const dayDate = String(weekDates[day]?.iso || '').slice(0, 10);
@@ -12324,6 +12369,41 @@ function bindEvents() {
     render();
   });
 
+  document.querySelector('[data-edit-selected-shifts]')?.addEventListener('click', () => {
+    if (!canManageCalendar || selectedCalendarShiftIds.size === 0) return;
+    const selectedShifts = state.shifts.filter((shift) => selectedCalendarShiftIds.has(Number(shift.id)));
+    if (selectedShifts.length === 0) return;
+    openBulkShiftEditModal(selectedShifts, async ({ start, end, role, location }) => {
+      const updatedShifts = [];
+      for (const shift of selectedShifts) {
+        const nextStart = start || shift.start;
+        const nextEnd = end || shift.end;
+        const nextRole = role ? normalizeRoleLabel(role, getRoleCatalog()) : shift.role;
+        const nextLocation = location && getLocationCatalogForScope().includes(location) ? location : shift.location;
+        if (!await confirmShiftAssignmentWithTimeOffWarning(shift.agentId, shift.date, nextStart, nextEnd, {
+          replacingShiftId: Number(shift.id),
+          durationHours: getDurationHours(nextStart, nextEnd),
+          role: nextRole
+        })) return false;
+        updatedShifts.push({
+          ...shift,
+          start: nextStart,
+          end: nextEnd,
+          role: nextRole,
+          location: nextLocation,
+          durationHours: getDurationHours(nextStart, nextEnd),
+          updatedAt: getCurrentIsoTimestamp()
+        });
+      }
+      const updatedById = new Map(updatedShifts.map((shift) => [Number(shift.id), shift]));
+      state.shifts = state.shifts.map((shift) => updatedById.get(Number(shift.id)) || shift);
+      saveState();
+      selectedCalendarShiftIds.clear();
+      render();
+      return true;
+    });
+  });
+
   document.querySelector('[data-publish-selected-shifts]')?.addEventListener('click', () => {
     if (!canManageCalendar) return;
     if (selectedCalendarShiftIds.size === 0) return;
@@ -12348,6 +12428,20 @@ function bindEvents() {
       });
     }
 
+    saveState();
+    render();
+  });
+
+  document.querySelector('[data-unpublish-selected-shifts]')?.addEventListener('click', () => {
+    if (!canManageCalendar || selectedCalendarShiftIds.size === 0) return;
+    const publishedCount = state.shifts.filter((shift) => selectedCalendarShiftIds.has(Number(shift.id)) && shift.status === shiftStatuses.published).length;
+    if (publishedCount === 0) return;
+    if (!confirm(`Unpublish ${publishedCount} selected shift${publishedCount === 1 ? '' : 's'}? Agents will no longer see them on their published schedule.`)) return;
+    const updatedAt = getCurrentIsoTimestamp();
+    state.shifts = state.shifts.map((shift) => selectedCalendarShiftIds.has(Number(shift.id)) && shift.status === shiftStatuses.published
+      ? { ...shift, status: shiftStatuses.draft, publishedAt: '', updatedAt }
+      : shift);
+    selectedCalendarShiftIds.clear();
     saveState();
     render();
   });
