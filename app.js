@@ -6333,7 +6333,7 @@ function exportPublishedScheduleCsv(fromDate, toDate) {
     shift.title || '',
     shift.details || '',
     shift.roomFloor || '',
-    'Yes'
+    'No'
   ]);
   const csvRows = [...templateRows, ...rows].map((row) => [
     ...row,
