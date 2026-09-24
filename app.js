@@ -588,6 +588,14 @@ const defaultAuthUsers = [
   { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 3 }
 ];
 
+let hasStoredInPersonShifts = false;
+try {
+  const storedState = JSON.parse(localStorage.getItem(storageKey) || '{}');
+  hasStoredInPersonShifts = Array.isArray(storedState.shifts)
+    && storedState.shifts.some((shift) => isInOfficeRole(shift?.role));
+} catch {
+  hasStoredInPersonShifts = false;
+}
 const state = loadState();
 teamOptions = normalizeTeamCatalog(state.teamCatalog);
 let authUsers = loadAuthUsers();
@@ -623,6 +631,9 @@ const defaultEmailDeliverySettings = {
 let emailDeliverySettings = loadEmailDeliverySettings();
 let availabilitySubmitFallbackBound = false;
 const root = document.getElementById('root');
+if (hasStoredInPersonShifts) {
+  saveState();
+}
 
 function normalizeOptionCatalog(values, fallbackValues = []) {
   const source = Array.isArray(values) ? values : [];
@@ -3635,7 +3646,7 @@ function loadState() {
       roleCatalog: normalizedRoleCatalog,
       locationCatalog: normalizedLocationCatalog,
       agentLocationCatalog: normalizedAgentLocationCatalog,
-      shifts: Array.isArray(parsed.shifts)
+      shifts: (Array.isArray(parsed.shifts)
         ? parsed.shifts.map((shift) => {
             const rawLocation = String(shift.location || '').trim();
             const normalizedLocation = normalizedLocationCatalog.includes(rawLocation) ? rawLocation : '';
@@ -3651,7 +3662,7 @@ function loadState() {
             delete normalizedShift.note;
             return normalizedShift;
           })
-        : createDefaultState().shifts,
+        : createDefaultState().shifts).filter((shift) => !isInOfficeRole(shift.role)),
       swapRequests: Array.isArray(parsed.swapRequests)
         ? parsed.swapRequests.map((request) => {
             const isCompleted = request.status === 'completed' || request.status === 'approved';
@@ -4783,7 +4794,12 @@ function openShiftEditModal(shift, onSave) {
       return;
     }
 
-    const nextRole = normalizeRoleLabel(String(formData.get('role') || '').trim() || getPrimaryRole(), getRoleCatalog());
+    const requestedRole = String(formData.get('role') || '').trim();
+    if (isInOfficeRole(requestedRole)) {
+      alert('In-person shifts are no longer available.');
+      return;
+    }
+    const nextRole = normalizeRoleLabel(requestedRole || getPrimaryRole(), getRoleCatalog());
     const requestedLocation = String(formData.get('location') || '').trim();
     const nextLocation = resolveShiftLocationValue(requestedLocation, shift.location);
     const requestedVenue = String(formData.get('venue') || '').trim();
@@ -6577,6 +6593,9 @@ async function importData(file) {
     const importedPolicies = normalizePolicies(parsed?.policies);
 
     Object.assign(state, parsed);
+    state.shifts = Array.isArray(parsed.shifts)
+      ? parsed.shifts.filter((shift) => !isInOfficeRole(shift?.role))
+      : [];
     state.policies = importedPolicies;
     state.roleColors = parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : {};
     state.agentLocationColors = parsed.agentLocationColors && typeof parsed.agentLocationColors === 'object' ? parsed.agentLocationColors : {};
@@ -11106,6 +11125,10 @@ function bindEvents() {
     const formData = new FormData(event.currentTarget);
     const agentId = formData.get('agentId') ? Number(formData.get('agentId')) : null;
     const requestedRole = formData.get('role')?.toString().trim() || '';
+    if (isInOfficeRole(requestedRole)) {
+      alert('In-person shifts are no longer available.');
+      return;
+    }
     const role = requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '';
     const start = formData.get('start')?.toString();
     const end = formData.get('end')?.toString();
@@ -12634,6 +12657,10 @@ function bindEvents() {
         const nextStart = start || shift.start;
         const nextEnd = end || shift.end;
         const nextRole = role === null ? '' : (role ? normalizeRoleLabel(role, getRoleCatalog()) : shift.role);
+        if (isInOfficeRole(nextRole)) {
+          alert('In-person shifts are no longer available.');
+          return false;
+        }
         const nextLocation = resolveShiftLocationValue(location, shift.location);
         const nextVenue = venue === undefined ? shift.venue || '' : (venue === null ? '' : (getLocationCatalogForScope().includes(venue) ? venue : shift.venue || ''));
         if (!await confirmShiftAssignmentWithTimeOffWarning(shift.agentId, shift.date, nextStart, nextEnd, {
