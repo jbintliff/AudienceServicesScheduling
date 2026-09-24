@@ -8209,7 +8209,7 @@ function renderAdminOptionsPage(currentUser) {
 
         <div style="display:contents;">
         <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-agent-locations">
-          <h2>Agent Locations</h2>
+          <h2>Locations</h2>
           <p class="muted">Manage the Location options assigned to agent profiles. These are separate from shift Venues.</p>
           <form id="add-agent-location-form" class="row" style="margin-bottom:10px;">
             <input name="location" placeholder="Add agent location" required />
@@ -8248,7 +8248,7 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
-        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-policies">
+        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-policies" style="grid-column:1 / -1;">
           <h2>Policies</h2>
           <p class="muted">Upload policy files that agents can view and download from the Policies page.</p>
           <form id="upload-policy-form" class="row" style="margin-bottom:10px; flex-wrap:wrap;">
