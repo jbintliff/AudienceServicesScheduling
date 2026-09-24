@@ -5062,8 +5062,8 @@ function openBulkShiftEditModal(shifts, onSave) {
           <label style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:150px;"><span>Start time</span><input name="start" type="time" /></label>
           <label style="display:flex; flex-direction:column; gap:6px; flex:1; min-width:150px;"><span>End time</span><input name="end" type="time" /></label>
         </div>
-        <label style="display:flex; flex-direction:column; gap:6px;"><span>Role</span><select name="role"><option value="">Leave unchanged</option>${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}</select></label>
-        <label style="display:flex; flex-direction:column; gap:6px;"><span>Venue</span><select name="location"><option value="">Leave unchanged</option>${getLocationCatalogForScope().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}</select></label>
+        <label style="display:flex; flex-direction:column; gap:6px;"><span>Role</span><select name="role"><option value="">Leave unchanged</option><option value="__clear__">Clear role</option>${getRoleLegendItems().map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}</select></label>
+        <label style="display:flex; flex-direction:column; gap:6px;"><span>Location / venue</span><select name="location"><option value="">Leave unchanged</option><option value="__clear__">Clear location / venue</option>${getLocationCatalogForScope().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}</select></label>
         <div class="row" style="justify-content:flex-end; margin-top:8px;"><button type="button" id="bulk-shift-edit-cancel" class="secondary">Cancel</button><button type="submit">Apply changes</button></div>
       </form>
     </div>
@@ -5076,9 +5076,9 @@ function openBulkShiftEditModal(shifts, onSave) {
     const formData = new FormData(event.currentTarget);
     const start = String(formData.get('start') || '').trim();
     const end = String(formData.get('end') || '').trim();
-    const role = String(formData.get('role') || '').trim();
-    const location = String(formData.get('location') || '').trim();
-    if (!start && !end && !role && !location) {
+    const roleValue = String(formData.get('role') || '').trim();
+    const locationValue = String(formData.get('location') || '').trim();
+    if (!start && !end && !roleValue && !locationValue) {
       alert('Choose at least one field to change.');
       return;
     }
@@ -5086,7 +5086,12 @@ function openBulkShiftEditModal(shifts, onSave) {
       alert('Enter both times, with the end time later than the start time.');
       return;
     }
-    const didSave = await onSave({ start, end, role, location });
+    const didSave = await onSave({
+      start,
+      end,
+      role: roleValue === '__clear__' ? null : roleValue,
+      location: locationValue === '__clear__' ? null : locationValue
+    });
     if (didSave) closeModal();
   });
   document.body.appendChild(overlay);
@@ -12378,8 +12383,8 @@ function bindEvents() {
       for (const shift of selectedShifts) {
         const nextStart = start || shift.start;
         const nextEnd = end || shift.end;
-        const nextRole = role ? normalizeRoleLabel(role, getRoleCatalog()) : shift.role;
-        const nextLocation = location && getLocationCatalogForScope().includes(location) ? location : shift.location;
+        const nextRole = role === null ? '' : (role ? normalizeRoleLabel(role, getRoleCatalog()) : shift.role);
+        const nextLocation = location === null ? '' : (location && getLocationCatalogForScope().includes(location) ? location : shift.location);
         if (!await confirmShiftAssignmentWithTimeOffWarning(shift.agentId, shift.date, nextStart, nextEnd, {
           replacingShiftId: Number(shift.id),
           durationHours: getDurationHours(nextStart, nextEnd),
