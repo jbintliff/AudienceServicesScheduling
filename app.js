@@ -1,5 +1,5 @@
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const roleOptions = ['In-person', 'WFH', 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
+const roleOptions = ['WFH', 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
 const teamOptions = ['Audience Services Representative', 'Audience Services Associate', 'Audience Services Management', 'Box Office'];
 const departmentOptions = ['Audience Services', 'Box Office'];
 const agentSkillOptions = [
@@ -499,7 +499,7 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', department: 'Audience Services', role: 'In-person', location: 'In Person/ TP', payRate: 24, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Audience Services Representative', department: 'Audience Services', role: 'WFH', location: 'In Person/ TP', payRate: 24, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
     { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Audience Services Associate', department: 'Audience Services', role: 'WFH', location: 'Work From Home', payRate: 18, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
     { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Audience Services Representative', department: 'Box Office', role: 'Booth Duty', location: '', payRate: 15, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Unavailable' }
   ],
@@ -514,7 +514,7 @@ const defaultState = {
     { id: 8, name: 'Part Time Weekend PM', start: '15:00', end: '20:00', durationHours: 5 }
   ],
   shifts: [
-    { id: 1, day: 'Mon', date: '2026-09-14', agentId: 1, role: 'In-person', start: '08:00', end: '16:00', durationHours: 8, location: 'Academy of Music', status: shiftStatuses.draft },
+    { id: 1, day: 'Mon', date: '2026-09-14', agentId: 1, role: 'WFH', start: '08:00', end: '16:00', durationHours: 8, location: 'Academy of Music', status: shiftStatuses.draft },
     { id: 2, day: 'Wed', date: '2026-09-16', agentId: 2, role: 'WFH', start: '16:00', end: '22:00', durationHours: 6, location: 'Academy of Music', status: shiftStatuses.draft }
   ],
   swapRequests: [],
@@ -631,7 +631,7 @@ function normalizeOptionCatalog(values, fallbackValues = []) {
 }
 
 function normalizeRoleCatalog(values) {
-  return normalizeOptionCatalog(values, roleOptions);
+  return normalizeOptionCatalog(values, roleOptions).filter((role) => role.toLowerCase() !== 'in-person');
 }
 
 function normalizeShiftAbsenceReason(value) {
@@ -2847,7 +2847,7 @@ function normalizeRoleLabel(role, availableRoles = null) {
   const normalizedRole = String(role || '').trim().toLowerCase();
   if (!normalizedRole) return roleChoices[0] || roleOptions[0];
   const legacyRoleMap = {
-    senior: 'In-person',
+    senior: 'WFH',
     mid: 'WFH',
     junior: 'Booth Duty',
     agent: 'WFH'
@@ -3967,6 +3967,11 @@ const defaultLocationColorMap = {
 
 function getShiftLocationColor(shift) {
   const normalizedLocation = String(getAgent(shift?.agentId)?.location || '').trim().toLowerCase();
+  return getAgentLocationColor(normalizedLocation);
+}
+
+function getAgentLocationColor(location) {
+  const normalizedLocation = String(location || '').trim().toLowerCase();
   return defaultLocationColorMap[normalizedLocation] || (normalizedLocation ? getGeneratedRoleColor(normalizedLocation) : defaultLocationColorMap.default);
 }
 
@@ -4028,6 +4033,7 @@ function getRoleLegendItems(departmentScope = getCurrentUserDepartmentScope()) {
     .filter((agent) => isAgentInDepartmentScope(agent, departmentScope))
     .map((agent) => String(agent.role || '').trim())
     .filter((role) => !departmentScope || (departmentScope === 'Box Office' ? getRoleDepartment(role) === 'Box Office' : isDateEntryInDepartmentScope(getRoleDepartment(role), departmentScope)))
+    .filter((role) => role.toLowerCase() !== 'in-person')
     .filter(Boolean);
   return Array.from(new Set([...normalizedBaseRoles, ...assignedRoles]));
 }
@@ -4535,7 +4541,7 @@ async function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, en
     return false;
   }
 
-  if (isInOfficeRole(roleToEvaluate)) {
+  if (isAgentInOfficeLocation(targetAgent, roleToEvaluate)) {
     const maxInOfficeShifts = normalizeMaxInOfficeShifts(targetAgent?.maxInOfficeShifts);
     if (Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts >= 0) {
       const projectedInOfficeCount = getAssignedInOfficeShiftCount(agentId, date, { excludingShiftId: replacingShiftId }) + 1;
@@ -5892,6 +5898,13 @@ function isInOfficeRole(role) {
     || normalizedRole === 'office';
 }
 
+function isAgentInOfficeLocation(agentOrId, fallbackRole = '') {
+  const agent = agentOrId && typeof agentOrId === 'object' ? agentOrId : getAgent(agentOrId);
+  const location = normalizeAgentLocation(agent?.location).toLowerCase();
+  if (location) return location.includes('in person') || location.includes('in-person') || location === 'office';
+  return isInOfficeRole(fallbackRole || agent?.role);
+}
+
 function getAssignedInOfficeShiftCount(agentId, referenceDateValue = '', options = {}) {
   const normalizedAgentId = Number(agentId);
   const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
@@ -5900,7 +5913,7 @@ function getAssignedInOfficeShiftCount(agentId, referenceDateValue = '', options
     .filter((shift) => Number(shift.agentId) === normalizedAgentId)
     .filter((shift) => shiftIsInWeek(shift, weekDates))
     .filter((shift) => !excludingShiftId || Number(shift.id) !== excludingShiftId)
-    .filter((shift) => isInOfficeRole(shift.role || getAgent(shift.agentId)?.role))
+    .filter((shift) => isAgentInOfficeLocation(getAgent(shift.agentId), shift.role))
     .length;
 }
 
@@ -6003,8 +6016,8 @@ function getProjectedSwapHours(agentId, outgoingShift, incomingShift) {
 
 function getProjectedSwapInOfficeShiftCount(agentId, outgoingShift, incomingShift) {
   const currentInOfficeCount = getAssignedInOfficeShiftCount(agentId, outgoingShift?.date || incomingShift?.date || '');
-  const outgoingInOfficeCount = isInOfficeRole(outgoingShift?.role) ? 1 : 0;
-  const incomingInOfficeCount = isInOfficeRole(incomingShift?.role) ? 1 : 0;
+  const outgoingInOfficeCount = isAgentInOfficeLocation(getAgent(agentId), outgoingShift?.role) ? 1 : 0;
+  const incomingInOfficeCount = isAgentInOfficeLocation(getAgent(agentId), incomingShift?.role) ? 1 : 0;
   return currentInOfficeCount - outgoingInOfficeCount + incomingInOfficeCount;
 }
 
@@ -6727,6 +6740,13 @@ function renderCalendarPage(currentUser) {
         </div>
         ${canManageCalendar ? `<div class="muted" style="margin-bottom:10px;">${copiedScheduleTemplate ? `Copied full schedule: ${copiedScheduleTemplate.length} shift${copiedScheduleTemplate.length === 1 ? '' : 's'}` : (copiedShiftTemplate ? `Copied: ${escapeHtml(getShiftSummary(copiedShiftTemplate))}` : 'Right-click a shift or use Copy full schedule, then click a destination day.')}</div>` : ''}
         <div class="row" style="margin-bottom:10px;">
+          <span class="muted" style="font-weight:600;">Location:</span>
+          ${getAgentLocationCatalog().map((location) => `
+            <span class="chip" style="background:${getAgentLocationColor(location)}; color:#111; border:1px solid rgba(255,255,255,0.45);">${escapeHtml(location)}</span>
+          `).join('')}
+        </div>
+        <div class="row" style="margin-bottom:10px;">
+          <span class="muted" style="font-weight:600;">Role:</span>
           ${getRoleLegendItems().map((role) => `
             <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
           `).join('')}
@@ -12338,7 +12358,7 @@ function bindEvents() {
 
       const targetAgent = getAgent(currentAgentId);
       const maxInOfficeShifts = normalizeMaxInOfficeShifts(targetAgent?.maxInOfficeShifts);
-      if (isInOfficeRole(shift.role) && Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts >= 0) {
+      if (isAgentInOfficeLocation(targetAgent, shift.role) && Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts >= 0) {
         const projectedInOfficeCount = getAssignedInOfficeShiftCount(currentAgentId, shift.date) + 1;
         if (projectedInOfficeCount > maxInOfficeShifts) {
           alert(`${targetAgent?.name || 'This agent'} would exceed their weekly max in-office shifts by picking up this shift.`);
@@ -12898,7 +12918,7 @@ function bindEvents() {
         const fromMaxInOffice = normalizeMaxInOfficeShifts(fromAgent?.maxInOfficeShifts);
         const toMaxInOffice = normalizeMaxInOfficeShifts(toAgent?.maxInOfficeShifts);
 
-        if (fromShift && toShift && isInOfficeRole(toShift.role) && Number.isFinite(fromMaxInOffice)) {
+        if (fromShift && toShift && isAgentInOfficeLocation(fromAgent, toShift.role) && Number.isFinite(fromMaxInOffice)) {
           const projectedFromInOffice = getAssignedInOfficeShiftCount(updatedRequest.fromAgentId, toShift.date || fromShift.date || '', {
             excludingShiftId: Number(fromShift.id)
           }) + 1;
@@ -12910,7 +12930,7 @@ function bindEvents() {
           }
         }
 
-        if (fromShift && toShift && isInOfficeRole(fromShift.role) && Number.isFinite(toMaxInOffice)) {
+        if (fromShift && toShift && isAgentInOfficeLocation(toAgent, fromShift.role) && Number.isFinite(toMaxInOffice)) {
           const projectedToInOffice = getAssignedInOfficeShiftCount(updatedRequest.toAgentId, fromShift.date || toShift.date || '', {
             excludingShiftId: Number(toShift.id)
           }) + 1;
