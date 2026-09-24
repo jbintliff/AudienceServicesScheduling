@@ -528,6 +528,7 @@ const defaultState = {
   policies: [],
   blackoutDates: [],
   roleColors: {},
+  agentLocationColors: {},
   roleDepartments: {},
   roleCatalog: [...roleOptions],
   locationCatalog: [...shiftLocationOptions],
@@ -2831,6 +2832,7 @@ function createDefaultState() {
     policies: defaultState.policies.map((policy) => ({ ...policy })),
     blackoutDates: [...defaultState.blackoutDates],
     roleColors: { ...defaultState.roleColors },
+    agentLocationColors: { ...defaultState.agentLocationColors },
     roleDepartments: { ...defaultState.roleDepartments },
     locationDepartments: { ...defaultState.locationDepartments },
     roleCatalog: [...defaultState.roleCatalog],
@@ -3612,6 +3614,7 @@ function loadState() {
       dashboardMessageBoard: normalizeDashboardMessageBoard(parsed.dashboardMessageBoard || createDefaultState().dashboardMessageBoard),
       blackoutDates: normalizeBlackoutDateEntries(parsed.blackoutDates),
       roleColors: parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : createDefaultState().roleColors,
+      agentLocationColors: parsed.agentLocationColors && typeof parsed.agentLocationColors === 'object' ? parsed.agentLocationColors : createDefaultState().agentLocationColors,
       roleDepartments: parsed.roleDepartments && typeof parsed.roleDepartments === 'object' && !Array.isArray(parsed.roleDepartments) ? parsed.roleDepartments : createDefaultState().roleDepartments,
       locationDepartments: parsed.locationDepartments && typeof parsed.locationDepartments === 'object' && !Array.isArray(parsed.locationDepartments) ? parsed.locationDepartments : createDefaultState().locationDepartments,
       ui: loadUiState(parsed.ui)
@@ -3972,6 +3975,8 @@ function getShiftLocationColor(shift) {
 
 function getAgentLocationColor(location) {
   const normalizedLocation = String(location || '').trim().toLowerCase();
+  const savedColor = state.agentLocationColors?.[normalizedLocation];
+  if (savedColor) return savedColor;
   return defaultLocationColorMap[normalizedLocation] || (normalizedLocation ? getGeneratedRoleColor(normalizedLocation) : defaultLocationColorMap.default);
 }
 
@@ -6462,6 +6467,7 @@ async function importData(file) {
     Object.assign(state, parsed);
     state.policies = importedPolicies;
     state.roleColors = parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : {};
+    state.agentLocationColors = parsed.agentLocationColors && typeof parsed.agentLocationColors === 'object' ? parsed.agentLocationColors : {};
     state.roleDepartments = parsed.roleDepartments && typeof parsed.roleDepartments === 'object' && !Array.isArray(parsed.roleDepartments) ? parsed.roleDepartments : {};
     state.locationDepartments = parsed.locationDepartments && typeof parsed.locationDepartments === 'object' && !Array.isArray(parsed.locationDepartments) ? parsed.locationDepartments : {};
     state.agentLocationCatalog = normalizeOptionCatalog(parsed.agentLocationCatalog, agentLocationOptions);
@@ -8214,6 +8220,18 @@ function renderAdminOptionsPage(currentUser) {
           </form>
           <div class="row" style="gap:8px; flex-wrap:wrap;">
             ${getAgentLocationCatalog().map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}<button type="button" class="danger" data-remove-agent-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
+          </div>
+          <div class="row" style="justify-content:space-between; align-items:center; margin-top:14px; margin-bottom:8px;">
+            <h3 style="margin:0;">Location colors</h3>
+            <button id="reset-agent-location-colors" class="secondary" type="button">Reset location colors</button>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:center; width:100%;">
+            ${getAgentLocationCatalog().map((location) => `
+              <label class="chip" style="background:${getAgentLocationColor(location)}; color:#111; border:1px solid rgba(255,255,255,0.45); cursor:pointer; justify-content:center; width:100%; margin:0;" title="Click to change color">
+                ${escapeHtml(location)}
+                <input type="color" data-agent-location-color="${escapeHtml(location)}" value="${escapeHtml(getAgentLocationColor(location))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
+              </label>
+            `).join('')}
           </div>
         </div>
 
@@ -12140,6 +12158,25 @@ function bindEvents() {
 
   document.getElementById('reset-role-colors')?.addEventListener('click', () => {
     state.roleColors = {};
+    saveState();
+    render();
+  });
+
+  document.querySelectorAll('[data-agent-location-color]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const locationName = String(input.getAttribute('data-agent-location-color') || '').trim().toLowerCase();
+      if (!locationName) return;
+      state.agentLocationColors = {
+        ...(state.agentLocationColors || {}),
+        [locationName]: input.value
+      };
+      saveState();
+      render();
+    });
+  });
+
+  document.getElementById('reset-agent-location-colors')?.addEventListener('click', () => {
+    state.agentLocationColors = {};
     saveState();
     render();
   });
