@@ -6684,16 +6684,12 @@ function renderCalendarPage(currentUser) {
                   <option value="">No role</option>
                   ${getRoleLegendItems().map((role) => `<option value="${role}">${escapeHtml(role)}</option>`).join('')}
                 </select>
-                <select name="agentLocation">
-                  <option value="">No location</option>
-                  ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
-                </select>
               </div>
               <div class="row">
                 <input name="start" type="time" value="08:00" required />
                 <input name="end" type="time" value="16:00" required />
                 <select name="location">
-                  <option value="">No venue</option>
+                  <option value="">No shift location</option>
                   ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
                 </select>
                 <input name="date" type="date" required />
