@@ -6293,6 +6293,13 @@ function formatShiftDateForUpload(dateValue) {
 
 function exportPublishedScheduleCsv(fromDate, toDate) {
   const headers = ['Date', 'Start', 'End', 'Team', 'Quantity', 'Auto-Assign', 'Role', 'Location', 'Assigned', 'Subject', 'Details', 'Room / Floor', 'Publish'];
+  const templateRows = [
+    ['Standard Shift Upload Template'],
+    ['Please paste your scheduled shifts into this format.  All columns are optional except Date and Team.'],
+    ['If you do not want to use one of the columns, simply do not enter data into it.'],
+    ['REQUIRED', 'OPTIONAL - defaults to anytime', 'OPTIONAL - defaults to open ended', 'REQUIRED - Enter the EXACT NAME of one of your existing teams', 'OPTIONAL - Enter the number of people needed to work (defaults to number of assignees or 1)', 'OPTIONAL - Enter "Yes" to automatically assign Team Members', 'OPTIONAL - Use Existing or New Team Roles', 'OPTIONAL - Enter the EXACT NAME/ID of one of your existing mapped locations (locations are required to print Sign-In Sheets)', 'OPTIONAL - To pre-assign the shifts, enter one or more comma separated users\' Shiftboard IDs or exact email addresses', 'OPTIONAL BUT RECOMMENDED - Enter a shift title to appear on the Calendar', 'OPTIONAL - Detailed Instructions & Position Requirements', 'OPTIONAL - Use this field to provide additional locations instructions', 'OPTIONAL - Enter "Yes" to publish the shift to the Calendar so all Team Members can see it or "No" to not publish'],
+    headers
+  ];
   const publishedShifts = [...state.shifts]
     .filter((shift) => isPublishedShift(shift))
     .filter((shift) => {
@@ -6315,7 +6322,11 @@ function exportPublishedScheduleCsv(fromDate, toDate) {
     shift.roomFloor || '',
     'Yes'
   ]);
-  const csv = [headers, ...rows].map((row) => row.map(escapeCsvValue).join(',')).join('\r\n');
+  const csvRows = [...templateRows, ...rows].map((row) => [
+    ...row,
+    ...Array(Math.max(0, headers.length - row.length)).fill('')
+  ]);
+  const csv = csvRows.map((row) => row.map(escapeCsvValue).join(',')).join('\r\n');
   const blob = new Blob([`\uFEFF${csv}\r\n`], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
