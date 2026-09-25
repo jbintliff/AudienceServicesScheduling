@@ -2927,11 +2927,11 @@ function getTeamCatalog() {
 
 function getDefaultTeamColorMap() {
   return {
-    'patron services representative': '#7AACAF',
-    'patron services': '#E7D2A8',
-    'patron services associate': '#F4A997',
-    'audience services management': '#A9B4E4',
-    'box office': '#608186',
+    'patron services representative': '#8FB9B5',
+    'patron services': '#E3C47A',
+    'patron services associate': '#D88676',
+    'audience services management': '#AEB8D8',
+    'box office': '#6F9495',
     default: '#C49583'
   };
 }
@@ -6129,23 +6129,8 @@ function getFilteredAgents() {
 function getTeamBadgeStyle(team) {
   const normalizedTeam = normalizeTeamLabel(team);
   const color = getTeamColor(normalizedTeam);
-  const textColor = ['#ffffff', '#111111'].includes(color.toLowerCase()) ? '#111111' : '#111111';
-  if (normalizedTeam === 'Patron Services Representative') {
-    return 'background:#7AACAF; color:#17383B; border:1px solid rgba(23,56,59,0.25);';
-  }
-  if (normalizedTeam === 'Patron Services') {
-    return 'background:#E7D2A8; color:#413322; border:1px solid rgba(65,51,34,0.25);';
-  }
-  if (normalizedTeam === 'Patron Services Associate') {
-    return 'background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);';
-  }
-  if (normalizedTeam === 'Audience Services Management') {
-    return 'background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);';
-  }
-  if (normalizedTeam === 'Box Office') {
-    return 'background:#608186; color:#EAF3F3; border:1px solid rgba(23,56,59,0.25);';
-  }
-  return `background:${color}; color:${textColor}; border:1px solid rgba(17,17,17,0.15);`;
+  const textColor = normalizedTeam === 'Box Office' ? '#EAF3F3' : '#17383B';
+  return `background:${color}; color:${textColor}; border:1px solid rgba(23,56,59,0.25);`;
 }
 
 function getCurrentAgentId() {
