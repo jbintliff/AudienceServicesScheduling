@@ -600,6 +600,7 @@ let draggedShiftId = null;
 let copiedShiftTemplate = null;
 let copiedScheduleTemplate = null;
 let selectedCalendarShiftIds = new Set();
+let selectedAgentIds = new Set();
 let memoryAvailabilityInbox = [];
 let memoryEmailOutbox = [];
 let lastSuccessfulSyncAt = loadLastSuccessfulSyncAt();
@@ -3169,6 +3170,15 @@ function getTeamManagerSummary(teamName) {
   const managers = getManagersForTeam(teamName);
   if (managers.length === 0) return 'No assigned manager';
   return managers.map((manager) => String(manager?.name || manager?.username || 'Manager').trim()).join(', ');
+}
+
+function getAgentManagerSummary(agent) {
+  const directManagerId = Number(agent?.managerId) || 0;
+  if (directManagerId) {
+    const directManager = authUsers.find((user) => Number(user.id) === directManagerId);
+    if (directManager) return String(directManager.name || directManager.username || 'Manager').trim();
+  }
+  return getTeamManagerSummary(agent?.team);
 }
 
 function normalizeMaxInOfficeShifts(value) {
@@ -8967,6 +8977,7 @@ function renderAgentsPage(currentUser) {
       <div class="panel">
         <div class="row" style="justify-content:space-between; margin-bottom:6px;">
           <h2 style="margin:0;">Agents</h2>
+          ${canEditAgentProfiles ? `<button id="clear-selected-agents" class="secondary" type="button">Clear selection</button>` : ''}
         </div>
         <div class="row" style="justify-content:space-between; margin-bottom:6px; gap:6px; flex-wrap:wrap;">
           <input id="agent-search" placeholder="Search agents" value="${escapeHtml(state.ui.agentSearch)}" />
@@ -8976,6 +8987,25 @@ function renderAgentsPage(currentUser) {
           </select>
         </div>
         <div class="muted" style="margin-bottom:6px;">Email is optional. Agents without an email can sign in with their username and temporary password.</div>
+        ${canEditAgentProfiles ? `<form id="bulk-agent-edit-form" class="row" style="margin-bottom:10px; gap:8px; flex-wrap:wrap; align-items:center;">
+          <strong>Bulk edit selected:</strong>
+          <select name="team">
+            <option value="">Keep team</option>
+            ${getTeamCatalog().map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join('')}
+          </select>
+          <select name="managerId">
+            <option value="">Keep managed by</option>
+            <option value="__clear__">Clear managed by</option>
+            ${(Array.isArray(authUsers) ? authUsers : []).filter((user) => (isAdminUser(user) || isTeamLeadUser(user)) && user.isActive !== false).sort((left, right) => String(left.name || left.username || '').localeCompare(String(right.name || right.username || ''))).map((user) => `<option value="${user.id}">${escapeHtml(user.name || user.username || 'Manager')}</option>`).join('')}
+          </select>
+          <select name="accessRole">
+            <option value="">Keep access level</option>
+            <option value="${userRoles.agent}">Agent</option>
+            <option value="${userRoles.teamLead}">Team lead</option>
+          </select>
+          <button type="submit">Apply to selected</button>
+          <span id="selected-agent-count" class="muted">${selectedAgentIds.size} selected</span>
+        </form>` : ''}
         ${isAdminUser(currentUser) ? `<form id="add-agent-form" class="stack">
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(112px, 1fr)); gap:5px; align-items:end;">
             <input name="name" placeholder="Name" required />
@@ -9006,13 +9036,14 @@ function renderAgentsPage(currentUser) {
             <div class="card" style="padding:8px;">
               <div class="stack" style="gap:6px;">
                 <div>
+                  ${canEditAgentProfiles ? `<label class="row" style="gap:6px; align-items:center; margin-bottom:4px;"><input type="checkbox" data-agent-select="${agent.id}" ${selectedAgentIds.has(Number(agent.id)) ? 'checked' : ''} /><span>Select for bulk edit</span></label>` : ''}
                   <div><strong>Name:</strong> ${escapeHtml(agent.name)}</div>
                   <div><strong>Access level:</strong> ${escapeHtml(getUserRoleLabel(getUserByAgentId(agent.id)?.role || userRoles.agent))}</div>
                   <div><strong>Team:</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span></div>
                   <div><strong>Department:</strong> ${escapeHtml(agent.department || 'Not set')}</div>
                   <div><strong>Location:</strong> ${escapeHtml(normalizeAgentLocation(agent.location) || 'Not set')}</div>
                   <div><strong>Email:</strong> ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
-                  <div><strong>Managed by:</strong> ${escapeHtml(getTeamManagerSummary(agent.team))}</div>
+                  <div><strong>Managed by:</strong> ${escapeHtml(getAgentManagerSummary(agent))}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
                   <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(agent.pronouns) || 'Not set')}</div>
                   <div><strong>Shiftboard ID:</strong> ${escapeHtml(normalizeShiftboardId(agent.shiftboardId) || 'Not set')}</div>
@@ -11839,6 +11870,64 @@ function bindEvents() {
   document.getElementById('agent-sort')?.addEventListener('change', (event) => {
     state.ui.agentSort = event.target.value === 'team' ? 'team' : 'name';
     saveUiState();
+    render();
+  });
+
+  document.querySelectorAll('[data-agent-select]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      const agentId = Number(checkbox.getAttribute('data-agent-select'));
+      if (!agentId) return;
+      if (checkbox.checked) {
+        selectedAgentIds.add(agentId);
+      } else {
+        selectedAgentIds.delete(agentId);
+      }
+      const countElement = document.getElementById('selected-agent-count');
+      if (countElement) countElement.textContent = `${selectedAgentIds.size} selected`;
+    });
+  });
+
+  document.getElementById('clear-selected-agents')?.addEventListener('click', () => {
+    selectedAgentIds.clear();
+    render();
+  });
+
+  document.getElementById('bulk-agent-edit-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (selectedAgentIds.size === 0) {
+      alert('Select at least one agent first.');
+      return;
+    }
+    const formData = new FormData(event.currentTarget);
+    const selectedTeam = String(formData.get('team') || '').trim();
+    const managerValue = String(formData.get('managerId') || '').trim();
+    const accessRole = String(formData.get('accessRole') || '').trim();
+    const updatedAt = getCurrentIsoTimestamp();
+
+    state.agents = state.agents.map((agent) => {
+      if (!selectedAgentIds.has(Number(agent.id))) return agent;
+      const nextAgent = { ...agent, updatedAt, profileUpdatedAt: updatedAt };
+      if (selectedTeam) nextAgent.team = normalizeTeamLabel(selectedTeam);
+      if (managerValue === '__clear__') nextAgent.managerId = null;
+      if (managerValue && managerValue !== '__clear__') nextAgent.managerId = Number(managerValue);
+      return nextAgent;
+    });
+
+    if (accessRole === userRoles.agent || accessRole === userRoles.teamLead) {
+      authUsers = authUsers.map((user) => selectedAgentIds.has(Number(user.agentId))
+        ? { ...user, role: accessRole, updatedAt, profileUpdatedAt: updatedAt }
+        : user);
+    }
+
+    const didSaveState = saveState();
+    const didSaveAuthUsers = saveAuthUsers();
+    if (!didSaveState || !didSaveAuthUsers) {
+      alert('Unable to save the bulk agent changes right now.');
+      syncFromStorage();
+      render();
+      return;
+    }
+    selectedAgentIds.clear();
     render();
   });
 
