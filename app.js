@@ -11252,7 +11252,13 @@ function bindEvents() {
     state.ui = state.ui && typeof state.ui === 'object' ? state.ui : {};
     state.ui.calendar = state.ui.calendar && typeof state.ui.calendar === 'object' ? state.ui.calendar : {};
     state.ui.calendar.weekReference = date;
+    state.ui.calendar.search = '';
+    state.ui.calendar.day = 'All';
+    state.ui.calendar.agentId = 'All';
+    state.ui.calendar.role = 'All';
+    state.ui.calendar.agentName = '';
     state.ui.calendar.date = '';
+    state.ui.calendar.location = 'All';
     const didSaveState = saveState();
     if (!didSaveState || !didPersistShifts()) {
       void saveStateToBackendFallback();
