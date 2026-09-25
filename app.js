@@ -530,12 +530,14 @@ const defaultState = {
   blackoutDates: [],
   teamCatalog: [...defaultTeamOptions],
   teamColors: {},
+  teamDepartments: {},
   roleColors: {},
   agentLocationColors: {},
   roleDepartments: {},
   roleCatalog: [...roleOptions],
   locationCatalog: [...shiftLocationOptions],
   agentLocationCatalog: [...agentLocationOptions],
+  agentLocationDepartments: {},
   locationDepartments: {},
   ui: {
     agentSearch: '',
@@ -697,6 +699,26 @@ function getRoleCatalog() {
   return normalizeRoleCatalog(state?.roleCatalog);
 }
 
+function getTeamDepartment(teamName) {
+  const key = String(teamName || '').trim().toLowerCase();
+  if (!key) return '';
+  return normalizeDepartment(state.teamDepartments?.[key]);
+}
+
+function setTeamDepartment(teamName, department) {
+  const key = String(teamName || '').trim().toLowerCase();
+  if (!key) return;
+  state.teamDepartments = { ...(state.teamDepartments || {}), [key]: normalizeDepartment(department) };
+}
+
+function removeTeamDepartment(teamName) {
+  const key = String(teamName || '').trim().toLowerCase();
+  if (!key || !state.teamDepartments || !(key in state.teamDepartments)) return;
+  const nextTeamDepartments = { ...state.teamDepartments };
+  delete nextTeamDepartments[key];
+  state.teamDepartments = nextTeamDepartments;
+}
+
 function getRoleDepartment(roleName) {
   const key = String(roleName || '').trim().toLowerCase();
   if (!key) return '';
@@ -752,6 +774,26 @@ function getLocationCatalog() {
 
 function getAgentLocationCatalog() {
   return normalizeOptionCatalog(state?.agentLocationCatalog, agentLocationOptions);
+}
+
+function getAgentLocationDepartment(location) {
+  const key = String(location || '').trim().toLowerCase();
+  if (!key) return '';
+  return normalizeDepartment(state?.agentLocationDepartments?.[key]);
+}
+
+function setAgentLocationDepartment(location, department) {
+  const key = String(location || '').trim().toLowerCase();
+  if (!key) return;
+  state.agentLocationDepartments = { ...(state.agentLocationDepartments || {}), [key]: normalizeDepartment(department) };
+}
+
+function removeAgentLocationDepartment(location) {
+  const key = String(location || '').trim().toLowerCase();
+  if (!key || !state.agentLocationDepartments || !(key in state.agentLocationDepartments)) return;
+  const nextDepartments = { ...state.agentLocationDepartments };
+  delete nextDepartments[key];
+  state.agentLocationDepartments = nextDepartments;
 }
 
 function getLocationDepartment(location) {
@@ -2852,6 +2894,7 @@ function createDefaultState() {
     blackoutDates: [...defaultState.blackoutDates],
     teamCatalog: [...defaultState.teamCatalog],
     teamColors: { ...defaultState.teamColors },
+    teamDepartments: { ...defaultState.teamDepartments },
     roleColors: { ...defaultState.roleColors },
     agentLocationColors: { ...defaultState.agentLocationColors },
     roleDepartments: { ...defaultState.roleDepartments },
@@ -2859,6 +2902,7 @@ function createDefaultState() {
     roleCatalog: [...defaultState.roleCatalog],
     locationCatalog: [...defaultState.locationCatalog],
     agentLocationCatalog: [...defaultState.agentLocationCatalog],
+    agentLocationDepartments: { ...defaultState.agentLocationDepartments },
     ui: getDefaultUiState()
   };
 }
@@ -3647,9 +3691,11 @@ function loadState() {
       policies: normalizePolicies(parsed.policies),
       teamCatalog: normalizeTeamCatalog(parsed.teamCatalog),
       teamColors: parsed.teamColors && typeof parsed.teamColors === 'object' ? parsed.teamColors : createDefaultState().teamColors,
+      teamDepartments: parsed.teamDepartments && typeof parsed.teamDepartments === 'object' && !Array.isArray(parsed.teamDepartments) ? parsed.teamDepartments : createDefaultState().teamDepartments,
       roleCatalog: normalizedRoleCatalog,
       locationCatalog: normalizedLocationCatalog,
       agentLocationCatalog: normalizedAgentLocationCatalog,
+      agentLocationDepartments: parsed.agentLocationDepartments && typeof parsed.agentLocationDepartments === 'object' && !Array.isArray(parsed.agentLocationDepartments) ? parsed.agentLocationDepartments : createDefaultState().agentLocationDepartments,
       shifts: (Array.isArray(parsed.shifts)
         ? parsed.shifts.map((shift) => {
             const rawLocation = String(shift.location || '').trim();
@@ -6604,10 +6650,12 @@ async function importData(file) {
       ? parsed.shifts.filter((shift) => !isInOfficeRole(shift?.role))
       : [];
     state.policies = importedPolicies;
+    state.teamDepartments = parsed.teamDepartments && typeof parsed.teamDepartments === 'object' && !Array.isArray(parsed.teamDepartments) ? parsed.teamDepartments : {};
     state.roleColors = parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : {};
     state.agentLocationColors = parsed.agentLocationColors && typeof parsed.agentLocationColors === 'object' ? parsed.agentLocationColors : {};
     state.roleDepartments = parsed.roleDepartments && typeof parsed.roleDepartments === 'object' && !Array.isArray(parsed.roleDepartments) ? parsed.roleDepartments : {};
     state.locationDepartments = parsed.locationDepartments && typeof parsed.locationDepartments === 'object' && !Array.isArray(parsed.locationDepartments) ? parsed.locationDepartments : {};
+    state.agentLocationDepartments = parsed.agentLocationDepartments && typeof parsed.agentLocationDepartments === 'object' && !Array.isArray(parsed.agentLocationDepartments) ? parsed.agentLocationDepartments : {};
     state.agentLocationCatalog = normalizeOptionCatalog(parsed.agentLocationCatalog, agentLocationOptions);
     state.blackoutDates = normalizeBlackoutDateEntries(parsed.blackoutDates);
     state.ui = loadUiState(parsed.ui);
@@ -8345,7 +8393,7 @@ function renderAdminOptionsPage(currentUser) {
             <button type="submit">Add team</button>
           </form>
           <div class="row" style="gap:8px; flex-wrap:wrap;">
-            ${getTeamCatalog().map((team) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(team)}<button type="button" class="danger" data-remove-team="${escapeHtml(team)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
+            ${getTeamCatalog().map((team) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(team)}<select data-team-department-select="${escapeHtml(team)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!getTeamDepartment(team) ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${getTeamDepartment(team) === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-team="${escapeHtml(team)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
           </div>
           <div class="row" style="justify-content:space-between; align-items:center; margin-top:14px; margin-bottom:8px;">
             <h3 style="margin:0;">Team colors</h3>
@@ -8369,7 +8417,7 @@ function renderAdminOptionsPage(currentUser) {
             <button type="submit">Add location</button>
           </form>
           <div class="row" style="gap:8px; flex-wrap:wrap;">
-            ${getAgentLocationCatalog().map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}<button type="button" class="danger" data-remove-agent-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
+            ${getAgentLocationCatalog().map((location) => `<span class="chip" style="display:inline-flex; align-items:center; gap:8px;">${escapeHtml(location)}<select data-agent-location-department-select="${escapeHtml(location)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!getAgentLocationDepartment(location) ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${getAgentLocationDepartment(location) === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-agent-location="${escapeHtml(location)}" style="padding:4px 8px;">Remove</button></span>`).join('')}
           </div>
           <div class="row" style="justify-content:space-between; align-items:center; margin-top:14px; margin-bottom:8px;">
             <h3 style="margin:0;">Location colors</h3>
@@ -11532,12 +11580,28 @@ function bindEvents() {
       }
       state.teamCatalog = nextTeamCatalog;
       teamOptions = [...state.teamCatalog];
+      removeTeamDepartment(team);
       if (state.teamColors && typeof state.teamColors === 'object') {
         const colorKey = team.toLowerCase();
         if (state.teamColors[colorKey]) {
           delete state.teamColors[colorKey];
         }
       }
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-team-department-select]').forEach((select) => {
+    select.addEventListener('change', () => {
+      if (getCurrentUserDepartmentScope() === 'Box Office') {
+        alert('Box Office admin accounts cannot change a team\'s department.');
+        render();
+        return;
+      }
+      const team = String(select.getAttribute('data-team-department-select') || '').trim();
+      if (!team) return;
+      setTeamDepartment(team, select.value);
       saveState();
       render();
     });
@@ -11573,6 +11637,22 @@ function bindEvents() {
         return;
       }
       state.agentLocationCatalog = getAgentLocationCatalog().filter((item) => item !== location);
+      removeAgentLocationDepartment(location);
+      saveState();
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-agent-location-department-select]').forEach((select) => {
+    select.addEventListener('change', () => {
+      if (getCurrentUserDepartmentScope() === 'Box Office') {
+        alert('Box Office admin accounts cannot change a location\'s department.');
+        render();
+        return;
+      }
+      const location = String(select.getAttribute('data-agent-location-department-select') || '').trim();
+      if (!location) return;
+      setAgentLocationDepartment(location, select.value);
       saveState();
       render();
     });
