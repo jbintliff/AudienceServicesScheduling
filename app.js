@@ -11203,7 +11203,9 @@ function bindEvents() {
     }
     const formData = new FormData(event.currentTarget);
     const agentId = formData.get('agentId') ? Number(formData.get('agentId')) : null;
-    const requestedRole = formData.get('role')?.toString().trim() || '';
+    const templateId = Number(formData.get('templateId')) || 0;
+    const selectedTemplate = templateId ? state.templates.find((template) => Number(template.id) === templateId) : null;
+    const requestedRole = formData.get('role')?.toString().trim() || String(selectedTemplate?.role || '').trim();
     if (isInOfficeRole(requestedRole)) {
       alert('In-person shifts are no longer available.');
       return;
@@ -11211,9 +11213,9 @@ function bindEvents() {
     const role = requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '';
     const start = formData.get('start')?.toString();
     const end = formData.get('end')?.toString();
-    const requestedLocation = formData.get('location')?.toString().trim() || '';
+    const requestedLocation = formData.get('location')?.toString().trim() || String(selectedTemplate?.location || '').trim();
     const location = requestedLocation && getAgentLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
-    const requestedVenue = formData.get('venue')?.toString().trim() || '';
+    const requestedVenue = formData.get('venue')?.toString().trim() || String(selectedTemplate?.venue || '').trim();
     const venue = requestedVenue && getLocationCatalogForScope().includes(requestedVenue) ? requestedVenue : '';
     const date = formData.get('date')?.toString() || '';
     const day = getDayFromDate(date);
