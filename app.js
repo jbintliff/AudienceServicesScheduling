@@ -6620,7 +6620,7 @@ function exportPublishedScheduleCsv(fromDate, toDate) {
     getAgent(shift.agentId)?.team || '',
     shift.agentId ? '1' : '',
     '',
-    shift.role || '',
+    ['no role', 'unassigned'].includes(String(shift.role || '').trim().toLowerCase()) ? '' : String(shift.role || '').trim(),
     shift.location || '',
     normalizeShiftboardId(getAgent(shift.agentId)?.shiftboardId),
     shift.title || '',
