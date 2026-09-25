@@ -161,6 +161,9 @@ function writeStore(store) {
   const currentStore = readStore();
   const currentAgentCount = getStoredAgentCount(currentStore);
   const nextAgentCount = getStoredAgentCount(store);
+  if (nextAgentCount === 0 && getSeedAgentCount() > 0) {
+    throw new Error('Refusing to overwrite seeded agent data with an empty agent list.');
+  }
   if (currentAgentCount >= 10 && nextAgentCount < 10 && nextAgentCount < currentAgentCount - 3) {
     throw new Error(`Refusing to overwrite ${currentAgentCount} agents with ${nextAgentCount} agents.`);
   }

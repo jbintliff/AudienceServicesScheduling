@@ -1144,6 +1144,16 @@ async function deletePolicyFileFromBackend(policyId) {
 
 async function performSharedKeyPush(key, rawValue) {
   if (!backendApiBase) return false;
+  if (key === storageKey) {
+    try {
+      const parsedState = JSON.parse(String(rawValue || '{}'));
+      if (!Array.isArray(parsedState.agents) || parsedState.agents.length === 0) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
   const previousWrite = sharedKeyWriteQueues.get(key) || Promise.resolve();
   const nextWrite = previousWrite.catch(() => {}).then(async () => {
     try {
