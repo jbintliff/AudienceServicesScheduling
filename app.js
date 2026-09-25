@@ -11175,11 +11175,14 @@ function bindEvents() {
       updatedAt: createdAt,
       publishedAt: ''
     });
+    state.ui = state.ui && typeof state.ui === 'object' ? state.ui : {};
+    state.ui.calendar = state.ui.calendar && typeof state.ui.calendar === 'object' ? state.ui.calendar : {};
     state.ui.calendar.weekReference = date;
     state.ui.calendar.date = '';
-    saveState();
-    if (!didPersistShifts()) {
+    const didSaveState = saveState();
+    if (!didSaveState || !didPersistShifts()) {
       void saveStateToBackendFallback();
+      alert('The shift was created in memory but could not be saved locally. Please reload and try again after checking browser storage.' );
       render();
       return;
     }
