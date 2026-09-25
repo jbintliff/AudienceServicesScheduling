@@ -3653,10 +3653,16 @@ function loadState() {
       shifts: (Array.isArray(parsed.shifts)
         ? parsed.shifts.map((shift) => {
             const rawLocation = String(shift.location || '').trim();
-            const normalizedLocation = normalizedLocationCatalog.includes(rawLocation) ? rawLocation : '';
+            const linkedAgent = normalizedAgents.find((agent) => Number(agent.id) === Number(shift.agentId));
+            const normalizedLocation = normalizedAgentLocationCatalog.includes(rawLocation)
+              ? rawLocation
+              : normalizeAgentLocation(linkedAgent?.location, normalizedAgentLocationCatalog);
+            const normalizedVenue = String(shift.venue || '').trim()
+              || (normalizedLocationCatalog.includes(rawLocation) ? rawLocation : '');
             const normalizedShift = {
               ...shift,
               location: normalizedLocation,
+              venue: normalizedVenue,
               role: normalizeRoleLabel(shift.role || roleByAgentId[String(shift.agentId)] || normalizedRoleCatalog[0], normalizedRoleCatalog),
               status: shift.status === shiftStatuses.draft || shift.status === shiftStatuses.published
                 ? shift.status
@@ -4122,7 +4128,7 @@ function resolveShiftLocationValue(candidateLocation, currentLocation) {
     if (trimmedValue === '') {
       return '';
     }
-    return getLocationCatalogForScope().includes(trimmedValue) ? trimmedValue : currentLocation;
+    return getAgentLocationCatalog().includes(trimmedValue) ? trimmedValue : currentLocation;
   }
   return currentLocation;
 }
@@ -4669,8 +4675,9 @@ function openShiftEditModal(shift, onSave) {
     existingOverlay.remove();
   }
 
-  const roleChoices = Array.from(new Set([...(getRoleLegendItems() || []), shift.role || getPrimaryRole()])).filter(Boolean);
-  const locationChoices = getLocationCatalogForScope();
+  const roleChoices = Array.from(new Set([...(getRoleLegendItems() || []), 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up', shift.role || getPrimaryRole()])).filter((role) => role && !isInOfficeRole(role));
+  const locationChoices = getAgentLocationCatalog();
+  const venueChoices = getLocationCatalogForScope();
   const safeStatus = shift.status === shiftStatuses.published ? shiftStatuses.published : shiftStatuses.draft;
   const overlay = document.createElement('div');
   overlay.id = 'shift-edit-modal-overlay';
@@ -4730,7 +4737,7 @@ function openShiftEditModal(shift, onSave) {
             <span>Venue</span>
             <select name="venue">
               <option value="">No venue</option>
-              ${locationChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(shift.venue || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
+              ${venueChoices.map((location) => `<option value="${escapeHtml(location)}" ${String(shift.venue || '') === String(location) ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
             </select>
           </label>
         </div>
@@ -6786,7 +6793,7 @@ function renderCalendarPage(currentUser) {
                 </select>
                 <select name="role">
                   <option value="">No role</option>
-                  ${getRoleLegendItems().map((role) => `<option value="${role}">${escapeHtml(role)}</option>`).join('')}
+                  ${Array.from(new Set([...(getRoleLegendItems() || []), 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'])).filter((role) => role && !isInOfficeRole(role)).map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
                 </select>
               </div>
               <div class="row">
@@ -6794,7 +6801,7 @@ function renderCalendarPage(currentUser) {
                 <input name="end" type="time" value="16:00" required />
                 <select name="location" required>
                   <option value="">Select location</option>
-                  ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
+                  ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
                 </select>
                 <select name="venue">
                   <option value="">No venue</option>
@@ -11137,7 +11144,7 @@ function bindEvents() {
     const start = formData.get('start')?.toString();
     const end = formData.get('end')?.toString();
     const requestedLocation = formData.get('location')?.toString().trim() || '';
-    const location = requestedLocation && getLocationCatalogForScope().includes(requestedLocation) ? requestedLocation : '';
+    const location = requestedLocation && getAgentLocationCatalog().includes(requestedLocation) ? requestedLocation : '';
     const requestedVenue = formData.get('venue')?.toString().trim() || '';
     const venue = requestedVenue && getLocationCatalogForScope().includes(requestedVenue) ? requestedVenue : '';
     const date = formData.get('date')?.toString() || '';
