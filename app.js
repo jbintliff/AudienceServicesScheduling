@@ -1,5 +1,5 @@
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const roleOptions = ['WFH', 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
+const roleOptions = ['Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
 const defaultTeamOptions = ['Patron Services Representative', 'Patron Services', 'Patron Services Associate', 'Audience Services Management', 'Box Office'];
 let teamOptions = [...defaultTeamOptions];
 const departmentOptions = ['Patron Services', 'Box Office'];
@@ -500,8 +500,8 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Patron Services Representative', department: 'Patron Services', role: 'WFH', location: 'In Person/ TP', payRate: 24, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Patron Services Associate', department: 'Patron Services', role: 'WFH', location: 'Work From Home', payRate: 18, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Patron Services Representative', department: 'Patron Services', role: '', location: 'In Person/ TP', payRate: 24, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Patron Services Associate', department: 'Patron Services', role: '', location: 'Work From Home', payRate: 18, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
     { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Patron Services Representative', department: 'Box Office', role: 'Booth Duty', location: '', payRate: 15, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Unavailable' }
   ],
   templates: [
@@ -638,7 +638,7 @@ function normalizeOptionCatalog(values, fallbackValues = []) {
 }
 
 function normalizeRoleCatalog(values) {
-  return normalizeOptionCatalog(values, roleOptions).filter((role) => role.toLowerCase() !== 'in-person');
+  return normalizeOptionCatalog(values, roleOptions).filter((role) => !['in-person', 'wfh'].includes(role.toLowerCase()));
 }
 
 function normalizeShiftAbsenceReason(value) {
@@ -2958,6 +2958,7 @@ function normalizeRoleLabel(role, availableRoles = null) {
     : normalizeRoleCatalog(roleOptions);
   const normalizedRole = String(role || '').trim().toLowerCase();
   if (!normalizedRole) return roleChoices[0] || roleOptions[0];
+  if (normalizedRole === 'wfh') return '';
   const legacyRoleMap = {
     senior: 'WFH',
     mid: 'WFH',
@@ -4185,7 +4186,7 @@ function getRoleLegendItems(departmentScope = getCurrentUserDepartmentScope()) {
     .filter((agent) => isAgentInDepartmentScope(agent, departmentScope))
     .map((agent) => String(agent.role || '').trim())
     .filter((role) => !departmentScope || (departmentScope === 'Box Office' ? getRoleDepartment(role) === 'Box Office' : isDateEntryInDepartmentScope(getRoleDepartment(role), departmentScope)))
-    .filter((role) => role.toLowerCase() !== 'in-person')
+    .filter((role) => !['in-person', 'wfh'].includes(role.toLowerCase()))
     .filter(Boolean);
   return Array.from(new Set([...normalizedBaseRoles, ...assignedRoles]));
 }
