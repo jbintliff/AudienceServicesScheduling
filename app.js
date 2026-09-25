@@ -6964,11 +6964,12 @@ function renderCalendarPage(currentUser) {
             <div class="day-card" data-day="${day}" data-date="${escapeHtml(dayDate)}">
               <div class="row" style="margin-bottom:6px;">
                 <div>
-                  <div ${hasDayRequests ? `data-view-day-availability-requests="${escapeHtml(dayDate)}" style="cursor:pointer;" title="View requests for this date"` : ''}>
+                  <div data-create-shift-date="${escapeHtml(dayDate)}" style="cursor:pointer;" title="Create a shift on this date">
                     <h4 style="margin:0;">${day}</h4>
                     <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
                     <div class="muted" style="font-size:0.72rem;">${daySummary.agentCount} agent${daySummary.agentCount === 1 ? '' : 's'} • $${daySummary.cost.toFixed(2)}</div>
                   </div>
+                  ${hasDayRequests ? `<div data-view-day-availability-requests="${escapeHtml(dayDate)}" style="cursor:pointer;" title="View requests for this date"><span class="muted">View availability requests</span></div>` : ''}
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                   ${canManageCalendar ? `<div style="margin-top:6px;"><button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate || copiedScheduleTemplate ? '' : 'disabled'}>Paste here</button></div>` : ''}
                   ${getAvailabilityCalendarMarkers(weekDates[day]?.iso || '')}
@@ -13480,6 +13481,18 @@ function bindEvents() {
     button.addEventListener('click', async (event) => {
       event.preventDefault();
       await pasteCopiedShiftToDay(button.getAttribute('data-paste-shift-day'));
+    });
+  });
+
+  document.querySelectorAll('[data-create-shift-date]').forEach((dateTarget) => {
+    dateTarget.addEventListener('click', (event) => {
+      if (!canManageCalendar || event.target.closest('[data-view-day-availability-requests]')) return;
+      const date = String(dateTarget.getAttribute('data-create-shift-date') || '').trim();
+      const dateInput = document.querySelector('#add-shift-form input[name="date"]');
+      if (!(dateInput instanceof HTMLInputElement) || !date) return;
+      dateInput.value = date;
+      dateInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      dateInput.focus();
     });
   });
 
