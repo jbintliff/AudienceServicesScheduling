@@ -1,6 +1,7 @@
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
-const defaultTeamOptions = ['Patron Services Representative', 'Patron Services', 'Patron Services Associate', 'Audience Services Management', 'Box Office'];
+const retiredTeamLabels = new Set(['patron services representative', 'patron services', 'patron services associate']);
+const defaultTeamOptions = ['Patron Services Associate', 'Audience Services Management', 'Box Office'];
 let teamOptions = [...defaultTeamOptions];
 const departmentOptions = ['Audience Services', 'Box Office'];
 const agentSkillOptions = [
@@ -2915,7 +2916,7 @@ function normalizeTeamCatalog(value) {
   const seed = Array.isArray(value) && value.length > 0 ? value : defaultTeamOptions;
   const normalized = Array.from(new Set(seed
     .map((team) => String(team || '').trim())
-    .filter(Boolean)));
+    .filter((team) => team && !retiredTeamLabels.has(team.toLowerCase()))));
   return normalized.length > 0 ? normalized : [...defaultTeamOptions];
 }
 
@@ -2980,6 +2981,7 @@ function normalizeTeamLabel(team) {
   const normalizedTeam = String(team || '').trim().toLowerCase();
   const teamCatalog = getTeamCatalog();
   if (!normalizedTeam) return teamCatalog[0] || defaultTeamOptions[0];
+  if (retiredTeamLabels.has(normalizedTeam)) return teamCatalog[0] || defaultTeamOptions[0];
   const matchedTeam = teamCatalog.find((item) => item.toLowerCase() === normalizedTeam);
   return matchedTeam || teamCatalog[0] || defaultTeamOptions[0];
 }
