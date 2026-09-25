@@ -4642,10 +4642,6 @@ async function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, en
   }
 
   const roleToEvaluate = requestedRole || targetAgent?.role || getPrimaryRole();
-  if (!canAssignAgentToShiftRole(agentId, roleToEvaluate)) {
-    alert(`${targetAgent?.name || 'This agent'} cannot be scheduled for Booth Duty without the Booth Duty skill.`);
-    return false;
-  }
 
   if (isAgentInOfficeLocation(targetAgent, roleToEvaluate)) {
     const maxInOfficeShifts = normalizeMaxInOfficeShifts(targetAgent?.maxInOfficeShifts);
@@ -6791,17 +6787,17 @@ function renderCalendarPage(currentUser) {
                   <option value="">Unassigned (optional)</option>
                   ${[...agentCatalog].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
                 </select>
-                <select name="role">
-                  <option value="">No role</option>
-                  ${Array.from(new Set([...(getRoleLegendItems() || []), 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'])).filter((role) => role && !isInOfficeRole(role)).map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
+                <select name="location" required>
+                  <option value="">Select location</option>
+                  ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
                 </select>
               </div>
               <div class="row">
                 <input name="start" type="time" value="08:00" required />
                 <input name="end" type="time" value="16:00" required />
-                <select name="location" required>
-                  <option value="">Select location</option>
-                  ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
+                <select name="role">
+                  <option value="">No role</option>
+                  ${Array.from(new Set([...(getRoleLegendItems() || []), 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'])).filter((role) => role && !isInOfficeRole(role)).map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
                 </select>
                 <select name="venue">
                   <option value="">No venue</option>
