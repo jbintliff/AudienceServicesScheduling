@@ -11175,6 +11175,8 @@ function bindEvents() {
       updatedAt: createdAt,
       publishedAt: ''
     });
+    state.ui.calendar.weekReference = date;
+    state.ui.calendar.date = '';
     saveState();
     if (!didPersistShifts()) {
       void saveStateToBackendFallback();
