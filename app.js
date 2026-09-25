@@ -2,7 +2,7 @@ const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
 const defaultTeamOptions = ['Patron Services Representative', 'Patron Services', 'Patron Services Associate', 'Audience Services Management', 'Box Office'];
 let teamOptions = [...defaultTeamOptions];
-const departmentOptions = ['Patron Services', 'Box Office'];
+const departmentOptions = ['Audience Services', 'Box Office'];
 const agentSkillOptions = [
   { value: 'single-tickets', label: 'Single Tickets' },
   { value: 'subscrptions', label: 'Subscriptions' },
@@ -500,8 +500,8 @@ const pageMode = (() => {
 
 const defaultState = {
   agents: [
-    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Patron Services Representative', department: 'Patron Services', role: '', location: 'In Person/ TP', payRate: 24, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
-    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Patron Services Associate', department: 'Patron Services', role: '', location: 'Work From Home', payRate: 18, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 1, name: 'Maya', email: 'maya@scheduler.local', team: 'Patron Services Representative', department: 'Audience Services', role: '', location: 'In Person/ TP', payRate: 24, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
+    { id: 2, name: 'Luis', email: 'luis@scheduler.local', team: 'Patron Services Associate', department: 'Audience Services', role: '', location: 'Work From Home', payRate: 18, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Available' },
     { id: 3, name: 'Nina', email: 'nina@scheduler.local', team: 'Patron Services Representative', department: 'Box Office', role: 'Booth Duty', location: '', payRate: 15, attendancePoints: 0, pronouns: '', shiftboardId: '', maxInOfficeShifts: null, maxShiftsPerWeek: null, availability: 'Unavailable' }
   ],
   templates: [
@@ -584,7 +584,7 @@ const defaultState = {
 };
 
 const defaultAuthUsers = [
-  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', department: 'Patron Services', email: 'jbintliff@ensembleartsphilly.org', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.admin },
+  { id: 1001, username: 'admin', name: 'System Admin', jobTitle: 'Scheduling Administrator', department: 'Audience Services', email: 'jbintliff@ensembleartsphilly.org', phone: '215-555-0100', password: 'Admin123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.admin },
   { id: 1002, username: 'maya', email: 'maya@scheduler.local', phone: '215-555-0101', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 1 },
   { id: 1003, username: 'luis', email: 'luis@scheduler.local', phone: '215-555-0102', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 2 },
   { id: 1004, username: 'nina', email: 'nina@scheduler.local', phone: '215-555-0103', password: 'Agent123!', passwordUpdatedAt: defaultPasswordUpdatedAt, role: userRoles.agent, agentId: 3 }
@@ -1749,7 +1749,10 @@ function loadAuthUsers() {
       });
     }
     return parsed.map((user) => {
-      const normalizedUser = withRequiredEmail(user);
+      const normalizedUser = withRequiredEmail({
+        ...user,
+        department: normalizeDepartment(user?.department)
+      });
       const userPhoto = normalizedUser?.profilePhotoDataUrl || storedProfilePhotos[String(normalizedUser?.id || '')] || '';
       return userPhoto
         ? { ...normalizedUser, profilePhotoDataUrl: userPhoto }
@@ -2983,6 +2986,7 @@ function normalizeTeamLabel(team) {
 function normalizeDepartment(department) {
   const normalizedDepartment = String(department || '').trim().toLowerCase();
   if (!normalizedDepartment) return '';
+  if (normalizedDepartment === 'patron services') return 'Audience Services';
   const matchedDepartment = departmentOptions.find((item) => item.toLowerCase() === normalizedDepartment);
   return matchedDepartment || '';
 }
@@ -3668,6 +3672,7 @@ function loadState() {
             ...agent,
             email: normalizeEmail(agent.email || linkedUserEmail),
             team: normalizeTeamLabel(agent.team),
+            department: normalizeDepartment(agent.department),
             role: normalizeRoleLabel(agent.role, normalizedRoleCatalog),
             location: normalizeAgentLocation(agent.location, normalizedAgentLocationCatalog),
             attendancePoints,
@@ -7345,7 +7350,7 @@ function renderProfilePage(currentUser) {
                       <div class="row" style="gap:8px; flex-wrap:wrap; justify-content:flex-end;">
                         <button type="submit" class="secondary">Save manager</button>
                         <button type="button" class="secondary" data-resend-admin-invite="${adminUser.id}">Resend invite</button>
-                        ${isBoxOfficeScopedAdmin && adminUser.department === 'Patron Services' ? '' : `<button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>`}
+                        ${isBoxOfficeScopedAdmin && normalizeDepartment(adminUser.department) === 'Audience Services' ? '' : `<button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>`}
                         ${isBoxOfficeScopedAdmin ? '' : `<button type="button" class="danger" data-remove-admin="${adminUser.id}">Remove</button>`}
                       </div>
                       </div>
@@ -7674,8 +7679,8 @@ function renderProfilePage(currentUser) {
         const activeUser = getCurrentUser();
         const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)) && Number(user.id) === adminId);
         if (!adminUser) return;
-        if (getCurrentUserDepartmentScope() === 'Box Office' && adminUser.department === 'Patron Services') {
-          alert('Box Office admin accounts cannot deactivate Patron Services managers.');
+        if (getCurrentUserDepartmentScope() === 'Box Office' && normalizeDepartment(adminUser.department) === 'Audience Services') {
+          alert('Box Office admin accounts cannot deactivate Audience Services managers.');
           return;
         }
         const isDeactivating = adminUser.isActive !== false;
@@ -8244,7 +8249,7 @@ function renderManagerManagementPanel(currentUser) {
                   <div class="row" style="gap:8px; flex-wrap:wrap; justify-content:flex-end;">
                     <button type="submit" class="secondary">Save manager</button>
                     <button type="button" class="secondary" data-resend-admin-invite="${adminUser.id}">Resend invite</button>
-                    ${isBoxOfficeScopedAdmin && adminUser.department === 'Patron Services' ? '' : `<button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>`}
+                    ${isBoxOfficeScopedAdmin && normalizeDepartment(adminUser.department) === 'Audience Services' ? '' : `<button type="button" class="secondary" data-toggle-admin-active="${adminUser.id}">${adminUser.isActive === false ? 'Reactivate' : 'Deactivate'}</button>`}
                     ${isBoxOfficeScopedAdmin ? '' : `<button type="button" class="danger" data-remove-admin="${adminUser.id}">Remove</button>`}
                   </div>
                 </div>
