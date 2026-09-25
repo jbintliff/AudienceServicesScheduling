@@ -1304,8 +1304,12 @@ function mergeRemoteSnapshotWithPendingLocal(remoteStore) {
           const localAgentCount = Array.isArray(localState.agents) ? localState.agents.length : 0;
           const remoteAgentCount = Array.isArray(remoteState.agents) ? remoteState.agents.length : 0;
           if (localAgentCount === 0 && remoteAgentCount > 0) {
-            mergedStore[key] = remoteValue;
-            pendingSharedWriteKeys.delete(key);
+            mergedStore[key] = JSON.stringify({
+              ...remoteState,
+              ...localState,
+              agents: remoteState.agents
+            });
+            preservedLocalKeys.push(key);
             return;
           }
         } catch {
