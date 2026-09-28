@@ -3751,6 +3751,7 @@ function loadState() {
       shifts: (Array.isArray(parsed.shifts)
         ? parsed.shifts.map((shift) => {
             const rawLocation = String(shift.location || '').trim();
+          const rawRole = String(shift.role || '').trim();
             const linkedAgent = normalizedAgents.find((agent) => Number(agent.id) === Number(shift.agentId));
             const normalizedLocation = normalizedAgentLocationCatalog.includes(rawLocation)
               ? rawLocation
@@ -3761,7 +3762,7 @@ function loadState() {
               ...shift,
               location: normalizedLocation,
               venue: normalizedVenue,
-              role: normalizeRoleLabel(shift.role || roleByAgentId[String(shift.agentId)] || normalizedRoleCatalog[0], normalizedRoleCatalog),
+              role: rawRole ? normalizeRoleLabel(rawRole, normalizedRoleCatalog) : '',
               status: shift.status === shiftStatuses.draft || shift.status === shiftStatuses.published
                 ? shift.status
                 : shiftStatuses.published
