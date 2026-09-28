@@ -1155,6 +1155,16 @@ async function performSharedKeyPush(key, rawValue) {
       return false;
     }
   }
+  if (key === authUsersKey) {
+    try {
+      const parsedUsers = JSON.parse(String(rawValue || '[]'));
+      if (!Array.isArray(parsedUsers) || parsedUsers.length === 0) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
   const previousWrite = sharedKeyWriteQueues.get(key) || Promise.resolve();
   const nextWrite = previousWrite.catch(() => {}).then(async () => {
     try {
@@ -1801,6 +1811,12 @@ function saveAuthUsers() {
     void pushLocalSnapshotToBackend();
   }
   return didSave && didSavePhotos;
+}
+
+function saveAuthUsersToBackend() {
+  const serializedUsers = serializeAuthUsersForStorage(authUsers);
+  if (!backendApiBase || serializedUsers.length === 0) return Promise.resolve(false);
+  return pushSharedKeyToBackend(authUsersKey, JSON.stringify(serializedUsers));
 }
 
 function loadPasswordResetRequests() {
@@ -7478,7 +7494,7 @@ function renderProfilePage(currentUser) {
       render();
     });
 
-    document.getElementById('add-admin-form')?.addEventListener('submit', (event) => {
+    document.getElementById('add-admin-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       const formData = new FormData(event.currentTarget);
       const name = formData.get('name')?.toString().trim() || '';
@@ -7519,10 +7535,11 @@ function renderProfilePage(currentUser) {
       });
       authUsers.push(nextAdminUser);
       const didSaveAuthUsers = saveAuthUsers();
-      if (!didSaveAuthUsers) {
+      const didSaveRemote = didSaveAuthUsers ? await saveAuthUsersToBackend() : false;
+      if (!didSaveAuthUsers || !didSaveRemote) {
         adminManagerNotice = {
           type: 'error',
-          text: 'Unable to save manager account right now. Please check browser storage settings and try again.',
+          text: 'Unable to save the manager account to the shared backend. Please try again before leaving this page.',
           resetLink: ''
         };
         render();
@@ -7553,7 +7570,7 @@ function renderProfilePage(currentUser) {
     });
 
     document.querySelectorAll('[data-update-admin-form]').forEach((form) => {
-      form.addEventListener('submit', (event) => {
+      form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const adminId = Number(form.getAttribute('data-update-admin-form'));
         const adminUser = authUsers.find((user) => (isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)) && Number(user.id) === adminId);
@@ -7605,10 +7622,11 @@ function renderProfilePage(currentUser) {
             }
           : user);
         const didSaveAuthUsers = saveAuthUsers();
-        if (!didSaveAuthUsers) {
+        const didSaveRemote = didSaveAuthUsers ? await saveAuthUsersToBackend() : false;
+        if (!didSaveAuthUsers || !didSaveRemote) {
           adminManagerNotice = {
             type: 'error',
-            text: 'Unable to save manager details right now. Please check browser storage settings and try again.',
+            text: 'Unable to save manager details to the shared backend. Please try again before leaving this page.',
             resetLink: ''
           };
           render();
@@ -11277,12 +11295,20 @@ function bindEvents() {
     state.ui.calendar.location = 'All';
     const didSaveState = saveState();
     if (!didSaveState || !didPersistShifts()) {
-      void saveStateToBackendFallback();
+      const didSaveRemote = await saveStateToBackendFallback();
+      if (didSaveRemote) {
+        render();
+        return;
+      }
       alert('The shift was created in memory but could not be saved locally. Please reload and try again after checking browser storage.' );
       render();
       return;
     }
-    queueImmediateBackendSnapshotSync();
+    const didSaveRemote = await saveStateToBackendFallback();
+    if (!didSaveRemote) {
+      alert('The shift was saved in this browser but could not be synced to the shared schedule. Please try again before leaving this page.');
+      return;
+    }
     render();
   });
 

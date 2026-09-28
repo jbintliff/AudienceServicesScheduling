@@ -134,6 +134,17 @@ function getStoredAgentCount(store) {
   }
 }
 
+function getStoredAuthUserCount(store) {
+  const rawUsers = store?.['agent-scheduler-users-v1'];
+  if (typeof rawUsers !== 'string') return 0;
+  try {
+    const parsed = JSON.parse(rawUsers);
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function getStoredAgentCountFromFile(filePath) {
   if (!fs.existsSync(filePath)) return 0;
   try {
@@ -161,11 +172,16 @@ function writeStore(store) {
   const currentStore = readStore();
   const currentAgentCount = getStoredAgentCount(currentStore);
   const nextAgentCount = getStoredAgentCount(store);
+  const currentAuthUserCount = getStoredAuthUserCount(currentStore);
+  const nextAuthUserCount = getStoredAuthUserCount(store);
   if (nextAgentCount === 0 && getSeedAgentCount() > 0) {
     throw new Error('Refusing to overwrite seeded agent data with an empty agent list.');
   }
   if (currentAgentCount >= 10 && nextAgentCount < 10 && nextAgentCount < currentAgentCount - 3) {
     throw new Error(`Refusing to overwrite ${currentAgentCount} agents with ${nextAgentCount} agents.`);
+  }
+  if (currentAuthUserCount > 0 && nextAuthUserCount === 0) {
+    throw new Error(`Refusing to overwrite ${currentAuthUserCount} accounts with an empty account list.`);
   }
   backupCurrentDataFile();
   const next = { store };
