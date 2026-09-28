@@ -1168,11 +1168,12 @@ async function performSharedKeyPush(key, rawValue) {
   const previousWrite = sharedKeyWriteQueues.get(key) || Promise.resolve();
   const nextWrite = previousWrite.catch(() => {}).then(async () => {
     try {
-      // keepalive lets this request finish even if the user navigates away right after saving.
+      const requestBody = JSON.stringify({ value: rawValue });
+      const canUseKeepalive = new Blob([requestBody]).size <= 60 * 1024;
       const response = await requestBackend(`/store/${encodeURIComponent(key)}`, {
         method: 'PUT',
-        keepalive: true,
-        body: JSON.stringify({ value: rawValue })
+        keepalive: canUseKeepalive,
+        body: requestBody
       });
       const ok = Boolean(response);
       if (ok) {
@@ -1220,10 +1221,12 @@ async function performLocalSnapshotPush() {
       store[key] = value;
     }
   });
+  const requestBody = JSON.stringify({ store });
+  const canUseKeepalive = new Blob([requestBody]).size <= 60 * 1024;
   const response = await requestBackend('/snapshot', {
     method: 'PUT',
-    keepalive: true,
-    body: JSON.stringify({ store })
+    keepalive: canUseKeepalive,
+    body: requestBody
   });
   const didSync = Boolean(response);
   if (didSync) {
@@ -11068,6 +11071,108 @@ function bindEvents() {
   const activeUser = getCurrentUser();
   const canManageCalendar = canManageSchedule(activeUser);
   const canMarkAbsence = canMarkShiftAbsences(activeUser);
+
+  if (pageMode === 'admin-options') {
+    document.getElementById('add-admin-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      const name = String(formData.get('name') || '').trim();
+      const jobTitle = String(formData.get('jobTitle') || '').trim();
+      const department = normalizeDepartment(formData.get('department'));
+      const email = normalizeEmail(formData.get('email'));
+      const phone = normalizePhone(formData.get('phone'));
+      const accessRole = normalizeUserRole(formData.get('accessRole'));
+      const managedTeams = normalizeManagedTeams(formData.getAll('managedTeams'));
+
+      if (!name || !jobTitle) {
+        alert('Manager name and job title are required.');
+        return;
+      }
+      if (email && authUsers.some((user) => normalizeEmail(user.email) === email)) {
+        alert('That email address is already in use by another account.');
+        return;
+      }
+
+      const timestamp = getCurrentIsoTimestamp();
+      const nextAdminUser = withRequiredEmail({
+        id: createId(),
+        username: createUniqueAccountUsername(email, 'manager'),
+        name,
+        jobTitle,
+        department,
+        email,
+        phone,
+        managedTeams,
+        password: createTemporaryPassword(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        profileUpdatedAt: timestamp,
+        role: accessRole
+      });
+      authUsers.push(nextAdminUser);
+      const didSaveLocal = saveAuthUsers();
+      const didSaveRemote = didSaveLocal ? await saveAuthUsersToBackend() : false;
+      if (!didSaveLocal || !didSaveRemote) {
+        adminManagerNotice = {
+          type: 'error',
+          text: 'Unable to save the manager account to the shared backend. Please try again before leaving this page.',
+          resetLink: ''
+        };
+        render();
+        return;
+      }
+
+      const inviteResult = email ? sendAdminInviteEmail(nextAdminUser) : null;
+      adminManagerNotice = {
+        type: 'success',
+        text: email ? 'Manager added and invitation email queued.' : 'Manager added. No email was provided, so no invitation was sent.',
+        resetLink: inviteResult?.resetLink || ''
+      };
+      render();
+    });
+
+    document.querySelectorAll('[data-update-admin-form]').forEach((form) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const adminId = Number(form.getAttribute('data-update-admin-form'));
+        const adminUser = authUsers.find((user) => Number(user.id) === adminId && (isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)));
+        if (!adminUser) return;
+
+        const formData = new FormData(form);
+        const name = String(formData.get('name') || '').trim();
+        const jobTitle = String(formData.get('jobTitle') || '').trim();
+        const department = normalizeDepartment(formData.get('department'));
+        const email = normalizeEmail(formData.get('email'));
+        const phone = normalizePhone(formData.get('phone'));
+        const accessRole = normalizeUserRole(formData.get('accessRole'));
+        const managedTeams = normalizeManagedTeams(formData.getAll('managedTeams'));
+
+        if (!name || !jobTitle) {
+          alert('Manager name and job title are required.');
+          return;
+        }
+        if (email && authUsers.some((user) => Number(user.id) !== adminId && normalizeEmail(user.email) === email)) {
+          alert('That email address is already in use by another account.');
+          return;
+        }
+        if (isAdminUser(adminUser) && accessRole !== userRoles.admin && adminUser.isActive !== false && getActiveAdminCount() <= 1) {
+          alert('You cannot change the last active admin to a non-admin role.');
+          return;
+        }
+
+        const timestamp = getCurrentIsoTimestamp();
+        authUsers = authUsers.map((user) => Number(user.id) === adminId
+          ? { ...user, name, jobTitle, department, email, phone, managedTeams, role: accessRole, updatedAt: timestamp, profileUpdatedAt: timestamp }
+          : user);
+        const didSaveLocal = saveAuthUsers();
+        const didSaveRemote = didSaveLocal ? await saveAuthUsersToBackend() : false;
+        adminManagerNotice = didSaveLocal && didSaveRemote
+          ? { type: 'success', text: 'Manager details updated successfully.', resetLink: '' }
+          : { type: 'error', text: 'Unable to save manager details to the shared backend. Please try again before leaving this page.', resetLink: '' };
+        render();
+      });
+    });
+  }
 
   document.getElementById('admin-blackout-dates-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
