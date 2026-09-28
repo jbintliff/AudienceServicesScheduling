@@ -1049,6 +1049,7 @@ function safeSetLocalStorage(key, value) {
 
 async function syncSharedSnapshotToBackend() {
   if (!backendApiBase) return false;
+  if (getLocalAgentCount() === 0 || !localStorage.getItem(storageKey)) return false;
   try {
     const store = {};
     sharedStorageKeys.forEach((key) => {

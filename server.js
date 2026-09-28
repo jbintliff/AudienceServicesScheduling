@@ -444,7 +444,7 @@ app.get('/api/snapshot', (_req, res) => {
 app.put('/api/snapshot', (req, res) => {
   const incomingStore = filterAllowedStore(req.body?.store || {});
   try {
-    writeStore(incomingStore);
+    writeStore({ ...readStore(), ...incomingStore });
     res.json({ ok: true, keys: Object.keys(incomingStore).length });
   } catch (error) {
     res.status(409).json({ ok: false, error: error.message || 'Snapshot would discard existing agent data.' });
