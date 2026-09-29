@@ -11173,6 +11173,84 @@ function bindEvents() {
         render();
       });
     });
+
+    document.querySelectorAll('[data-toggle-admin-active]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const adminId = Number(button.getAttribute('data-toggle-admin-active'));
+        const activeUser = getCurrentUser();
+        const adminUser = authUsers.find((user) => Number(user.id) === adminId && (isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)));
+        if (!adminUser) return;
+        if (getCurrentUserDepartmentScope() === 'Box Office' && normalizeDepartment(adminUser.department) === 'Audience Services') {
+          alert('Box Office admin accounts cannot deactivate Audience Services managers.');
+          return;
+        }
+
+        const isDeactivating = adminUser.isActive !== false;
+        if (isDeactivating && isAdminUser(adminUser) && getActiveAdminCount() <= 1) {
+          alert('You cannot deactivate the last active admin account.');
+          return;
+        }
+        const actionLabel = isDeactivating ? 'deactivate' : 'reactivate';
+        if (!confirm(`Are you sure you want to ${actionLabel} ${adminUser.name || adminUser.username || 'this manager'}?`)) return;
+
+        authUsers = authUsers.map((user) => Number(user.id) === adminId
+          ? { ...user, isActive: !isDeactivating, updatedAt: getCurrentIsoTimestamp() }
+          : user);
+        const didSaveLocal = saveAuthUsers();
+        const didSaveRemote = didSaveLocal ? await saveAuthUsersToBackend() : false;
+        if (!didSaveLocal || !didSaveRemote) {
+          adminManagerNotice = {
+            type: 'error',
+            text: 'Unable to save manager status to the shared backend. Please try again.',
+            resetLink: ''
+          };
+          render();
+          return;
+        }
+        if (Number(activeUser?.id) === adminId && isDeactivating) {
+          clearSession();
+          alert('Your manager account was deactivated.');
+          render();
+          return;
+        }
+        adminManagerNotice = {
+          type: 'success',
+          text: `Manager account ${isDeactivating ? 'deactivated' : 'reactivated'}.`,
+          resetLink: ''
+        };
+        render();
+      });
+    });
+
+    document.querySelectorAll('[data-remove-admin]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const adminId = Number(button.getAttribute('data-remove-admin'));
+        const activeUser = getCurrentUser();
+        const adminUser = authUsers.find((user) => Number(user.id) === adminId && (isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)));
+        if (!adminUser) return;
+        if (getCurrentUserDepartmentScope() === 'Box Office') {
+          alert('Box Office admin accounts cannot remove other managers.');
+          return;
+        }
+        if (Number(activeUser?.id) === adminId) {
+          alert('You cannot remove the manager account you are currently signed in with.');
+          return;
+        }
+        if (isAdminUser(adminUser) && adminUser.isActive !== false && getActiveAdminCount() <= 1) {
+          alert('You cannot remove the last active admin account.');
+          return;
+        }
+        if (!confirm(`Remove manager ${adminUser.name || adminUser.username || 'this account'}?`)) return;
+
+        authUsers = authUsers.filter((user) => Number(user.id) !== adminId);
+        const didSaveLocal = saveAuthUsers();
+        const didSaveRemote = didSaveLocal ? await saveAuthUsersToBackend() : false;
+        adminManagerNotice = didSaveLocal && didSaveRemote
+          ? { type: 'success', text: 'Manager account removed.', resetLink: '' }
+          : { type: 'error', text: 'Unable to remove manager from the shared backend. Please try again.', resetLink: '' };
+        render();
+      });
+    });
   }
 
   document.getElementById('admin-blackout-dates-form')?.addEventListener('submit', (event) => {
