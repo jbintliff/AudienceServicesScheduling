@@ -4167,8 +4167,10 @@ function getAgentLocationColor(location) {
 }
 
 function getShiftRoleOutlineColor(shift) {
+  const role = String(shift?.role || '').trim();
+  if (!role) return '';
   if (isSwapRestrictedAgent(shift?.agentId)) return getRoleColor('Booth Duty');
-  return getRoleColor(shift?.role || getAgent(shift?.agentId)?.role);
+  return getRoleColor(role);
 }
 
 function isShiftOfferedForPickup(shift) {
@@ -4192,8 +4194,9 @@ function getShiftStyle(shift) {
   const absentFade = normalizeShiftAbsenceReason(shift?.absenceReason) ? ' opacity:0.72;' : '';
   const shiftColor = getShiftLocationColor(shift);
   const roleOutline = getShiftRoleOutlineColor(shift);
+  const outlineStyle = roleOutline ? ` outline:4px solid ${roleOutline}; outline-offset:-3px; border-left:3px solid rgba(255,255,255,0.65);` : '';
   const draftFade = shift?.status === shiftStatuses.published ? '' : ' opacity:0.52;';
-  return `background:${shiftColor}; outline:4px solid ${roleOutline}; outline-offset:-3px; border-left:3px solid rgba(255,255,255,0.65);${attentionBorder}${absentFade || draftFade}`;
+  return `background:${shiftColor};${outlineStyle}${attentionBorder}${absentFade || draftFade}`;
 }
 
 function getPlannerWeekIsoDateForDay(dayLabel) {
