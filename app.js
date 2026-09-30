@@ -4906,7 +4906,7 @@ function openShiftEditModal(shift, onSave) {
       alert('In-person shifts are no longer available.');
       return;
     }
-    const nextRole = normalizeRoleLabel(requestedRole || getPrimaryRole(), getRoleCatalog());
+    const nextRole = requestedRole ? normalizeRoleLabel(requestedRole, getRoleCatalog()) : '';
     const requestedLocation = String(formData.get('location') || '').trim();
     const nextLocation = resolveShiftLocationValue(requestedLocation, shift.location);
     const requestedVenue = String(formData.get('venue') || '').trim();
@@ -6362,23 +6362,17 @@ function formatTimeRange(startTime, endTime) {
 }
 
 function getShiftRoleLocationText(shift) {
-  const role = String(shift?.role || getPrimaryRole()).trim() || getPrimaryRole();
+  const role = String(shift?.role || '').trim();
   const location = String(shift?.location || '').trim();
   const venue = String(shift?.venue || '').trim();
-  if (location && venue) return `${role} • ${location} • ${venue}`;
-  if (location) return `${role} • ${location}`;
-  if (venue) return `${role} • ${venue}`;
-  return role;
+  return [role, location, venue].filter(Boolean).join(' • ');
 }
 
 function getShiftRoleLocationHtml(shift) {
-  const role = String(shift?.role || getPrimaryRole()).trim() || getPrimaryRole();
+  const role = String(shift?.role || '').trim();
   const location = String(shift?.location || '').trim();
   const venue = String(shift?.venue || '').trim();
-  if (location && venue) return `${escapeHtml(role)}<br />${escapeHtml(location)}<br />${escapeHtml(venue)}`;
-  if (location) return `${escapeHtml(role)}<br />${escapeHtml(location)}`;
-  if (venue) return `${escapeHtml(role)}<br />${escapeHtml(venue)}`;
-  return `${escapeHtml(role)}`;
+  return [role, location, venue].filter(Boolean).map(escapeHtml).join('<br />');
 }
 
 function getShiftSummary(shift, includeDay = true) {
@@ -11481,12 +11475,12 @@ function bindEvents() {
       render();
       return;
     }
+    render();
     const didSaveRemote = await saveStateToBackendFallback();
     if (!didSaveRemote) {
       alert('The shift was saved in this browser but could not be synced to the shared schedule. Please try again before leaving this page.');
       return;
     }
-    render();
   });
 
   document.querySelector('#add-shift-form select[name="templateId"]')?.addEventListener('change', (event) => {
