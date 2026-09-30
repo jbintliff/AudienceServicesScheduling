@@ -3426,7 +3426,8 @@ function getAvailabilityCalendarMarkers(dateValue) {
     .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
     .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
     .filter((request) => canViewAvailabilityRequestOnAgentCalendar(request))
-    .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === normalizedDate);
+    .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === normalizedDate)
+    .sort((left, right) => String(left?.requestedAt || '').localeCompare(String(right?.requestedAt || '')));
 
   const requestsByLabel = new Map();
   requests.forEach((request) => {
@@ -5593,15 +5594,7 @@ function openAvailabilityRequestListModal(requests, dateLabel = '') {
   }
 
   const normalizedDateLabel = String(dateLabel || '').trim();
-  const orderedRequests = [...requestList].sort((left, right) => {
-    const leftStart = String(left?.unavailableStart || '00:00');
-    const rightStart = String(right?.unavailableStart || '00:00');
-    const timeDiff = toMinutes(leftStart) - toMinutes(rightStart);
-    if (timeDiff !== 0) return timeDiff;
-    const leftName = String(getAgent(left?.agentId)?.name || left?.requesterName || '');
-    const rightName = String(getAgent(right?.agentId)?.name || right?.requesterName || '');
-    return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' });
-  });
+  const orderedRequests = [...requestList].sort((left, right) => String(left?.requestedAt || '').localeCompare(String(right?.requestedAt || '')));
 
   const overlay = document.createElement('div');
   overlay.id = 'availability-request-list-modal-overlay';
