@@ -1402,9 +1402,9 @@ async function initializeBackendSync() {
 }
 
 async function pollBackendSync() {
-  if (!backendApiBase || document.hidden || isPushingLocalSnapshot) return;
+  if (!backendApiBase || document.hidden || isPushingLocalSnapshot || isCalendarEditInProgress()) return;
   const remoteStore = await fetchBackendSnapshot();
-  if (!remoteStore) return;
+  if (!remoteStore || isCalendarEditInProgress()) return;
   const nextHash = getSnapshotHash(remoteStore);
   if (!nextHash || nextHash === lastRemoteSnapshotHash) return;
   lastRemoteSnapshotHash = nextHash;
@@ -1419,6 +1419,15 @@ async function pollBackendSync() {
   }
   syncFromStorage();
   render();
+}
+
+function isCalendarEditInProgress() {
+  if (pageMode !== 'calendar') return false;
+  const activeElement = document.activeElement;
+  return Boolean(
+    document.querySelector('.calendar-view form[data-unsaved-edits="true"], #shift-edit-modal-overlay, #bulk-shift-edit-modal-overlay, #shift-absence-modal-overlay')
+    || (activeElement?.matches('input, select, textarea') && activeElement.closest('.calendar-view'))
+  );
 }
 
 if (loadAvailabilityRequestsFromStorage().length === 0 && Array.isArray(state.availabilityRequests) && state.availabilityRequests.length > 0) {
@@ -10712,9 +10721,18 @@ function bindPublicAvailabilityFormConditionalFields() {
 
 window.addEventListener('storage', (event) => {
   if (![storageKey, authUsersKey, sessionKey, availabilityRequestsKey, availabilityInboxKey, availabilityRequestLedgerKey].includes(event.key)) return;
+  if (isCalendarEditInProgress()) return;
   syncFromStorage();
   render();
 });
+
+function markCalendarFormEdited(event) {
+  const form = event.target?.closest?.('.calendar-view form');
+  if (form) form.dataset.unsavedEdits = 'true';
+}
+
+document.addEventListener('input', markCalendarFormEdited);
+document.addEventListener('change', markCalendarFormEdited);
 
 function submitAvailabilityRequest(formElement) {
   const currentUser = getCurrentUser();
