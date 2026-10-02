@@ -6285,14 +6285,13 @@ function getFilteredCalendarShifts() {
   const departmentScope = getCurrentUserDepartmentScope();
   return state.shifts.filter((shift) => {
     const matchesDay = filters.day === 'All' || shift.day === filters.day;
-    const matchesAgent = filters.agentId === 'All' || String(shift.agentId) === String(filters.agentId);
     const matchesRole = filters.role === 'All' || String(shift.role || '') === String(filters.role);
-    const matchesAgentName = !agentName || (getAgent(shift.agentId)?.name || '').toLowerCase().includes(agentName);
+    const matchesAgentName = !agentName || String(getAgent(shift.agentId)?.name || '').trim().toLowerCase() === agentName;
     const matchesDate = !selectedDate || (shift.date || '') === selectedDate;
     const matchesLocation = filters.location === 'All' || shift.location === filters.location;
     const matchesDepartment = isAgentInDepartmentScope(shift.agentId, departmentScope);
     const matchesRoleDepartment = isRoleInDepartmentScope(shift.role, departmentScope);
-    if (!matchesDay || !matchesAgent || !matchesRole || !matchesAgentName || !matchesDate || !matchesLocation || !matchesDepartment || !matchesRoleDepartment) return false;
+    if (!matchesDay || !matchesRole || !matchesAgentName || !matchesDate || !matchesLocation || !matchesDepartment || !matchesRoleDepartment) return false;
     if (!search) return true;
     const agent = getAgent(shift.agentId);
     return [shift.role, shift.day, shift.location, shift.start, shift.end, agent?.name].join(' ').toLowerCase().includes(search);
@@ -6783,6 +6782,14 @@ function renderCalendarPage(currentUser) {
   const locations = getAllLocations();
   const roleItems = getRoleLegendItems();
   const agentCatalog = getAgentCatalogForUi();
+  const teamLeadTeamGroups = isTeamLeadUser(currentUser)
+    ? getManagedTeamsForUser(currentUser).map((team) => ({
+      team,
+      members: agentCatalog
+        .filter((agent) => normalizeManagedTeamValue(agent?.team) === team)
+        .sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }))
+    }))
+    : [];
   const agentNameItems = agentCatalog.map((agent) => String(agent.name || '').trim()).filter(Boolean).sort((left, right) => left.localeCompare(right));
   const agentsByName = [...agentCatalog].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
   const isAgentView = isAgentLikeUser(currentUser);
@@ -6837,6 +6844,22 @@ function renderCalendarPage(currentUser) {
         </div>
       </div>
 
+      ${isTeamLeadView ? `
+        <div class="panel" style="margin-bottom:12px; padding:12px;">
+          <h2 style="margin:0 0 8px;">Team members</h2>
+          ${teamLeadTeamGroups.length > 0 ? `
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px;">
+              ${teamLeadTeamGroups.map(({ team, members }) => `
+                <div>
+                  <div class="muted" style="font-weight:600; margin-bottom:4px;">${escapeHtml(team)} (${members.length})</div>
+                  <div>${members.length > 0 ? members.map((agent) => escapeHtml(agent.name || 'Unnamed agent')).join(', ') : '<span class="muted">No members assigned.</span>'}</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<div class="muted">No teams are assigned to your team lead account.</div>'}
+        </div>
+      ` : ''}
+
       <div class="panel" style="margin-bottom:16px;">
         <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div>
@@ -6851,13 +6874,6 @@ function renderCalendarPage(currentUser) {
             <input id="calendar-week-reference" type="date" value="${escapeHtml(weekReference)}" />
           </div>
         </div>
-        ${canManageCalendar ? `
-          <form id="published-schedule-export-form" class="row" style="margin-top:8px; gap:6px; align-items:center;">
-            <span class="muted">Export published schedule:</span>
-            <label class="muted">From <input id="published-schedule-export-from" type="date" required /></label>
-            <label class="muted">To <input id="published-schedule-export-to" type="date" required /></label>
-            <button type="submit" class="secondary">Export CSV</button>
-          </form>` : ''}
       </div>
 
       ${canManageCalendar ? `
@@ -6957,10 +6973,13 @@ function renderCalendarPage(currentUser) {
               <option value="All" ${calendarFilters.day === 'All' ? 'selected' : ''}>All days</option>
               ${days.map((day) => `<option value="${day}" ${calendarFilters.day === day ? 'selected' : ''}>${day}</option>`).join('')}
             </select>
-            <select id="calendar-agent-filter">
-              <option value="All" ${calendarFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
-              ${agentCatalog.map((agent) => `<option value="${agent.id}" ${String(calendarFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
-            </select>
+            ${canManageCalendar ? `
+              <form id="published-schedule-export-form" class="row" style="margin:0; gap:6px; align-items:center;">
+                <span class="muted">Export published schedule:</span>
+                <label class="muted">From <input id="published-schedule-export-from" type="date" required /></label>
+                <label class="muted">To <input id="published-schedule-export-to" type="date" required /></label>
+                <button type="submit" class="secondary">Export CSV</button>
+              </form>` : ''}
             <select id="calendar-role-filter">
               <option value="All" ${calendarFilters.role === 'All' ? 'selected' : ''}>All roles</option>
               ${roleItems.map((role) => `<option value="${escapeHtml(role)}" ${String(calendarFilters.role || 'All') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
@@ -12520,14 +12539,13 @@ function bindEvents() {
     const daySelect = document.getElementById('calendar-day-filter');
     const agentNameSelect = document.getElementById('calendar-agent-name-filter');
     const dateInput = document.getElementById('calendar-date-filter');
-    const agentSelect = document.getElementById('calendar-agent-filter');
     const roleSelect = document.getElementById('calendar-role-filter');
     const locationSelect = document.getElementById('calendar-location-filter');
     state.ui.calendar.search = searchInput?.value || '';
     state.ui.calendar.day = daySelect?.value || 'All';
     state.ui.calendar.agentName = agentNameSelect?.value || '';
     state.ui.calendar.date = dateInput?.value || '';
-    state.ui.calendar.agentId = agentSelect?.value || 'All';
+    state.ui.calendar.agentId = 'All';
     state.ui.calendar.role = roleSelect?.value || 'All';
     state.ui.calendar.location = locationSelect?.value || 'All';
     saveUiState();
