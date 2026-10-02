@@ -6883,6 +6883,7 @@ function renderCalendarPage(currentUser) {
         <div>
           <h1>${isAgentView ? 'My calendar' : 'Calendar view'}</h1>
           <p class="muted">${isAgentView ? (isTeamLeadView ? 'Review the full published team schedule, request swaps, and mark absences.' : 'Review the full published team schedule and request swaps for your own shifts.') : 'Filter shifts by day, agent, or venue in a dedicated planning page.'}</p>
+          ${canManageCalendar ? `<p id="calendar-sync-status" class="muted" style="margin:0;">${escapeHtml(getCalendarFeedSyncStatusText())}</p>` : ''}
         </div>
         <div class="row">
           ${isAgentView ? renderAgentNavigationLinks() : renderAdminNavigationLinks({ includeExport: true })}
@@ -6906,21 +6907,6 @@ function renderCalendarPage(currentUser) {
           ` : '<div class="muted">No teams are assigned to your team lead account.</div>'}
         </div>
       ` : ''}
-
-      <div class="panel" style="margin-bottom:16px;">
-        <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-          <div>
-            <strong>Week of ${escapeHtml(weekLabel)}</strong>
-            <div class="muted">Use these controls to move between weeks without changing your date filter.</div>
-          </div>
-          <div class="row" style="gap:8px; flex-wrap:wrap;">
-            <button id="calendar-previous-week" class="secondary" type="button">Previous week</button>
-            <button id="calendar-current-week" class="secondary" type="button">Current week</button>
-            <button id="calendar-next-week" class="secondary" type="button">Next week</button>
-            <input id="calendar-week-reference" type="date" value="${escapeHtml(weekReference)}" />
-          </div>
-        </div>
-      </div>
 
       ${canManageCalendar ? `
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:12px; margin-bottom:16px; align-items:start;">
@@ -7019,14 +7005,6 @@ function renderCalendarPage(currentUser) {
               <option value="All" ${calendarFilters.day === 'All' ? 'selected' : ''}>All days</option>
               ${days.map((day) => `<option value="${day}" ${calendarFilters.day === day ? 'selected' : ''}>${day}</option>`).join('')}
             </select>
-            ${canManageCalendar ? `
-              <form id="published-schedule-export-form" class="row" style="margin:0; gap:6px; align-items:center;">
-                <span class="muted">Export published schedule:</span>
-                <label class="muted">From <input id="published-schedule-export-from" type="date" required /></label>
-                <label class="muted">To <input id="published-schedule-export-to" type="date" required /></label>
-                <button type="submit" class="secondary">Export CSV</button>
-              </form>` : ''}
-            ${canManageCalendar ? `<span id="calendar-sync-status" class="muted" style="align-self:center; white-space:nowrap;">${escapeHtml(getCalendarFeedSyncStatusText())}</span>` : ''}
             <select id="calendar-role-filter">
               <option value="All" ${calendarFilters.role === 'All' ? 'selected' : ''}>All roles</option>
               ${roleItems.map((role) => `<option value="${escapeHtml(role)}" ${String(calendarFilters.role || 'All') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
@@ -7039,6 +7017,25 @@ function renderCalendarPage(currentUser) {
             <button id="calendar-filters-reset" class="secondary" type="button">Reset filters</button>
           </div>
         </div>
+        ${canManageCalendar ? `
+          <form id="published-schedule-export-form" class="row" style="margin:10px 0 0; gap:6px; align-items:center;">
+            <span class="muted">Export published schedule:</span>
+            <label class="muted">From <input id="published-schedule-export-from" type="date" required /></label>
+            <label class="muted">To <input id="published-schedule-export-to" type="date" required /></label>
+            <button type="submit" class="secondary">Export CSV</button>
+          </form>
+          <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin:12px 0;">
+            <div>
+              <strong>Week of ${escapeHtml(weekLabel)}</strong>
+              <div class="muted">Use these controls to move between weeks without changing your date filter.</div>
+            </div>
+            <div class="row" style="gap:8px; flex-wrap:wrap;">
+              <button id="calendar-previous-week" class="secondary" type="button">Previous week</button>
+              <button id="calendar-current-week" class="secondary" type="button">Current week</button>
+              <button id="calendar-next-week" class="secondary" type="button">Next week</button>
+              <input id="calendar-week-reference" type="date" value="${escapeHtml(weekReference)}" />
+            </div>
+          </div>` : ''}
         ${canManageCalendar ? `<div class="muted" style="margin-bottom:10px;">${copiedScheduleTemplate ? `Copied full schedule: ${copiedScheduleTemplate.length} shift${copiedScheduleTemplate.length === 1 ? '' : 's'}` : (copiedShiftTemplate ? `Copied: ${escapeHtml(getShiftSummary(copiedShiftTemplate))}` : 'Right-click a shift or use Copy full schedule, then click a destination day.')}</div>` : ''}
         <div class="row" style="margin-bottom:10px;">
           <span class="muted" style="font-weight:600;">Location:</span>
