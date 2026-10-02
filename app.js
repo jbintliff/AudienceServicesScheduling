@@ -6912,7 +6912,6 @@ function renderCalendarPage(currentUser) {
           <div>
             <strong>Week of ${escapeHtml(weekLabel)}</strong>
             <div class="muted">Use these controls to move between weeks without changing your date filter.</div>
-            ${canManageCalendar ? `<div id="calendar-sync-status" class="muted">${escapeHtml(getCalendarFeedSyncStatusText())}</div>` : ''}
           </div>
           <div class="row" style="gap:8px; flex-wrap:wrap;">
             <button id="calendar-previous-week" class="secondary" type="button">Previous week</button>
@@ -7027,6 +7026,7 @@ function renderCalendarPage(currentUser) {
                 <label class="muted">To <input id="published-schedule-export-to" type="date" required /></label>
                 <button type="submit" class="secondary">Export CSV</button>
               </form>` : ''}
+            ${canManageCalendar ? `<span id="calendar-sync-status" class="muted" style="align-self:center; white-space:nowrap;">${escapeHtml(getCalendarFeedSyncStatusText())}</span>` : ''}
             <select id="calendar-role-filter">
               <option value="All" ${calendarFilters.role === 'All' ? 'selected' : ''}>All roles</option>
               ${roleItems.map((role) => `<option value="${escapeHtml(role)}" ${String(calendarFilters.role || 'All') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
