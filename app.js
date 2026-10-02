@@ -3489,7 +3489,7 @@ function getPtoDateMarkers(dateValue) {
   });
 
   const markerHtml = Array.from(requestsByLabel.entries())
-    .map(([label, matchingRequests]) => getClickableAvailabilityMarkerHtml(matchingRequests, label, 'background:#7AACAF; color:#17383B; border:1px solid rgba(23,56,59,0.25);'))
+    .map(([label, matchingRequests]) => getClickableAvailabilityMarkerHtml(matchingRequests, label, 'background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);'))
     .filter(Boolean)
     .join('');
 
@@ -9122,7 +9122,7 @@ function getAvailabilityRequestTypeMeta(request) {
     return {
       key: 'pto',
       label: 'PTO',
-      style: 'background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);'
+      style: 'background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);'
     };
   }
   if (recurrenceType === 'weekly') {
@@ -9300,7 +9300,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           <span class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(0,0,0,0.2);">Pending</span>
           <span class="chip" style="background:#7AACAF; color:#17383B; border:1px solid rgba(255,255,255,0.2);">Approved</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
-          <span class="chip" style="background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);">PTO</span>
+          <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">PTO</span>
           <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
           <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Recurring availability</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
@@ -10401,7 +10401,7 @@ function renderPublicAvailabilityViewPage() {
           <span class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(0,0,0,0.2);">Pending (Click yours to edit)</span>
           <span class="chip" style="background:#7AACAF; color:#17383B; border:1px solid rgba(255,255,255,0.2);">Approved</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
-          <span class="chip" style="background:#A9B4E4; color:#1E2750; border:1px solid rgba(30,39,80,0.25);">PTO</span>
+          <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">PTO</span>
           <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
           <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Recurring availability</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
