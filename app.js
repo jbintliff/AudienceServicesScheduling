@@ -6326,7 +6326,7 @@ function getAgentViewShifts(options = {}) {
 
 function getFilteredCalendarShifts() {
   const filters = state.ui.calendar || {};
-  const search = (filters.search || '').trim().toLowerCase();
+  const search = pageMode === 'calendar' ? '' : (filters.search || '').trim().toLowerCase();
   const agentName = (filters.agentName || '').trim().toLowerCase();
   const selectedDate = (filters.date || '').trim();
   const departmentScope = getCurrentUserDepartmentScope();
@@ -6869,6 +6869,8 @@ function renderCalendarPage(currentUser) {
         .calendar-view button { padding: 6px 8px; min-height: 32px; }
         .calendar-view .day-row { gap: 6px; }
         .calendar-view .day-card { padding: 4px !important; min-height: 0; }
+        .calendar-view .calendar-controls-row { display:flex; align-items:center; gap:6px; flex-wrap:nowrap; overflow-x:auto; white-space:nowrap; padding-bottom:4px; }
+        .calendar-view .calendar-controls-row > * { flex:0 0 auto; }
         .calendar-view .shift { padding: 3px !important; margin-bottom: 2px; line-height: 1; font-size: 0.7rem; color: #000; overflow: hidden; }
         .calendar-view .shift strong { font-size: 0.84rem; }
         .calendar-view .shift .muted { color: #000 !important; }
@@ -6993,9 +6995,8 @@ function renderCalendarPage(currentUser) {
         </div>` : ''}
 
       <div class="panel">
-        <div style="margin:0 0 16px; padding:12px; border:1px solid rgba(255,255,255,0.12); border-radius:8px; background:rgba(255,255,255,0.04);">
-          <div class="row" style="flex-wrap:wrap;">
-            <input id="calendar-search" placeholder="Search shifts" value="${escapeHtml(calendarFilters.search)}" />
+        <div style="margin:0 0 16px; padding:8px; border:1px solid rgba(255,255,255,0.12); border-radius:8px; background:rgba(255,255,255,0.04); overflow:hidden;">
+          <div class="calendar-controls-row">
             <select id="calendar-agent-name-filter">
               <option value="" ${!calendarFilters.agentName ? 'selected' : ''}>All agent names</option>
               ${agentNameItems.map((name) => `<option value="${escapeHtml(name)}" ${String(calendarFilters.agentName || '') === String(name) ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
@@ -7015,27 +7016,22 @@ function renderCalendarPage(currentUser) {
             </select>
             <button id="calendar-filters-apply" type="button">Apply filters</button>
             <button id="calendar-filters-reset" class="secondary" type="button">Reset filters</button>
-          </div>
-        </div>
-        ${canManageCalendar ? `
-          <form id="published-schedule-export-form" class="row" style="margin:10px 0 0; gap:6px; align-items:center;">
-            <span class="muted">Export published schedule:</span>
-            <label class="muted">From <input id="published-schedule-export-from" type="date" required /></label>
-            <label class="muted">To <input id="published-schedule-export-to" type="date" required /></label>
-            <button type="submit" class="secondary">Export CSV</button>
-          </form>
-          <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin:12px 0;">
-            <div>
-              <strong>Week of ${escapeHtml(weekLabel)}</strong>
-              <div class="muted">Use these controls to move between weeks without changing your date filter.</div>
-            </div>
-            <div class="row" style="gap:8px; flex-wrap:wrap;">
+            ${canManageCalendar ? `
+              <form id="published-schedule-export-form" class="row" style="margin:0; gap:6px; align-items:center;">
+                <span class="muted">Export:</span>
+                <label class="muted">From <input id="published-schedule-export-from" type="date" required /></label>
+                <label class="muted">To <input id="published-schedule-export-to" type="date" required /></label>
+                <button type="submit" class="secondary">Export CSV</button>
+              </form>` : ''}
+            <div class="row" style="gap:6px; align-items:center; margin-left:auto;">
+              <strong style="white-space:nowrap;">Week of ${escapeHtml(weekLabel)}</strong>
               <button id="calendar-previous-week" class="secondary" type="button">Previous week</button>
               <button id="calendar-current-week" class="secondary" type="button">Current week</button>
               <button id="calendar-next-week" class="secondary" type="button">Next week</button>
               <input id="calendar-week-reference" type="date" value="${escapeHtml(weekReference)}" />
             </div>
-          </div>` : ''}
+          </div>
+        </div>
         ${canManageCalendar ? `<div class="muted" style="margin-bottom:10px;">${copiedScheduleTemplate ? `Copied full schedule: ${copiedScheduleTemplate.length} shift${copiedScheduleTemplate.length === 1 ? '' : 's'}` : (copiedShiftTemplate ? `Copied: ${escapeHtml(getShiftSummary(copiedShiftTemplate))}` : 'Right-click a shift or use Copy full schedule, then click a destination day.')}</div>` : ''}
         <div class="row" style="margin-bottom:10px;">
           <span class="muted" style="font-weight:600;">Location:</span>
@@ -12579,13 +12575,11 @@ function bindEvents() {
   });
 
   document.getElementById('calendar-filters-apply')?.addEventListener('click', () => {
-    const searchInput = document.getElementById('calendar-search');
     const daySelect = document.getElementById('calendar-day-filter');
     const agentNameSelect = document.getElementById('calendar-agent-name-filter');
     const dateInput = document.getElementById('calendar-date-filter');
     const roleSelect = document.getElementById('calendar-role-filter');
     const locationSelect = document.getElementById('calendar-location-filter');
-    state.ui.calendar.search = searchInput?.value || '';
     state.ui.calendar.day = daySelect?.value || 'All';
     state.ui.calendar.agentName = agentNameSelect?.value || '';
     state.ui.calendar.date = dateInput?.value || '';
