@@ -33,6 +33,7 @@ const backendUrlKey = 'agent-scheduler-backend-url-v1';
 const appLoginUrlKey = 'agent-scheduler-app-login-url-v1';
 const syncStatusKey = 'agent-scheduler-sync-status-v1';
 const calendarFeedSyncStatusKey = 'agent-scheduler-calendar-feed-sync-status-v1';
+const pendingStateSnapshotSyncKey = 'agent-scheduler-pending-state-sync-v1';
 const uiStateKey = 'agent-scheduler-ui-state-v1';
 const fixedEmailSenderName = 'Audience Services Manager';
 const appTimeZone = 'America/New_York';
@@ -1017,26 +1018,51 @@ function getLastSyncStatusText() {
 
 function getCalendarFeedSyncStatusText() {
   if (!backendApiBase) {
-    return 'Calendar feed sync: Local-only mode (no shared backend configured).';
+    return 'Schedule sync: Local-only mode (no shared backend configured).';
+  }
+  if (localStorage.getItem(pendingStateSnapshotSyncKey) === '1') {
+    return 'Schedule sync: Changes saved on this device; shared sync is pending.';
   }
   if (!lastCalendarFeedSyncAt) {
-    return 'Calendar feed sync: Waiting for first successful schedule sync.';
+    return 'Schedule sync: Waiting for first successful backend sync.';
   }
   const syncDate = new Date(lastCalendarFeedSyncAt);
   if (Number.isNaN(syncDate.getTime())) {
-    return 'Calendar feed sync: Waiting for first successful schedule sync.';
+    return 'Schedule sync: Waiting for first successful backend sync.';
   }
-  return `Calendar feed sync: ${formatEasternDateTime(syncDate)} ET`;
+  return `Schedule sync: ${formatEasternDateTime(syncDate)} ET`;
+}
+
+function clearPendingStateSnapshotSyncIfCurrent(snapshotValue) {
+  try {
+    if (typeof snapshotValue === 'string' && localStorage.getItem(storageKey) === snapshotValue) {
+      localStorage.removeItem(pendingStateSnapshotSyncKey);
+      const statusElement = document.getElementById('calendar-sync-status');
+      if (statusElement) statusElement.textContent = 'Schedule sync: Changes saved to the shared backend.';
+    }
+  } catch {
+    // Keep the pending marker if local storage is unavailable.
+  }
 }
 
 function safeSetLocalStorage(key, value) {
   try {
     localStorage.setItem(key, value);
+    if (key === storageKey) {
+      try {
+        localStorage.setItem(pendingStateSnapshotSyncKey, '1');
+      } catch {
+        // The state snapshot can still sync even if the marker cannot be stored.
+      }
+    }
     if (!isApplyingRemoteSnapshot && sharedStorageKeys.includes(key)) {
       pendingSharedWriteKeys.add(key);
       const waitForSnapshotSync = key === storageKey || key === authUsersKey;
       void pushSharedKeyToBackend(key, value).then((didPush) => {
-        if (didPush && !waitForSnapshotSync) {
+        if (didPush && key === storageKey && localStorage.getItem(key) === value) {
+          pendingSharedWriteKeys.delete(key);
+          clearPendingStateSnapshotSyncIfCurrent(value);
+        } else if (didPush && !waitForSnapshotSync) {
           pendingSharedWriteKeys.delete(key);
         }
       });
@@ -1230,7 +1256,12 @@ async function performLocalSnapshotPush() {
   });
   const didSync = Boolean(response);
   if (didSync) {
-    pendingSharedWriteKeys.clear();
+    Array.from(pendingSharedWriteKeys).forEach((key) => {
+      if (localStorage.getItem(key) === store[key]) {
+        pendingSharedWriteKeys.delete(key);
+      }
+    });
+    clearPendingStateSnapshotSyncIfCurrent(store[storageKey]);
   }
   return didSync;
 }
@@ -1307,10 +1338,15 @@ function mergeRemoteSnapshotWithPendingLocal(remoteStore) {
     );
   }
 
+  if (localStorage.getItem(pendingStateSnapshotSyncKey) === '1' && localStorage.getItem(storageKey) !== null) {
+    pendingSharedWriteKeys.add(storageKey);
+  }
+
   pendingSharedWriteKeys.forEach((key) => {
     const localValue = localStorage.getItem(key);
     const remoteValue = typeof remoteStore[key] === 'string' ? remoteStore[key] : null;
-    if (localValue !== null && localValue !== remoteValue) {
+    const hasPendingLocalState = key === storageKey && localStorage.getItem(pendingStateSnapshotSyncKey) === '1';
+    if (localValue !== null && (localValue !== remoteValue || hasPendingLocalState)) {
       if (key === storageKey) {
         try {
           const localState = JSON.parse(localValue || '{}');
@@ -1404,9 +1440,20 @@ async function initializeBackendSync() {
 async function pollBackendSync() {
   if (!backendApiBase || document.hidden || isPushingLocalSnapshot || isCalendarEditInProgress()) return;
   const remoteStore = await fetchBackendSnapshot();
-  if (!remoteStore || isCalendarEditInProgress()) return;
+  if (!remoteStore || isCalendarEditInProgress()) {
+    if (localStorage.getItem(pendingStateSnapshotSyncKey) === '1') {
+      await flushLocalSnapshotSync();
+    }
+    return;
+  }
   const nextHash = getSnapshotHash(remoteStore);
-  if (!nextHash || nextHash === lastRemoteSnapshotHash) return;
+  if (!nextHash) return;
+  if (nextHash === lastRemoteSnapshotHash) {
+    if (localStorage.getItem(pendingStateSnapshotSyncKey) === '1') {
+      await flushLocalSnapshotSync();
+    }
+    return;
+  }
   lastRemoteSnapshotHash = nextHash;
   const mergeResult = mergeRemoteSnapshotWithPendingLocal(remoteStore);
   applyRemoteSnapshot(mergeResult.store);
@@ -6865,7 +6912,7 @@ function renderCalendarPage(currentUser) {
           <div>
             <strong>Week of ${escapeHtml(weekLabel)}</strong>
             <div class="muted">Use these controls to move between weeks without changing your date filter.</div>
-            ${canManageCalendar ? `<div class="muted">${escapeHtml(getCalendarFeedSyncStatusText())}</div>` : ''}
+            ${canManageCalendar ? `<div id="calendar-sync-status" class="muted">${escapeHtml(getCalendarFeedSyncStatusText())}</div>` : ''}
           </div>
           <div class="row" style="gap:8px; flex-wrap:wrap;">
             <button id="calendar-previous-week" class="secondary" type="button">Previous week</button>
