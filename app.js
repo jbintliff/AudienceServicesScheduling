@@ -4201,7 +4201,8 @@ function getShiftStyle(shift) {
   const hasAttentionBorder = isShiftOfferedForPickup(shift) || Boolean(normalizeShiftAbsenceReason(shift?.absenceReason));
   const attentionBorder = hasAttentionBorder ? ' border:2px dashed rgba(255,255,255,0.8);' : '';
   const absentFade = normalizeShiftAbsenceReason(shift?.absenceReason) ? ' opacity:0.72;' : '';
-  const shiftColor = getShiftLocationColor(shift);
+  const role = String(shift?.role || '').trim();
+  const shiftColor = role ? getRoleColor(role) : getShiftLocationColor(shift);
   const roleOutline = getShiftRoleOutlineColor(shift);
   const outlineStyle = roleOutline ? ` outline:4px solid ${roleOutline}; outline-offset:-3px; border-left:3px solid rgba(255,255,255,0.65);` : '';
   const draftFade = shift?.status === shiftStatuses.published ? '' : ' opacity:0.52;';
