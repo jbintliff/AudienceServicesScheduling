@@ -1472,7 +1472,7 @@ function isCalendarEditInProgress() {
   if (pageMode !== 'calendar') return false;
   const activeElement = document.activeElement;
   return Boolean(
-    document.querySelector('.calendar-view form[data-unsaved-edits="true"], #create-shift-modal-overlay, #shift-edit-modal-overlay, #bulk-shift-edit-modal-overlay, #shift-absence-modal-overlay')
+    document.querySelector('.calendar-view form[data-unsaved-edits="true"], #shift-edit-modal-overlay, #bulk-shift-edit-modal-overlay, #shift-absence-modal-overlay')
     || (activeElement?.matches('input, select, textarea') && activeElement.closest('.calendar-view'))
   );
 }
@@ -5045,63 +5045,6 @@ function openShiftEditModal(shift, onSave) {
   document.body.appendChild(overlay);
 }
 
-function openCreateShiftModal(date) {
-  const normalizedDate = String(date || '').trim().slice(0, 10);
-  const form = document.getElementById('add-shift-form');
-  const panel = form?.closest('.panel');
-  const parent = panel?.parentElement;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate) || !(form instanceof HTMLFormElement) || !panel || !parent) return;
-  if (document.getElementById('create-shift-modal-overlay')) return;
-
-  const heading = panel.querySelector('h3');
-  const originalHeading = heading?.textContent || 'Create shift';
-  const originalMarginBottom = panel.style.marginBottom;
-  const nextSibling = panel.nextSibling;
-  const dateInput = form.querySelector('input[name="date"]');
-  if (!(dateInput instanceof HTMLInputElement)) return;
-  dateInput.value = normalizedDate;
-  if (heading) heading.textContent = `Create shift for ${normalizedDate}`;
-  panel.style.marginBottom = '0';
-
-  const overlay = document.createElement('div');
-  overlay.id = 'create-shift-modal-overlay';
-  overlay.setAttribute('role', 'dialog');
-  overlay.setAttribute('aria-modal', 'true');
-  overlay.setAttribute('aria-label', `Create shift for ${normalizedDate}`);
-  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
-
-  const dialog = document.createElement('div');
-  dialog.style.cssText = 'width:min(760px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);';
-  const actions = document.createElement('div');
-  actions.className = 'row';
-  actions.style.cssText = 'justify-content:flex-end; margin-top:12px;';
-  actions.innerHTML = '<button type="button" id="create-shift-modal-cancel" class="secondary">Cancel</button>';
-  dialog.appendChild(panel);
-  dialog.appendChild(actions);
-  overlay.appendChild(dialog);
-
-  const closeModal = () => {
-    document.removeEventListener('keydown', onEscape);
-    if (heading) heading.textContent = originalHeading;
-    panel.style.marginBottom = originalMarginBottom;
-    if (parent.isConnected) {
-      parent.insertBefore(panel, nextSibling?.parentNode === parent ? nextSibling : null);
-    }
-    overlay.remove();
-  };
-  const onEscape = (event) => {
-    if (event.key === 'Escape') closeModal();
-  };
-
-  overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) closeModal();
-  });
-  overlay.querySelector('#create-shift-modal-cancel')?.addEventListener('click', closeModal);
-  document.addEventListener('keydown', onEscape);
-  document.getElementById('root')?.appendChild(overlay);
-  dateInput.focus();
-}
-
 function openShiftAbsenceModal(shift, onSave) {
   const existingOverlay = document.getElementById('shift-absence-modal-overlay');
   if (existingOverlay) {
@@ -6427,7 +6370,7 @@ function getFilteredCalendarShifts() {
   const selectedDate = (filters.date || '').trim();
   const departmentScope = getCurrentUserDepartmentScope();
   return state.shifts.filter((shift) => {
-    const matchesDay = filters.day === 'All' || shift.day === filters.day;
+    const matchesDay = pageMode === 'calendar' || filters.day === 'All' || shift.day === filters.day;
     const matchesRole = filters.role === 'All' || String(shift.role || '') === String(filters.role);
     const matchesAgentName = !agentName || String(getAgent(shift.agentId)?.name || '').trim().toLowerCase() === agentName;
     const matchesDate = !selectedDate || (shift.date || '') === selectedDate;
@@ -7007,45 +6950,10 @@ function renderCalendarPage(currentUser) {
       ` : ''}
 
       ${canManageCalendar ? `
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:12px; margin-bottom:16px; align-items:start;">
-          <div class="panel" style="margin-bottom:0;">
-            <h3>Create shift</h3>
-            <form id="add-shift-form" class="stack">
-              <div class="row">
-                <select name="templateId">
-                  <option value="">Use template (optional)</option>
-                  ${state.templates.filter((template) => isTemplateActive(template) && isDateEntryInDepartmentScope(template.department, getCurrentUserDepartmentScope())).map((template) => `<option value="${template.id}">${escapeHtml(template.name)} (${escapeHtml(formatTimeRange(template.start, template.end))})</option>`).join('')}
-                </select>
-                <select name="agentId">
-                  <option value="">Unassigned (optional)</option>
-                  ${[...agentCatalog].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
-                </select>
-                <select name="location" required>
-                  <option value="">Select location</option>
-                  ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
-                </select>
-              </div>
-              <div class="row">
-                <input name="start" type="time" value="08:00" required />
-                <input name="end" type="time" value="16:00" required />
-                <select name="role">
-                  <option value="">No role</option>
-                  ${Array.from(new Set([...(getRoleLegendItems() || []), 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'])).filter((role) => role && !isInOfficeRole(role)).map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
-                </select>
-                <select name="venue">
-                  <option value="">No venue</option>
-                  ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
-                </select>
-                <input name="date" type="date" required />
-              </div>
-              <button type="submit">Add shift</button>
-            </form>
-          </div>
-
-          <div class="panel" style="margin-bottom:0;">
-            <h3>Add availability or PTO</h3>
-            <div class="muted" style="margin-bottom:8px;">Submit availability or PTO for admin approval and optionally notify the agent by email.</div>
-            <form id="add-manual-pto-form" class="stack">
+        <div class="panel" style="margin-bottom:16px;">
+          <h3>Add availability or PTO</h3>
+          <div class="muted" style="margin-bottom:8px;">Submit availability or PTO for admin approval and optionally notify the agent by email.</div>
+          <form id="add-manual-pto-form" class="stack">
               <label style="display:flex; flex-direction:column; gap:6px;">
                 <span>Request type</span>
                 <select name="requestKind" required>
@@ -7090,8 +6998,7 @@ function renderCalendarPage(currentUser) {
               <div class="row" style="justify-content:flex-end;">
                 <button type="submit">Submit request</button>
               </div>
-            </form>
-          </div>
+          </form>
         </div>` : ''}
 
       ${isAgentView ? `
@@ -7125,10 +7032,6 @@ function renderCalendarPage(currentUser) {
               ${agentNameItems.map((name) => `<option value="${escapeHtml(name)}" ${String(calendarFilters.agentName || '') === String(name) ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
             </select>
             <input id="calendar-date-filter" type="date" value="${escapeHtml(calendarFilters.date)}" />
-            <select id="calendar-day-filter">
-              <option value="All" ${calendarFilters.day === 'All' ? 'selected' : ''}>All days</option>
-              ${days.map((day) => `<option value="${day}" ${calendarFilters.day === day ? 'selected' : ''}>${day}</option>`).join('')}
-            </select>
             <select id="calendar-role-filter">
               <option value="All" ${calendarFilters.role === 'All' ? 'selected' : ''}>All roles</option>
               ${roleItems.map((role) => `<option value="${escapeHtml(role)}" ${String(calendarFilters.role || 'All') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
@@ -7155,6 +7058,38 @@ function renderCalendarPage(currentUser) {
             </div>
           </div>
         </div>
+        ${canManageCalendar ? `
+          <div class="panel" style="margin:0 0 10px; padding:10px;">
+            <h3>Create shift</h3>
+            <form id="add-shift-form" class="stack">
+              <div class="row" style="flex-wrap:wrap;">
+                <select name="templateId" style="flex:1 1 220px;">
+                  <option value="">Use template (optional)</option>
+                  ${state.templates.filter((template) => isTemplateActive(template) && isDateEntryInDepartmentScope(template.department, getCurrentUserDepartmentScope())).map((template) => `<option value="${template.id}">${escapeHtml(template.name)} (${escapeHtml(formatTimeRange(template.start, template.end))})</option>`).join('')}
+                </select>
+                <select name="agentId" style="flex:1 1 180px;">
+                  <option value="">Unassigned (optional)</option>
+                  ${[...agentCatalog].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+                </select>
+                <select name="location" required style="flex:1 1 160px;">
+                  <option value="">Select location</option>
+                  ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
+                </select>
+                <input name="start" type="time" value="08:00" required aria-label="Shift start time" />
+                <input name="end" type="time" value="16:00" required aria-label="Shift end time" />
+                <select name="role" style="flex:1 1 150px;">
+                  <option value="">No role</option>
+                  ${Array.from(new Set([...(getRoleLegendItems() || []), 'Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'])).filter((role) => role && !isInOfficeRole(role)).map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('')}
+                </select>
+                <select name="venue" style="flex:1 1 150px;">
+                  <option value="">No venue</option>
+                  ${getLocationCatalogForScope().map((location) => `<option value="${location}">${escapeHtml(location)}</option>`).join('')}
+                </select>
+                <input name="date" type="date" value="${escapeHtml(calendarFilters.date || '')}" required aria-label="Shift date" />
+                <button type="submit">Add shift</button>
+              </div>
+            </form>
+          </div>` : ''}
         ${canManageCalendar ? `<div class="muted" style="margin-bottom:10px;">${copiedScheduleTemplate ? `Copied full schedule: ${copiedScheduleTemplate.length} shift${copiedScheduleTemplate.length === 1 ? '' : 's'}` : (copiedShiftTemplate ? `Copied: ${escapeHtml(getShiftSummary(copiedShiftTemplate))}` : 'Right-click a shift or use Copy full schedule, then click a destination day.')}</div>` : ''}
         <div class="row" style="margin-bottom:10px;">
           <span class="muted" style="font-weight:600;">Location:</span>
@@ -12684,12 +12619,11 @@ function bindEvents() {
   });
 
   document.getElementById('calendar-filters-apply')?.addEventListener('click', () => {
-    const daySelect = document.getElementById('calendar-day-filter');
     const agentNameSelect = document.getElementById('calendar-agent-name-filter');
     const dateInput = document.getElementById('calendar-date-filter');
     const roleSelect = document.getElementById('calendar-role-filter');
     const locationSelect = document.getElementById('calendar-location-filter');
-    state.ui.calendar.day = daySelect?.value || 'All';
+    state.ui.calendar.day = 'All';
     state.ui.calendar.agentName = agentNameSelect?.value || '';
     state.ui.calendar.date = dateInput?.value || '';
     state.ui.calendar.agentId = 'All';
@@ -12697,6 +12631,13 @@ function bindEvents() {
     state.ui.calendar.location = locationSelect?.value || 'All';
     saveUiState();
     render();
+  });
+
+  document.getElementById('calendar-date-filter')?.addEventListener('change', (event) => {
+    const shiftDateInput = document.querySelector('#add-shift-form input[name="date"]');
+    if (shiftDateInput instanceof HTMLInputElement) {
+      shiftDateInput.value = event.currentTarget.value || '';
+    }
   });
 
   document.getElementById('calendar-filters-reset')?.addEventListener('click', () => {
@@ -13881,7 +13822,12 @@ function bindEvents() {
       event.preventDefault();
       event.stopPropagation();
       const date = String(dateTarget.getAttribute('data-create-shift-date') || '').trim();
-      openCreateShiftModal(date);
+      const dateInput = document.querySelector('#add-shift-form input[name="date"]');
+      const form = document.getElementById('add-shift-form');
+      if (!(dateInput instanceof HTMLInputElement) || !form || !date) return;
+      dateInput.value = date;
+      form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      dateInput.focus();
     });
   });
 
