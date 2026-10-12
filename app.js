@@ -3442,7 +3442,7 @@ function getBlackoutDateMarker(dateValue, departmentScope = getCurrentUserDepart
 }
 
 
-function getClickableAvailabilityMarkerHtml(requests, label, styleValue) {
+function getClickableAvailabilityMarkerHtml(requests, label, styleValue, markerLabel = '') {
   const requestIds = (Array.isArray(requests) ? requests : [])
     .map((request) => Number(request?.id))
     .filter((requestId) => Number.isFinite(requestId));
@@ -3450,7 +3450,8 @@ function getClickableAvailabilityMarkerHtml(requests, label, styleValue) {
     return '';
   }
   const idsValue = requestIds.join(',');
-  return `<button type="button" class="chip" data-open-availability-marker="${escapeHtml(idsValue)}" data-open-availability-marker-label="${escapeHtml(label)}" style="${styleValue}; cursor:pointer;" title="View request details">${escapeHtml(label)}</button>`;
+  const modalLabel = markerLabel || label;
+  return `<button type="button" class="chip" data-open-availability-marker="${escapeHtml(idsValue)}" data-open-availability-marker-label="${escapeHtml(modalLabel)}" style="${styleValue}; cursor:pointer; justify-content:center; font-size:0.75rem; padding:3px 8px; border-radius:999px; font-weight:600;" title="View ${escapeHtml(modalLabel)}">${escapeHtml(label)}</button>`;
 }
 
 function getAvailabilityRequestViewerLabel(request) {
@@ -3485,23 +3486,45 @@ function getAvailabilityCalendarMarkers(dateValue) {
     .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === normalizedDate)
     .sort((left, right) => String(left?.requestedAt || '').localeCompare(String(right?.requestedAt || '')));
 
-  const requestsByLabel = new Map();
-  requests.forEach((request) => {
-    const typeMeta = getAvailabilityRequestTypeMeta(request);
-    const statusValue = normalizeAvailabilityRequestStatus(request?.status);
-    const label = `${getAvailabilityRequestViewerLabel(request)} ${typeMeta.label}`;
-    const style = statusValue === 'pending'
-      ? 'background:#FDD592; color:#4B3A1F; border:1px solid rgba(75,58,31,0.25);'
-      : typeMeta.style;
-    const existing = requestsByLabel.get(`${label}|${style}`) || { label, style, requests: [] };
-    existing.requests.push(request);
-    requestsByLabel.set(`${label}|${style}`, existing);
-  });
+  if (requests.length === 0) return '';
 
-  const markerHtml = Array.from(requestsByLabel.values())
-    .map((entry) => getClickableAvailabilityMarkerHtml(entry.requests, entry.label, entry.style))
-    .filter(Boolean)
-    .join('');
+  const categories = [
+    {
+      key: 'pto',
+      label: 'PTO',
+      style: 'background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);',
+      match: (request) => String(request?.unavailabilityType || '').trim() === 'PTO'
+    },
+    {
+      key: 'one-time-availability',
+      label: 'One-time availability',
+      style: 'background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);',
+      match: (request) => String(request?.unavailabilityType || '').trim() !== 'PTO' && String(request?.recurrenceType || '').trim().toLowerCase() !== 'weekly'
+    },
+    {
+      key: 'repeating-availability',
+      label: 'Repeating availability',
+      style: 'background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);',
+      match: (request) => String(request?.unavailabilityType || '').trim() !== 'PTO' && String(request?.recurrenceType || '').trim().toLowerCase() === 'weekly'
+    }
+  ];
+
+  const markerHtml = categories.map((cat) => {
+    const matchingRequests = requests.filter(cat.match);
+    if (matchingRequests.length === 0) return '';
+
+    const pendingCount = matchingRequests.filter((r) => normalizeAvailabilityRequestStatus(r?.status) === 'pending').length;
+    let labelCount = `${matchingRequests.length}`;
+    if (pendingCount > 0) {
+      labelCount = pendingCount === matchingRequests.length
+        ? `${matchingRequests.length} pending`
+        : `${matchingRequests.length} • ${pendingCount} pending`;
+    }
+    const label = `${cat.label} (${labelCount})`;
+    const modalLabel = `${cat.label} - ${normalizedDate}`;
+    return getClickableAvailabilityMarkerHtml(matchingRequests, label, cat.style, modalLabel);
+  }).filter(Boolean).join('');
+
   return markerHtml ? `<div style="display:flex; flex-direction:column; gap:4px; margin-top:6px;">${markerHtml}</div>` : '';
 }
 
@@ -6583,7 +6606,7 @@ function renderAdminScheduleDayShifts(dayShifts) {
 
 function renderCalendarDayShiftSections(dayShifts, options = {}) {
   const shifts = Array.isArray(dayShifts) ? dayShifts : [];
-  if (shifts.length === 0) return '<div class="muted">No shifts.</div>';
+  if (shifts.length === 0) return options.showEmptyMessage ? '<div class="muted">No shifts.</div>' : '';
 
   const renderSection = (sectionShifts, heading) => {
     if (sectionShifts.length === 0) return '';
@@ -9246,7 +9269,7 @@ function getAvailabilityRequestTypeMeta(request) {
   if (recurrenceType === 'weekly') {
     return {
       key: 'availability-recurring',
-      label: 'Recurring availability',
+      label: 'Repeating availability',
       style: 'background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);'
     };
   }
@@ -9406,7 +9429,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">PTO</span>
           <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
-          <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Recurring availability</span>
+          <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Repeating availability</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
         </div>
         <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
@@ -10507,7 +10530,7 @@ function renderPublicAvailabilityViewPage() {
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">PTO</span>
           <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
-          <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Recurring availability</span>
+          <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Repeating availability</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
         </div>
         <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
@@ -11408,7 +11431,9 @@ function bindEvents() {
   });
 
   document.querySelectorAll('[data-open-availability-marker]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       const requestIds = String(button.getAttribute('data-open-availability-marker') || '')
         .split(',')
         .map((value) => Number(value))
@@ -11418,10 +11443,6 @@ function bindEvents() {
         .filter((request) => canViewAvailabilityRequestOnAgentCalendar(request))
         .filter(Boolean);
       if (requests.length === 0) return;
-      if (requests.length === 1) {
-        openAvailabilityRequestDetailsModal(requests[0]);
-        return;
-      }
       openAvailabilityRequestListModal(requests, button.getAttribute('data-open-availability-marker-label') || 'selected date');
     });
   });
