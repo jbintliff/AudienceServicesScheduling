@@ -580,7 +580,8 @@ const defaultState = {
       agentName: '',
       date: '',
       weekReference: '',
-      location: 'All'
+      location: 'All',
+      addAvailabilityCollapsed: false
     }
   }
 };
@@ -867,7 +868,8 @@ function getDefaultUiState() {
       agentName: '',
       date: '',
       weekReference: '',
-      location: 'All'
+      location: 'All',
+      addAvailabilityCollapsed: false
     }
   };
 }
@@ -932,7 +934,8 @@ function normalizeUiState(source) {
       agentName: source?.calendar?.agentName || defaults.calendar.agentName,
       date: source?.calendar?.date || defaults.calendar.date,
       weekReference: source?.calendar?.weekReference || defaults.calendar.weekReference,
-      location: source?.calendar?.location || defaults.calendar.location
+      location: source?.calendar?.location || defaults.calendar.location,
+      addAvailabilityCollapsed: Boolean(source?.calendar?.addAvailabilityCollapsed)
     }
   };
 }
@@ -6973,56 +6976,66 @@ function renderCalendarPage(currentUser) {
       ` : ''}
 
       ${canManageCalendar ? `
-        <div class="panel" style="margin-bottom:16px;">
-          <h3>Add availability or PTO</h3>
-          <div class="muted" style="margin-bottom:8px;">Submit availability or PTO for admin approval and optionally notify the agent by email.</div>
-          <form id="add-manual-pto-form" class="stack">
-              <label style="display:flex; flex-direction:column; gap:6px;">
-                <span>Request type</span>
-                <select name="requestKind" required>
-                  <option value="one-time-availability">One-time availability</option>
-                  <option value="repeating-availability">Repeating availability</option>
-                  <option value="vacation-time">Vacation time</option>
+        <details class="panel" id="calendar-add-availability-panel" style="margin-bottom:12px; padding:10px 14px;" ${state.ui?.calendar?.addAvailabilityCollapsed ? '' : 'open'}>
+          <summary style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; user-select:none;">
+            <div class="row" style="align-items:center; gap:8px;">
+              <h3 style="margin:0; font-size:1.05rem;">Add availability or PTO</h3>
+              <span class="muted" style="font-size:0.8rem;">Submit availability or PTO for an agent</span>
+            </div>
+            <span class="muted" style="font-size:0.8rem; font-weight:600;">Click to toggle</span>
+          </summary>
+          <form id="add-manual-pto-form" style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">
+            <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+              <select name="requestKind" required style="flex:1 1 170px;" aria-label="Request type">
+                <option value="one-time-availability">One-time availability</option>
+                <option value="repeating-availability">Repeating availability</option>
+                <option value="vacation-time">Vacation time</option>
+              </select>
+              <select name="agentId" required style="flex:1 1 170px;" aria-label="Agent">
+                <option value="">Select agent</option>
+                ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+              </select>
+              <div id="admin-one-time-fields" class="row" style="margin:0; gap:8px; flex:2 1 360px;">
+                <input name="oneTimeDate" type="date" aria-label="Date" style="flex:1 1 140px;" />
+                <input name="oneTimeStart" type="time" aria-label="Start time" title="Start time" style="flex:0 0 115px;" />
+                <input name="oneTimeEnd" type="time" aria-label="End time" title="End time" style="flex:0 0 115px;" />
+              </div>
+              <div id="admin-repeating-fields" class="row" style="display:none; margin:0; gap:8px; flex:3 1 450px;">
+                <select name="repeatingDay" aria-label="Day of week" style="flex:0 0 120px;">
+                  <option value="">Select day</option>
+                  ${days.map((day) => `<option value="${day}">${day}</option>`).join('')}
                 </select>
-              </label>
-              <label style="display:flex; flex-direction:column; gap:6px;">
-                <span>Agent</span>
-                <select name="agentId" required>
-                  <option value="">Select agent</option>
-                  ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
+                <label class="muted" style="display:inline-flex; align-items:center; gap:4px; font-size:0.8rem; margin:0;">From <input name="repeatingStartDate" type="date" style="flex:1 1 130px;" /></label>
+                <label class="muted" style="display:inline-flex; align-items:center; gap:4px; font-size:0.8rem; margin:0;">To <input name="repeatingEndDate" type="date" style="flex:1 1 130px;" /></label>
+                <input name="repeatingStartTime" type="time" aria-label="Start time" title="Start time" style="flex:0 0 115px;" />
+                <input name="repeatingEndTime" type="time" aria-label="End time" title="End time" style="flex:0 0 115px;" />
+              </div>
+              <div id="admin-vacation-fields" class="row" style="display:none; margin:0; gap:8px; flex:2 1 360px;">
+                <select name="vacationMode" aria-label="Vacation request type" style="flex:0 0 130px;">
+                  <option value="single-date">Single date</option>
+                  <option value="date-range">Date range</option>
                 </select>
-              </label>
-              <div id="admin-one-time-fields" class="stack">
-                <div class="row" style="flex-wrap:wrap;">
-                  <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;"><span>Date</span><input name="oneTimeDate" type="date" /></label>
-                  <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;"><span>Start time</span><input name="oneTimeStart" type="time" /></label>
-                  <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;"><span>End time</span><input name="oneTimeEnd" type="time" /></label>
+                <div id="admin-vacation-single-fields" class="row" style="margin:0; gap:8px; flex:1 1 auto;">
+                  <input name="vacationSingleDate" type="date" aria-label="Date" style="flex:1 1 140px;" />
+                  <input name="vacationSingleStart" type="time" value="09:00" aria-label="Start time" title="Start time" style="flex:0 0 115px;" />
+                  <input name="vacationSingleEnd" type="time" value="17:00" aria-label="End time" title="End time" style="flex:0 0 115px;" />
+                </div>
+                <div id="admin-vacation-range-fields" class="row" style="display:none; margin:0; gap:8px; flex:1 1 auto;">
+                  <label class="muted" style="display:inline-flex; align-items:center; gap:4px; font-size:0.8rem; margin:0;">From <input name="vacationRangeStartDate" type="date" style="flex:1 1 130px;" /></label>
+                  <label class="muted" style="display:inline-flex; align-items:center; gap:4px; font-size:0.8rem; margin:0;">To <input name="vacationRangeEndDate" type="date" style="flex:1 1 130px;" /></label>
                 </div>
               </div>
-              <div id="admin-repeating-fields" class="stack" style="display:none;">
-                <div class="row" style="flex-wrap:wrap;">
-                  <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;"><span>Day of week</span><select name="repeatingDay"><option value="">Select day</option>${days.map((day) => `<option value="${day}">${day}</option>`).join('')}</select></label>
-                  <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;"><span>Start date</span><input name="repeatingStartDate" type="date" /></label>
-                  <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;"><span>End date</span><input name="repeatingEndDate" type="date" /></label>
-                  <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;"><span>Start time</span><input name="repeatingStartTime" type="time" /></label>
-                  <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;"><span>End time</span><input name="repeatingEndTime" type="time" /></label>
-                </div>
-              </div>
-              <div id="admin-vacation-fields" class="stack" style="display:none;">
-                <label style="display:flex; flex-direction:column; gap:6px;"><span>Vacation request type</span><select name="vacationMode"><option value="single-date">Single date</option><option value="date-range">Date range</option></select></label>
-                <div id="admin-vacation-single-fields" class="stack"><div class="row" style="flex-wrap:wrap;"><label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;"><span>Date</span><input name="vacationSingleDate" type="date" /></label><label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;"><span>Start time</span><input name="vacationSingleStart" type="time" value="09:00" /></label><label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;"><span>End time</span><input name="vacationSingleEnd" type="time" value="17:00" /></label></div></div>
-                <div id="admin-vacation-range-fields" class="stack" style="display:none;"><div class="row" style="flex-wrap:wrap;"><label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;"><span>Start date</span><input name="vacationRangeStartDate" type="date" /></label><label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;"><span>End date</span><input name="vacationRangeEndDate" type="date" /></label></div></div>
-              </div>
-              <input name="note" type="text" placeholder="Reason or note" required />
-              <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+            </div>
+            <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+              <input name="note" type="text" placeholder="Reason or note" required style="flex:2 1 240px;" />
+              <label class="row" style="margin:0; gap:6px; align-items:center; white-space:nowrap; flex:0 0 auto; font-size:0.82rem; cursor:pointer;">
                 <input name="sendNotification" type="checkbox" checked />
-                <span>Send email notification to agent</span>
+                <span>Notify agent by email</span>
               </label>
-              <div class="row" style="justify-content:flex-end;">
-                <button type="submit">Submit request</button>
-              </div>
+              <button type="submit" style="flex:0 0 auto;">Submit request</button>
+            </div>
           </form>
-        </div>` : ''}
+        </details>` : ''}
 
       ${isAgentView ? `
         <div class="panel" style="margin-bottom:16px;">
@@ -13058,6 +13071,17 @@ function bindEvents() {
   bindAvailabilityFormConditionalFields('agent-availability-form', 'agent');
   bindAvailabilityFormConditionalFields('add-manual-pto-form', 'admin');
   bindPublicAvailabilityFormConditionalFields();
+
+  document.getElementById('calendar-add-availability-panel')?.addEventListener('toggle', (event) => {
+    const details = event.currentTarget;
+    if (details instanceof HTMLDetailsElement) {
+      if (!state.ui.calendar) {
+        state.ui.calendar = {};
+      }
+      state.ui.calendar.addAvailabilityCollapsed = !details.open;
+      saveUiState();
+    }
+  });
 
   document.querySelectorAll('[data-remove-shift]').forEach((button) => {
     button.addEventListener('click', () => {
