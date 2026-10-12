@@ -7065,13 +7065,6 @@ function renderCalendarPage(currentUser) {
             </select>
             <button id="calendar-filters-apply" type="button">Apply filters</button>
             <button id="calendar-filters-reset" class="secondary" type="button">Reset filters</button>
-            ${canManageCalendar ? `
-              <form id="published-schedule-export-form" class="row" style="margin:0; gap:6px; align-items:center;">
-                <span class="muted">Export:</span>
-                <label class="muted">From <input id="published-schedule-export-from" type="date" required /></label>
-                <label class="muted">To <input id="published-schedule-export-to" type="date" required /></label>
-                <button type="submit" class="secondary">Export CSV</button>
-              </form>` : ''}
             <div class="row" style="gap:6px; align-items:center; margin-left:auto;">
               <strong style="white-space:nowrap;">Week of ${escapeHtml(weekLabel)}</strong>
               <button id="calendar-previous-week" class="secondary" type="button">Previous week</button>
@@ -7234,6 +7227,15 @@ function renderCalendarPage(currentUser) {
           `;
           }).join('')}
         </div>
+        ${canManageCalendar ? `
+          <div style="margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.12);">
+            <form id="published-schedule-export-form" class="row" style="margin:0; gap:8px; align-items:center; flex-wrap:wrap;">
+              <span class="muted" style="font-weight:600;">Export published schedule:</span>
+              <label class="muted" style="display:inline-flex; align-items:center; gap:6px;">From <input id="published-schedule-export-from" type="date" value="${escapeHtml(weekDates['Mon']?.iso || '')}" required /></label>
+              <label class="muted" style="display:inline-flex; align-items:center; gap:6px;">To <input id="published-schedule-export-to" type="date" value="${escapeHtml(weekDates['Sun']?.iso || '')}" required /></label>
+              <button type="submit" class="secondary">Export CSV</button>
+            </form>
+          </div>` : ''}
       </div>
     </div>
   `;
