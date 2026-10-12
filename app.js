@@ -9331,7 +9331,7 @@ function renderAvailabilityRequestsPage(currentUser) {
     .filter((dateValue) => String(dateValue || '').startsWith(`${selectedMonth}-`))
     .sort((left, right) => left.localeCompare(right));
   const agentsByName = [...getAgentCatalogForUi()].sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), undefined, { sensitivity: 'base' }));
-  const publicAvailabilityLink = getPublicAvailabilityRequestUrl();
+  const publicAvailabilityLink = getPublicAvailabilityViewUrl();
 
   root.innerHTML = `
     <div class="app">
@@ -9349,31 +9349,17 @@ function renderAvailabilityRequestsPage(currentUser) {
 
       <div class="row" style="align-items:stretch; gap:16px; flex-wrap:wrap; margin-bottom:16px;">
         <div class="panel" style="flex:1; min-width:320px; margin-bottom:0;">
-          <h2>Share public request form</h2>
-          <p class="muted">Share this link so agents can submit availability and PTO requests without logging in.</p>
+          <h2>Share agent availability page</h2>
+          <p class="muted">Share one link so agents can view availability and PTO requests, see blackout dates, and submit new requests. Personal links show each agent their own requests by name and other agents anonymously.</p>
           <div class="row" style="flex-wrap:wrap; gap:8px; margin-bottom:8px;">
             <select id="availability-public-link-agent" style="max-width:260px;">
-              <option value="">All agents</option>
-              ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
-            </select>
-            <button id="availability-public-link-copy" class="secondary" type="button">Copy link</button>
-            <a id="availability-public-link-open" href="${escapeHtml(publicAvailabilityLink)}" target="_blank" rel="noopener" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open form</button></a>
-          </div>
-          <input id="availability-public-link" type="text" value="${escapeHtml(publicAvailabilityLink)}" readonly />
-        </div>
-
-        <div class="panel" style="flex:1; min-width:320px; margin-bottom:0;">
-          <h2>Share public request status page</h2>
-          <p class="muted">Share an individual link per agent. Each agent sees blackout dates, their own requests by name, and other agents' requests without names.</p>
-          <div class="row" style="flex-wrap:wrap; gap:8px; margin-bottom:8px;">
-            <select id="availability-public-view-link-agent" style="max-width:260px;">
               <option value="">All agents (no names shown)</option>
               ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
             </select>
-            <button id="availability-public-view-link-copy" class="secondary" type="button">Copy link</button>
-            <a id="availability-public-view-link-open" href="${escapeHtml(getPublicAvailabilityViewUrl())}" target="_blank" rel="noopener" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open page</button></a>
+            <button id="availability-public-link-copy" class="secondary" type="button">Copy link</button>
+            <a id="availability-public-link-open" href="${escapeHtml(publicAvailabilityLink)}" target="_blank" rel="noopener" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open page</button></a>
           </div>
-          <input id="availability-public-view-link" type="text" value="${escapeHtml(getPublicAvailabilityViewUrl())}" readonly />
+          <input id="availability-public-link" type="text" value="${escapeHtml(publicAvailabilityLink)}" readonly />
         </div>
       </div>
 
@@ -10446,7 +10432,7 @@ function renderPublicAvailabilityViewPage() {
           <p class="muted">${viewingAgentName ? `Personalized link for ${escapeHtml(viewingAgentName)}. Your own requests are shown by name and can be edited while pending; other agents are shown anonymously.` : 'View blackout dates and submitted requests. Other agents are shown anonymously.'}</p>
         </div>
         <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
-          <a href="${escapeHtml(getPublicAvailabilityRequestUrl(viewingAgentId))}" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Submit a request</button></a>
+          <a href="${escapeHtml(getPublicAvailabilityRequestUrl(viewingAgentId))}" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Request availability or PTO</button></a>
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin login</button></a>
         </div>
       </div>
@@ -12987,7 +12973,7 @@ function bindEvents() {
   const publicLinkOpen = document.getElementById('availability-public-link-open');
   const updatePublicAvailabilityLink = () => {
     const selectedAgentId = Number(publicLinkAgentSelect?.value || 0);
-    const nextLink = getPublicAvailabilityRequestUrl(selectedAgentId);
+    const nextLink = getPublicAvailabilityViewUrl(selectedAgentId);
     if (publicLinkInput instanceof HTMLInputElement) {
       publicLinkInput.value = nextLink;
     }
@@ -13002,33 +12988,7 @@ function bindEvents() {
     const targetValue = publicLinkInput instanceof HTMLInputElement ? publicLinkInput.value : '';
     const didCopy = await copyTextValue(targetValue);
     if (didCopy) {
-      alert('Public request form link copied.');
-      return;
-    }
-    alert('Unable to copy automatically. Please copy the URL manually.');
-  });
-
-  const publicViewLinkInput = document.getElementById('availability-public-view-link');
-  const publicViewLinkAgentSelect = document.getElementById('availability-public-view-link-agent');
-  const publicViewLinkOpen = document.getElementById('availability-public-view-link-open');
-  const updatePublicAvailabilityViewLink = () => {
-    const selectedAgentId = Number(publicViewLinkAgentSelect?.value || 0);
-    const nextLink = getPublicAvailabilityViewUrl(selectedAgentId);
-    if (publicViewLinkInput instanceof HTMLInputElement) {
-      publicViewLinkInput.value = nextLink;
-    }
-    if (publicViewLinkOpen instanceof HTMLAnchorElement) {
-      publicViewLinkOpen.href = nextLink;
-    }
-  };
-
-  publicViewLinkAgentSelect?.addEventListener('change', updatePublicAvailabilityViewLink);
-  document.getElementById('availability-public-view-link-copy')?.addEventListener('click', async () => {
-    updatePublicAvailabilityViewLink();
-    const targetValue = publicViewLinkInput instanceof HTMLInputElement ? publicViewLinkInput.value : '';
-    const didCopy = await copyTextValue(targetValue);
-    if (didCopy) {
-      alert('Public request status page link copied.');
+      alert('Agent availability page link copied.');
       return;
     }
     alert('Unable to copy automatically. Please copy the URL manually.');
