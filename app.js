@@ -976,10 +976,16 @@ function loadLastSuccessfulSyncAt() {
 function markSyncSuccess() {
   const nowIso = new Date().toISOString();
   lastSuccessfulSyncAt = nowIso;
+  lastCalendarFeedSyncAt = nowIso;
   try {
     localStorage.setItem(syncStatusKey, JSON.stringify({ at: nowIso }));
+    localStorage.setItem(calendarFeedSyncStatusKey, JSON.stringify({ at: nowIso }));
   } catch {
     // Ignore storage write errors for sync metadata.
+  }
+  const statusElement = document.getElementById('calendar-sync-status');
+  if (statusElement) {
+    statusElement.textContent = getCalendarFeedSyncStatusText();
   }
 }
 
@@ -1002,6 +1008,10 @@ function markCalendarFeedSyncSuccess() {
     localStorage.setItem(calendarFeedSyncStatusKey, JSON.stringify({ at: nowIso }));
   } catch {
     // Ignore storage write errors for sync metadata.
+  }
+  const statusElement = document.getElementById('calendar-sync-status');
+  if (statusElement) {
+    statusElement.textContent = getCalendarFeedSyncStatusText();
   }
 }
 
@@ -1026,10 +1036,11 @@ function getCalendarFeedSyncStatusText() {
   if (localStorage.getItem(pendingStateSnapshotSyncKey) === '1') {
     return 'Schedule sync: Changes saved on this device; shared sync is pending.';
   }
-  if (!lastCalendarFeedSyncAt) {
+  const syncTimestamp = lastCalendarFeedSyncAt || lastSuccessfulSyncAt;
+  if (!syncTimestamp) {
     return 'Schedule sync: Waiting for first successful backend sync.';
   }
-  const syncDate = new Date(lastCalendarFeedSyncAt);
+  const syncDate = new Date(syncTimestamp);
   if (Number.isNaN(syncDate.getTime())) {
     return 'Schedule sync: Waiting for first successful backend sync.';
   }
@@ -6934,7 +6945,7 @@ function renderCalendarPage(currentUser) {
         .calendar-view button { padding: 6px 8px; min-height: 32px; }
         .calendar-view .day-row { gap: 6px; }
         .calendar-view .day-card { padding: 4px !important; min-height: 0; }
-        .calendar-view .calendar-controls-row { display:flex; align-items:center; gap:6px; flex-wrap:nowrap; overflow-x:auto; white-space:nowrap; padding-bottom:4px; }
+        .calendar-view .calendar-controls-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding-bottom:4px; }
         .calendar-view .calendar-controls-row > * { flex:0 0 auto; }
         .calendar-view .shift { padding: 3px !important; margin-bottom: 2px; line-height: 1; font-size: 0.7rem; color: #000; overflow: hidden; }
         .calendar-view .shift strong { font-size: 0.84rem; }
