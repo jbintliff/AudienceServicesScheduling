@@ -3543,6 +3543,45 @@ function getPtoDateMarkers(dateValue) {
   return markerHtml ? `<div style="display:flex; flex-direction:column; gap:4px; margin-top:6px;">${markerHtml}</div>` : '';
 }
 
+function getPtoApprovalCapacityWarnings(requestsToApprove, allRequests, departmentScope) {
+  const approvedAgentsByDate = new Map();
+  const agentsBeingApprovedByDate = new Map();
+  const addAgentForDate = (agentsByDate, dateValue, agentId) => {
+    const normalizedDate = String(dateValue || '').slice(0, 10);
+    const normalizedAgentId = Number(agentId);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate) || !Number.isFinite(normalizedAgentId) || normalizedAgentId <= 0) return;
+    const agents = agentsByDate.get(normalizedDate) || new Set();
+    agents.add(normalizedAgentId);
+    agentsByDate.set(normalizedDate, agents);
+  };
+
+  allRequests
+    .filter((request) => normalizeAvailabilityRequestStatus(request?.status) === 'approved')
+    .filter((request) => String(request?.unavailabilityType || '').trim() === 'PTO')
+    .filter((request) => isAgentInDepartmentScope(request?.agentId, departmentScope))
+    .forEach((request) => addAgentForDate(approvedAgentsByDate, request?.unavailableDate, request?.agentId));
+
+  requestsToApprove
+    .filter((request) => normalizeAvailabilityRequestStatus(request?.status) === 'pending')
+    .filter((request) => String(request?.unavailabilityType || '').trim() === 'PTO')
+    .filter((request) => isAgentInDepartmentScope(request?.agentId, departmentScope))
+    .forEach((request) => addAgentForDate(agentsBeingApprovedByDate, request?.unavailableDate, request?.agentId));
+
+  return Array.from(agentsBeingApprovedByDate.entries())
+    .map(([date, incomingAgents]) => {
+      const alreadyApprovedAgents = approvedAgentsByDate.get(date) || new Set();
+      const additionalAgents = Array.from(incomingAgents).filter((agentId) => !alreadyApprovedAgents.has(agentId));
+      return {
+        date,
+        approvedCount: alreadyApprovedAgents.size,
+        resultingCount: alreadyApprovedAgents.size + additionalAgents.length,
+        additionalAgentNames: additionalAgents.map((agentId) => getAgent(agentId)?.name || 'Agent')
+      };
+    })
+    .filter((entry) => entry.resultingCount > 2 && entry.additionalAgentNames.length > 0)
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
 function isRecurringAvailabilityRequestActive(request, referenceDateValue = '') {
   const normalizedStatus = normalizeAvailabilityRequestStatus(request?.status);
   if (normalizedStatus !== 'pending' && normalizedStatus !== 'approved') {
@@ -13409,6 +13448,23 @@ function bindEvents() {
       const allAvailabilityRequests = getAllAvailabilityRequests();
       const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
       if (targetRequests.length === 0) return;
+
+      const ptoCapacityWarnings = getPtoApprovalCapacityWarnings(
+        targetRequests,
+        allAvailabilityRequests,
+        getCurrentUserDepartmentScope()
+      );
+      if (ptoCapacityWarnings.length > 0) {
+        const warningDetails = ptoCapacityWarnings.map((entry) => {
+          const additionLabel = entry.additionalAgentNames.join(', ');
+          const currentLabel = `${entry.approvedCount} already approved`;
+          return `${entry.date}: ${currentLabel}; approving ${additionLabel} would bring the total to ${entry.resultingCount}.`;
+        }).join('\n');
+        const shouldContinue = confirm(
+          `PTO coverage warning: this approval will exceed two people with approved PTO on the following date${ptoCapacityWarnings.length === 1 ? '' : 's'}:\n\n${warningDetails}\n\nApprove anyway?`
+        );
+        if (!shouldContinue) return;
+      }
 
       const targetAgentIds = new Set(targetRequests.map((request) => Number(request.agentId)).filter((id) => Number.isFinite(id)));
       state.agents = state.agents.map((agent) => targetAgentIds.has(Number(agent.id))
