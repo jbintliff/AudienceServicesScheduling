@@ -1472,7 +1472,7 @@ function isCalendarEditInProgress() {
   if (pageMode !== 'calendar') return false;
   const activeElement = document.activeElement;
   return Boolean(
-    document.querySelector('.calendar-view form[data-unsaved-edits="true"], #shift-edit-modal-overlay, #bulk-shift-edit-modal-overlay, #shift-absence-modal-overlay')
+    document.querySelector('.calendar-view form[data-unsaved-edits="true"], #create-shift-modal-overlay, #shift-edit-modal-overlay, #bulk-shift-edit-modal-overlay, #shift-absence-modal-overlay')
     || (activeElement?.matches('input, select, textarea') && activeElement.closest('.calendar-view'))
   );
 }
@@ -5043,6 +5043,63 @@ function openShiftEditModal(shift, onSave) {
 
   document.addEventListener('keydown', onEscape);
   document.body.appendChild(overlay);
+}
+
+function openCreateShiftModal(date) {
+  const normalizedDate = String(date || '').trim().slice(0, 10);
+  const form = document.getElementById('add-shift-form');
+  const panel = form?.closest('.panel');
+  const parent = panel?.parentElement;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate) || !(form instanceof HTMLFormElement) || !panel || !parent) return;
+  if (document.getElementById('create-shift-modal-overlay')) return;
+
+  const heading = panel.querySelector('h3');
+  const originalHeading = heading?.textContent || 'Create shift';
+  const originalMarginBottom = panel.style.marginBottom;
+  const nextSibling = panel.nextSibling;
+  const dateInput = form.querySelector('input[name="date"]');
+  if (!(dateInput instanceof HTMLInputElement)) return;
+  dateInput.value = normalizedDate;
+  if (heading) heading.textContent = `Create shift for ${normalizedDate}`;
+  panel.style.marginBottom = '0';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'create-shift-modal-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', `Create shift for ${normalizedDate}`);
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'width:min(760px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);';
+  const actions = document.createElement('div');
+  actions.className = 'row';
+  actions.style.cssText = 'justify-content:flex-end; margin-top:12px;';
+  actions.innerHTML = '<button type="button" id="create-shift-modal-cancel" class="secondary">Cancel</button>';
+  dialog.appendChild(panel);
+  dialog.appendChild(actions);
+  overlay.appendChild(dialog);
+
+  const closeModal = () => {
+    document.removeEventListener('keydown', onEscape);
+    if (heading) heading.textContent = originalHeading;
+    panel.style.marginBottom = originalMarginBottom;
+    if (parent.isConnected) {
+      parent.insertBefore(panel, nextSibling?.parentNode === parent ? nextSibling : null);
+    }
+    overlay.remove();
+  };
+  const onEscape = (event) => {
+    if (event.key === 'Escape') closeModal();
+  };
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) closeModal();
+  });
+  overlay.querySelector('#create-shift-modal-cancel')?.addEventListener('click', closeModal);
+  document.addEventListener('keydown', onEscape);
+  document.getElementById('root')?.appendChild(overlay);
+  dateInput.focus();
 }
 
 function openShiftAbsenceModal(shift, onSave) {
@@ -13821,12 +13878,10 @@ function bindEvents() {
   document.querySelectorAll('[data-create-shift-date]').forEach((dateTarget) => {
     dateTarget.addEventListener('click', (event) => {
       if (!canManageCalendar || event.target.closest('[data-view-day-availability-requests]')) return;
+      event.preventDefault();
+      event.stopPropagation();
       const date = String(dateTarget.getAttribute('data-create-shift-date') || '').trim();
-      const dateInput = document.querySelector('#add-shift-form input[name="date"]');
-      if (!(dateInput instanceof HTMLInputElement) || !date) return;
-      dateInput.value = date;
-      dateInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      dateInput.focus();
+      openCreateShiftModal(date);
     });
   });
 
