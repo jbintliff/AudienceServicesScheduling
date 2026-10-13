@@ -4631,7 +4631,7 @@ function loadDocxPreviewLibrary() {
         () => Boolean(window.JSZip)
       );
       await loadPolicyPreviewScript(
-        'https://cdn.jsdelivr.net/npm/docx-preview@0.3.6/dist/docx-preview.min.js',
+        'https://cdn.jsdelivr.net/npm/docx-preview@0.4.1/dist/docx-preview.min.js',
         () => Boolean(window.docx?.renderAsync)
       );
       return window.docx;
@@ -4746,7 +4746,8 @@ async function openPolicyPreviewModal(policy, options = {}) {
     } catch (error) {
       console.error('Unable to render the Word policy preview.', error);
       if (requestId === activePolicyPreviewRequestId) {
-        body.innerHTML = '<div class="muted" style="padding:16px;">The Word preview could not be rendered. Check your internet connection and try again, or download the file to open it in Word.</div>';
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        body.innerHTML = `<div style="padding:16px; color:#111;" role="alert">The Word preview could not be rendered: ${escapeHtml(errorMessage)}. Try again, or download the file to open it in Word.</div>`;
       }
     }
   } else {
