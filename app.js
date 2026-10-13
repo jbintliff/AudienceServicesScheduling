@@ -617,6 +617,7 @@ let adminProfileNotice = null;
 const attemptedResetTokenLookups = new Set();
 let activePolicyPreviewBlobUrl = '';
 let activePolicyPreviewRequestId = 0;
+let docxPreviewLibraryPromise = null;
 const defaultEmailDeliverySettings = {
   outgoingEnabled: true,
   enabled: false,
@@ -4602,85 +4603,44 @@ function resolvePolicyMimeType(policy) {
   return rawMimeType || 'application/octet-stream';
 }
 
-async function inflateZipEntry(entryBytes, method) {
-  if (method === 0) {
-    return entryBytes;
-  }
-  if (method !== 8) {
-    return null;
-  }
-  if (typeof DecompressionStream !== 'function') {
-    return null;
-  }
-  const stream = new Blob([entryBytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  const arrayBuffer = await new Response(stream).arrayBuffer();
-  return new Uint8Array(arrayBuffer);
-}
-
-async function extractDocxXmlText(policy) {
-  const bytes = await getPolicyBytes(policy);
-  if (!bytes) return '';
-
-  const targetFileName = 'word/document.xml';
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  let eocdOffset = -1;
-  for (let index = bytes.length - 22; index >= 0; index -= 1) {
-    if (view.getUint32(index, true) === 0x06054b50) {
-      eocdOffset = index;
-      break;
-    }
-  }
-  if (eocdOffset < 0) return '';
-
-  const centralDirectorySize = view.getUint32(eocdOffset + 12, true);
-  const centralDirectoryOffset = view.getUint32(eocdOffset + 16, true);
-  const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
-  let offset = centralDirectoryOffset;
-
-  while (offset + 46 <= centralDirectoryEnd) {
-    if (view.getUint32(offset, true) !== 0x02014b50) {
-      break;
-    }
-
-    const compressionMethod = view.getUint16(offset + 10, true);
-    const compressedSize = view.getUint32(offset + 20, true);
-    const fileNameLength = view.getUint16(offset + 28, true);
-    const extraLength = view.getUint16(offset + 30, true);
-    const commentLength = view.getUint16(offset + 32, true);
-    const localHeaderOffset = view.getUint32(offset + 42, true);
-
-    const fileNameStart = offset + 46;
-    const fileNameEnd = fileNameStart + fileNameLength;
-    const fileName = new TextDecoder('utf-8').decode(bytes.slice(fileNameStart, fileNameEnd));
-
-    if (fileName === targetFileName) {
-      if (view.getUint32(localHeaderOffset, true) !== 0x04034b50) return '';
-      const localFileNameLength = view.getUint16(localHeaderOffset + 26, true);
-      const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
-      const dataStart = localHeaderOffset + 30 + localFileNameLength + localExtraLength;
-      const dataEnd = dataStart + compressedSize;
-      const entryBytes = bytes.slice(dataStart, dataEnd);
-      const inflatedBytes = await inflateZipEntry(entryBytes, compressionMethod);
-      if (!inflatedBytes) return '';
-      return new TextDecoder('utf-8', { fatal: false }).decode(inflatedBytes);
-    }
-
-    offset = fileNameEnd + extraLength + commentLength;
-  }
-
-  return '';
-}
-
-function extractDocxPlainText(xmlText) {
-  const parsed = new DOMParser().parseFromString(String(xmlText || ''), 'application/xml');
-  const parserError = parsed.getElementsByTagName('parsererror')[0];
-  if (parserError) return '';
-  const paragraphNodes = Array.from(parsed.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'p'));
-  const lines = paragraphNodes.map((paragraph) => {
-    const textNodes = Array.from(paragraph.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 't'));
-    return textNodes.map((node) => node.textContent || '').join('');
+function loadPolicyPreviewScript(src, globalCheck) {
+  if (globalCheck()) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.referrerPolicy = 'no-referrer';
+    script.onload = () => {
+      if (globalCheck()) {
+        resolve();
+      } else {
+        reject(new Error('The Word preview library did not initialize.'));
+      }
+    };
+    script.onerror = () => reject(new Error('The Word preview library could not be loaded.'));
+    document.head.appendChild(script);
   });
-  return lines.join('\n').trim();
+}
+
+function loadDocxPreviewLibrary() {
+  if (window.docx?.renderAsync) return Promise.resolve(window.docx);
+  if (!docxPreviewLibraryPromise) {
+    docxPreviewLibraryPromise = (async () => {
+      await loadPolicyPreviewScript(
+        'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
+        () => Boolean(window.JSZip)
+      );
+      await loadPolicyPreviewScript(
+        'https://cdn.jsdelivr.net/npm/docx-preview@0.3.6/dist/docx-preview.min.js',
+        () => Boolean(window.docx?.renderAsync)
+      );
+      return window.docx;
+    })().catch((error) => {
+      docxPreviewLibraryPromise = null;
+      throw error;
+    });
+  }
+  return docxPreviewLibraryPromise;
 }
 
 function renderPolicyPreviewModal() {
@@ -4690,7 +4650,7 @@ function renderPolicyPreviewModal() {
         <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
           <strong id="policy-preview-title">Policy preview</strong>
           <div class="row" style="gap:8px;">
-            <a id="policy-preview-open-tab" class="secondary" href="#" target="_blank" rel="noopener" style="text-decoration:none;"><button class="secondary" type="button">Open in new tab</button></a>
+            <a id="policy-preview-open-tab" class="secondary" href="#" target="_blank" rel="noopener" style="text-decoration:none;"><button id="policy-preview-open-tab-label" class="secondary" type="button">Open in new tab</button></a>
             <button id="policy-preview-close" class="secondary" type="button">Close</button>
           </div>
         </div>
@@ -4711,10 +4671,12 @@ async function openPolicyPreviewModal(policy, options = {}) {
   const body = document.getElementById('policy-preview-body');
   const title = document.getElementById('policy-preview-title');
   const openTabLink = document.getElementById('policy-preview-open-tab');
+  const openTabLabel = document.getElementById('policy-preview-open-tab-label');
   const canRenderInlineModal = (modal instanceof HTMLElement)
     && (body instanceof HTMLElement)
     && (title instanceof HTMLElement)
-    && (openTabLink instanceof HTMLAnchorElement);
+    && (openTabLink instanceof HTMLAnchorElement)
+    && (openTabLabel instanceof HTMLButtonElement);
 
   if (canRenderInlineModal) {
     closePolicyPreviewModal();
@@ -4768,10 +4730,24 @@ async function openPolicyPreviewModal(policy, options = {}) {
       body.innerHTML = `<pre style="margin:0; padding:16px; font-family:Consolas, Menlo, Monaco, monospace; white-space:pre-wrap; word-break:break-word; color:#111;">${escapedText}</pre>`;
     }
   } else if (isDocxPolicy(policy)) {
-    const xmlText = await extractDocxXmlText(policy);
-    const plainText = extractDocxPlainText(xmlText) || '[No preview text could be extracted from this DOCX file.]';
-    if (requestId === activePolicyPreviewRequestId) {
-      body.innerHTML = `<pre style="margin:0; padding:16px; font-family:Consolas, Menlo, Monaco, monospace; white-space:pre-wrap; word-break:break-word; color:#111;">${escapeHtml(plainText)}</pre>`;
+    try {
+      const docxViewer = await loadDocxPreviewLibrary();
+      if (requestId !== activePolicyPreviewRequestId) return;
+      body.innerHTML = '';
+      const styles = document.createElement('div');
+      const content = document.createElement('div');
+      body.append(styles, content);
+      await docxViewer.renderAsync(previewBlob, content, styles, {
+        className: 'policy-docx',
+        breakPages: true,
+        ignoreLastRenderedPageBreak: false,
+        useBase64URL: true
+      });
+    } catch (error) {
+      console.error('Unable to render the Word policy preview.', error);
+      if (requestId === activePolicyPreviewRequestId) {
+        body.innerHTML = '<div class="muted" style="padding:16px;">The Word preview could not be rendered. Check your internet connection and try again, or download the file to open it in Word.</div>';
+      }
     }
   } else {
     if (requestId === activePolicyPreviewRequestId) {
@@ -4786,19 +4762,35 @@ async function openPolicyPreviewModal(policy, options = {}) {
       }
     }
   }
+  if (requestId !== activePolicyPreviewRequestId) return;
   openTabLink.href = bestPreviewSrc;
+  if (isDocxPolicy(policy)) {
+    openTabLink.removeAttribute('target');
+    openTabLink.download = policy?.name || 'policy.docx';
+    openTabLabel.textContent = 'Download Word file';
+  } else {
+    openTabLink.target = '_blank';
+    openTabLink.removeAttribute('download');
+    openTabLabel.textContent = 'Open in new tab';
+  }
 }
 
 function closePolicyPreviewModal() {
   const modal = document.getElementById('policy-preview-modal');
   const body = document.getElementById('policy-preview-body');
   const openTabLink = document.getElementById('policy-preview-open-tab');
+  const openTabLabel = document.getElementById('policy-preview-open-tab-label');
   activePolicyPreviewRequestId += 1;
   if (body instanceof HTMLElement) {
     body.innerHTML = '';
   }
   if (openTabLink instanceof HTMLAnchorElement) {
     openTabLink.href = '#';
+    openTabLink.removeAttribute('download');
+    openTabLink.target = '_blank';
+  }
+  if (openTabLabel instanceof HTMLButtonElement) {
+    openTabLabel.textContent = 'Open in new tab';
   }
   if (activePolicyPreviewBlobUrl) {
     URL.revokeObjectURL(activePolicyPreviewBlobUrl);
