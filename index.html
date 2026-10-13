@@ -103,31 +103,33 @@
       }
       :root {
         color: #fff;
-        background: #0b1220;
+        background: #8599b8;
         font-size: 16px;
       }
       body {
         color: #fff;
-        background: linear-gradient(165deg, #0b1220 0%, #111c30 52%, #1b2940 100%);
+        background: linear-gradient(165deg, #8599b8 0%, #92abd3 36%, #e49c95 68%, #fac098 100%);
       }
       .panel {
-        background: rgba(15, 23, 42, 0.96);
-        border-color: #cbd5e1;
-        backdrop-filter: none;
+        background: rgba(45,58,82,0.58);
+        border-color: rgba(250,192,152,0.52);
+        backdrop-filter: blur(10px);
       }
-      .card, .stat, .day-card {
-        background: #1e293b;
-        border-color: #cbd5e1;
+      .card, .stat, .day-card { border-color: rgba(250,192,152,0.48); }
+      .card { background: rgba(64,78,106,0.62); }
+      .stat { background: rgba(69,85,116,0.72); }
+      .day-card {
+        background: rgba(57,72,99,0.88);
+        border-color: rgba(250,192,152,0.45);
       }
-      .day-card { background: #273449; }
       .muted {
         color: #fff !important;
         font-size: 0.95rem !important;
         font-weight: 500;
       }
       input, select, textarea {
-        background: #111c30;
-        border-color: #e2e8f0;
+        background: rgba(58,72,98,0.9);
+        border-color: #fac098;
         color: #fff;
       }
       input::placeholder, textarea::placeholder {
@@ -135,25 +137,22 @@
         opacity: 1;
       }
       button {
-        background: #b83e39;
-        color: #fff;
-      }
-      button.secondary {
-        background: #dbeafe;
+        background: #e49c95;
         color: #111827;
       }
+      button.secondary {
+        background: #92abd3;
+        color: #1f2d46;
+      }
       button.danger {
-        background: #991b1b;
-        color: #fff;
+        background: #c97979;
+        color: #111827;
       }
       button.success {
         background: #fac098;
         color: #1f2937;
       }
       button:disabled {
-        background: #4b5563;
-        border: 1px solid #d1d5db;
-        color: #fff;
         opacity: 1;
       }
       a:not([style*="text-decoration:none"]) { color: #bfdbfe; }
