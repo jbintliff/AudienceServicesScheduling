@@ -483,6 +483,7 @@ const pageMode = (() => {
   if (queryMode === 'availability-requests') return 'availability-requests';
   if (queryMode === 'public-availability-request') return 'public-availability-request';
   if (queryMode === 'public-availability-view') return 'public-availability-view';
+  if (queryMode === 'public-policies') return 'public-policies';
   if (queryMode === 'admin-options') return 'admin-options';
   if (queryMode === 'policies') return 'policies';
   const mode = document.body?.dataset?.page;
@@ -495,6 +496,7 @@ const pageMode = (() => {
   if (mode === 'availability-requests') return 'availability-requests';
   if (mode === 'public-availability-request') return 'public-availability-request';
   if (mode === 'public-availability-view') return 'public-availability-view';
+  if (mode === 'public-policies') return 'public-policies';
   if (mode === 'admin-options') return 'admin-options';
   if (mode === 'policies') return 'policies';
   return 'dashboard';
@@ -8879,9 +8881,9 @@ function renderAdminOptionsPage(currentUser) {
   bindEvents();
 }
 
-function renderPoliciesPage(currentUser) {
-  const isAdminView = isAdminUser(currentUser);
-  if (isAdminAssistantUser(currentUser) || isAdminAssistantProfilesUser(currentUser)) {
+function renderPoliciesPage(currentUser, { publicView = false } = {}) {
+  const isAdminView = !publicView && isAdminUser(currentUser);
+  if (!publicView && (isAdminAssistantUser(currentUser) || isAdminAssistantProfilesUser(currentUser))) {
     root.innerHTML = `
       <div class="app">
         <div class="panel">
@@ -8897,7 +8899,13 @@ function renderPoliciesPage(currentUser) {
     });
     return;
   }
-  const policiesDepartmentScope = getCurrentUserDepartmentScope();
+  const requestedAgentId = Number(new URLSearchParams(window.location.search).get('agentId'));
+  const viewingAgentId = getAgent(requestedAgentId)
+    ? requestedAgentId
+    : (getAgent(Number(currentUser?.agentId)) ? Number(currentUser.agentId) : 0);
+  const policiesDepartmentScope = publicView && viewingAgentId
+    ? normalizeDepartment(getAgent(viewingAgentId)?.department)
+    : getCurrentUserDepartmentScope();
   const policies = [...(Array.isArray(state.policies) ? state.policies : [])]
     .filter((policy) => isDateEntryInDepartmentScope(policy.department, policiesDepartmentScope))
     .sort((left, right) => String(right.uploadedAt || '').localeCompare(String(left.uploadedAt || '')));
@@ -8910,11 +8918,17 @@ function renderPoliciesPage(currentUser) {
           <p class="muted">View, preview, and download policy files.${isAdminView ? ' Manage uploads in Admin Options.' : ''}</p>
         </div>
         <div class="row">
-          ${isAdminView
-            ? renderAdminNavigationLinks({ includeExport: true })
-            : renderAgentNavigationLinks()}
-          ${renderUserNavChip(currentUser)}
-          <button id="logout-btn" class="secondary" type="button">Log out</button>
+          ${publicView ? `
+            <a href="${escapeHtml(getPublicAvailabilityViewUrl(viewingAgentId))}" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability and PTO</button></a>
+            <a href="${escapeHtml(getPublicAvailabilityRequestUrl(viewingAgentId))}" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Request availability or PTO</button></a>
+            <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin login</button></a>
+          ` : `
+            ${isAdminView
+              ? renderAdminNavigationLinks({ includeExport: true })
+              : renderAgentNavigationLinks()}
+            ${renderUserNavChip(currentUser)}
+            <button id="logout-btn" class="secondary" type="button">Log out</button>
+          `}
         </div>
       </div>
 
@@ -9754,6 +9768,10 @@ function render() {
     renderPublicAvailabilityViewPage();
     return;
   }
+  if (pageMode === 'public-policies') {
+    renderPoliciesPage(getCurrentUser(), { publicView: true });
+    return;
+  }
   const currentUser = getCurrentUser();
   if (!currentUser) {
     renderLoginPage();
@@ -10546,6 +10564,7 @@ function renderPublicAvailabilityViewPage() {
         </div>
         <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
           <a href="${escapeHtml(getPublicAvailabilityRequestUrl(viewingAgentId))}" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Request availability or PTO</button></a>
+          <a href="index.html?view=public-policies${viewingAgentId ? `&amp;agentId=${encodeURIComponent(String(viewingAgentId))}` : ''}" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Admin login</button></a>
         </div>
       </div>
