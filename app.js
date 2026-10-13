@@ -4307,6 +4307,45 @@ function getShiftRoleOutlineColor(shift) {
   return getRoleColor(role);
 }
 
+function getReadableTextColor(backgroundColor) {
+  const color = String(backgroundColor || '').trim().toLowerCase();
+  let rgb = null;
+  const hexMatch = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hexMatch) {
+    const hex = hexMatch[1].length === 3
+      ? hexMatch[1].split('').map((value) => `${value}${value}`).join('')
+      : hexMatch[1];
+    rgb = [0, 2, 4].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  } else {
+    const hslMatch = color.match(/^hsl\(\s*([+-]?[\d.]+)(?:deg)?\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)$/);
+    if (hslMatch) {
+      const hue = ((Number(hslMatch[1]) % 360) + 360) % 360 / 360;
+      const saturation = Math.min(100, Number(hslMatch[2])) / 100;
+      const lightness = Math.min(100, Number(hslMatch[3])) / 100;
+      const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+      const hueSection = hue * 6;
+      const secondary = chroma * (1 - Math.abs((hueSection % 2) - 1));
+      const sector = Math.floor(hueSection);
+      const channels = sector === 0 ? [chroma, secondary, 0]
+        : sector === 1 ? [secondary, chroma, 0]
+          : sector === 2 ? [0, chroma, secondary]
+            : sector === 3 ? [0, secondary, chroma]
+              : sector === 4 ? [secondary, 0, chroma]
+                : [chroma, 0, secondary];
+      const offset = lightness - chroma / 2;
+      rgb = channels.map((channel) => channel + offset);
+    }
+  }
+
+  if (!rgb) return '#fff';
+  const luminance = rgb
+    .map((channel) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
+    .reduce((total, channel, index) => total + channel * [0.2126, 0.7152, 0.0722][index], 0);
+  const whiteContrast = 1.05 / (luminance + 0.05);
+  const darkContrast = (luminance + 0.05) / (0.009 + 0.05);
+  return darkContrast >= whiteContrast ? '#111827' : '#fff';
+}
+
 function isShiftOfferedForPickup(shift) {
   return Boolean(shift?.offeredForPickup) && isPublishedShift(shift);
 }
@@ -4325,13 +4364,13 @@ function canAgentPickUpOfferedShift(shift, agentId) {
 function getShiftStyle(shift) {
   const hasAttentionBorder = isShiftOfferedForPickup(shift) || Boolean(normalizeShiftAbsenceReason(shift?.absenceReason));
   const attentionBorder = hasAttentionBorder ? ' border:2px dashed rgba(255,255,255,0.8);' : '';
-  const absentFade = normalizeShiftAbsenceReason(shift?.absenceReason) ? ' opacity:0.72;' : '';
+  const absentStyle = normalizeShiftAbsenceReason(shift?.absenceReason) ? ' border:2px dashed rgba(255,255,255,0.9);' : '';
   const role = String(shift?.role || '').trim();
   const shiftColor = role ? getRoleColor(role) : getShiftLocationColor(shift);
   const roleOutline = getShiftRoleOutlineColor(shift);
   const outlineStyle = roleOutline ? ` outline:4px solid ${roleOutline}; outline-offset:-3px; border-left:3px solid rgba(255,255,255,0.65);` : '';
-  const draftFade = shift?.status === shiftStatuses.published ? '' : ' opacity:0.52;';
-  return `background:${shiftColor};${outlineStyle}${attentionBorder}${absentFade || draftFade}`;
+  const draftStyle = shift?.status === shiftStatuses.published ? '' : ' border:2px dashed rgba(255,255,255,0.9);';
+  return `background:${shiftColor}; color:${getReadableTextColor(shiftColor)};${outlineStyle}${attentionBorder}${absentStyle}${draftStyle}`;
 }
 
 function getPlannerWeekIsoDateForDay(dayLabel) {
@@ -6951,7 +6990,7 @@ function renderCalendarPage(currentUser) {
         .calendar-view .calendar-controls-row > * { flex:0 0 auto; }
         .calendar-view .shift { padding: 3px !important; margin-bottom: 2px; line-height: 1; font-size: 0.7rem; color: #000; overflow: hidden; }
         .calendar-view .shift strong { font-size: 0.84rem; }
-        .calendar-view .shift .muted { color: #000 !important; }
+        .calendar-view .shift .muted { color: inherit !important; }
         .calendar-view .calendar-shift-actions { gap: 2px; margin-top: 2px !important; flex-wrap: wrap; }
         .calendar-view .calendar-shift-actions button { padding: 1px 3px; min-height: 20px; font-size: 0.62rem; flex: 1 1 auto; min-width: 0; }
         .calendar-view h1 { margin: 0; font-size: 1.45rem; }
@@ -7136,13 +7175,13 @@ function renderCalendarPage(currentUser) {
         <div class="row" style="margin-bottom:10px;">
           <span class="muted" style="font-weight:600;">Location:</span>
           ${getAgentLocationCatalog().map((location) => `
-            <span class="chip" style="background:${getAgentLocationColor(location)}; color:#111; border:1px solid rgba(255,255,255,0.45);">${escapeHtml(location)}</span>
+            <span class="chip" style="background:${getAgentLocationColor(location)}; color:${getReadableTextColor(getAgentLocationColor(location))}; border:1px solid rgba(255,255,255,0.75);">${escapeHtml(location)}</span>
           `).join('')}
         </div>
         <div class="row" style="margin-bottom:10px;">
           <span class="muted" style="font-weight:600;">Role:</span>
           ${getRoleLegendItems().map((role) => `
-            <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
+            <span class="chip" style="background:${getRoleColor(role)}; color:${getReadableTextColor(getRoleColor(role))}; border:1px solid rgba(255,255,255,0.75);">${escapeHtml(role)}</span>
           `).join('')}
         </div>
         ${canManageCalendar ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-copy-full-schedule>Copy full schedule</button><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-edit-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Edit selected</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="secondary" data-unpublish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Unpublish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
@@ -8587,7 +8626,7 @@ function renderAdminOptionsPage(currentUser) {
           </div>
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:center; width:100%;">
             ${getRoleLegendItems().map((role) => `
-              <label class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25); cursor:pointer; justify-content:center; width:100%; margin:0;" title="Click to change color">
+              <label class="chip" style="background:${getRoleColor(role)}; color:${getReadableTextColor(getRoleColor(role))}; border:1px solid rgba(255,255,255,0.75); cursor:pointer; justify-content:center; width:100%; margin:0;" title="Click to change color">
                 ${escapeHtml(role)}
                 <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
               </label>
@@ -8636,7 +8675,7 @@ function renderAdminOptionsPage(currentUser) {
           </div>
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:center; width:100%;">
             ${getAgentLocationCatalog().map((location) => `
-              <label class="chip" style="background:${getAgentLocationColor(location)}; color:#111; border:1px solid rgba(255,255,255,0.45); cursor:pointer; justify-content:center; width:100%; margin:0;" title="Click to change color">
+              <label class="chip" style="background:${getAgentLocationColor(location)}; color:${getReadableTextColor(getAgentLocationColor(location))}; border:1px solid rgba(255,255,255,0.75); cursor:pointer; justify-content:center; width:100%; margin:0;" title="Click to change color">
                 ${escapeHtml(location)}
                 <input type="color" data-agent-location-color="${escapeHtml(location)}" value="${escapeHtml(getAgentLocationColor(location))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
               </label>
@@ -9261,7 +9300,7 @@ function renderAgentsPage(currentUser) {
                 </div>
                 <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
                   ${canEditAgentProfiles ? `<button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:6px 9px;">Edit</button>` : ''}
-                  ${isAdminUser(currentUser) ? `<button class="secondary" type="button" disabled title="Use Edit to make changes" style="padding:6px 9px; opacity:0.6; cursor:not-allowed;">Save</button><button class="secondary" type="button" data-resend-agent-invite="${agent.id}" style="padding:6px 9px;">Resend</button><button class="danger" data-remove-agent="${agent.id}" type="button" style="padding:6px 9px;">Remove</button>` : ''}
+                  ${isAdminUser(currentUser) ? `<button class="secondary" type="button" disabled title="Use Edit to make changes" style="padding:6px 9px; cursor:not-allowed;">Save</button><button class="secondary" type="button" data-resend-agent-invite="${agent.id}" style="padding:6px 9px;">Resend</button><button class="danger" data-remove-agent="${agent.id}" type="button" style="padding:6px 9px;">Remove</button>` : ''}
                 </div>
               </div>
             </div>
@@ -9914,14 +9953,14 @@ function render() {
                   <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
                       <strong class="muted">Roles:</strong>
                       ${getRoleLegendItems().map((role) => `
-                        <label class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25); cursor:pointer; margin:0;" title="Click to change color">
+                        <label class="chip" style="background:${getRoleColor(role)}; color:${getReadableTextColor(getRoleColor(role))}; border:1px solid rgba(255,255,255,0.75); cursor:pointer; margin:0;" title="Click to change color">
                           ${escapeHtml(role)}
                           <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
                         </label>
                       `).join('')}
                       <strong class="muted">Locations:</strong>
                       ${getAgentLocationCatalog().map((location) => `
-                        <label class="chip" style="background:${getAgentLocationColor(location)}; color:#111; border:1px solid rgba(255,255,255,0.45); cursor:pointer; margin:0;" title="Click to change color">
+                        <label class="chip" style="background:${getAgentLocationColor(location)}; color:${getReadableTextColor(getAgentLocationColor(location))}; border:1px solid rgba(255,255,255,0.75); cursor:pointer; margin:0;" title="Click to change color">
                           ${escapeHtml(location)}
                           <input type="color" data-agent-location-color="${escapeHtml(location)}" value="${escapeHtml(getAgentLocationColor(location))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
                         </label>

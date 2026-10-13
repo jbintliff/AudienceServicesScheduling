@@ -101,6 +101,78 @@
         line-height: 1.05;
         border-radius: 6px;
       }
+      :root {
+        color: #fff;
+        background: #0b1220;
+        font-size: 16px;
+      }
+      body {
+        color: #fff;
+        background: linear-gradient(165deg, #0b1220 0%, #111c30 52%, #1b2940 100%);
+      }
+      .panel {
+        background: rgba(15, 23, 42, 0.96);
+        border-color: #cbd5e1;
+        backdrop-filter: none;
+      }
+      .card, .stat, .day-card {
+        background: #1e293b;
+        border-color: #cbd5e1;
+      }
+      .day-card { background: #273449; }
+      .muted {
+        color: #fff !important;
+        font-size: 0.95rem !important;
+        font-weight: 500;
+      }
+      input, select, textarea {
+        background: #111c30;
+        border-color: #e2e8f0;
+        color: #fff;
+      }
+      input::placeholder, textarea::placeholder {
+        color: #d1d5db;
+        opacity: 1;
+      }
+      button {
+        background: #b83e39;
+        color: #fff;
+      }
+      button.secondary {
+        background: #dbeafe;
+        color: #111827;
+      }
+      button.danger {
+        background: #991b1b;
+        color: #fff;
+      }
+      button.success {
+        background: #fac098;
+        color: #1f2937;
+      }
+      button:disabled {
+        background: #4b5563;
+        border: 1px solid #d1d5db;
+        color: #fff;
+        opacity: 1;
+      }
+      a:not([style*="text-decoration:none"]) { color: #bfdbfe; }
+      :focus-visible {
+        outline: 3px solid #fde047;
+        outline-offset: 2px;
+      }
+      ::selection {
+        background: #fde047;
+        color: #111827;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+        }
+      }
       @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr 1fr; } .day-row { grid-template-columns: 1fr 1fr; } }
       @media (max-width: 700px) { .stats { grid-template-columns: 1fr; } .day-row { grid-template-columns: 1fr; } }
     </style>
@@ -116,7 +188,7 @@
     <script>
       window.__SCHEDULER_API_URL__ = window.__SCHEDULER_API_URL__ || localStorage.getItem('agent-scheduler-backend-url-v1') || 'https://scheduling-app-backend-l66q.onrender.com/api';
     </script>
-    <script src="app.js?v=20260716-5"></script>
+    <script src="app.js?v=20261013-a11y-contrast"></script>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then((registrations) => {
