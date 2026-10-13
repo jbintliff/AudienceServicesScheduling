@@ -9909,8 +9909,7 @@ function render() {
                       <input id="weekly-week-reference" type="date" value="${escapeHtml(plannerWeekReference)}" />
                     </div>
                   </div>
-                  <div class="stack" style="gap:6px; margin-bottom:8px;">
-                    <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+                  <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
                       <strong class="muted">Roles:</strong>
                       ${getRoleLegendItems().map((role) => `
                         <label class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25); cursor:pointer; margin:0;" title="Click to change color">
@@ -9918,16 +9917,13 @@ function render() {
                           <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
                         </label>
                       `).join('')}
-                      </div>
-                      <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
-                        <strong class="muted">Locations:</strong>
+                      <strong class="muted">Locations:</strong>
                       ${getAgentLocationCatalog().map((location) => `
                         <label class="chip" style="background:${getAgentLocationColor(location)}; color:#111; border:1px solid rgba(255,255,255,0.45); cursor:pointer; margin:0;" title="Click to change color">
                           ${escapeHtml(location)}
                           <input type="color" data-agent-location-color="${escapeHtml(location)}" value="${escapeHtml(getAgentLocationColor(location))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
                         </label>
                       `).join('')}
-                    </div>
                   </div>
                   <div class="day-row">
                     ${days.map((day) => `
