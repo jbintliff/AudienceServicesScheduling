@@ -3452,7 +3452,7 @@ function getBlackoutDateMarker(dateValue, departmentScope = getCurrentUserDepart
   if (!isBlackoutDate(dateValue, departmentScope)) {
     return '';
   }
-  return '<div class="chip" style="margin-top:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>';
+  return '<div class="chip" style="margin-top:6px; background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>';
 }
 
 
@@ -4084,11 +4084,13 @@ function deleteAvailabilityRequestsByIds(requestIds, options = {}) {
   const shouldDelete = confirm(String(options.confirmMessage || defaultConfirmMessage));
   if (!shouldDelete) return false;
 
+  const deletedAt = getCurrentIsoTimestamp();
   const nextAvailabilityRequests = allAvailabilityRequests.map((item) => ids.includes(Number(item.id))
     ? {
         ...item,
         status: 'deleted',
-        deletedAt: getCurrentIsoTimestamp()
+        deletedAt,
+        updatedAt: deletedAt
       }
     : item);
   saveAvailabilityRequests(nextAvailabilityRequests);
@@ -9456,7 +9458,7 @@ function renderAvailabilityRequestsPage(currentUser) {
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">PTO</span>
           <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
           <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Repeating availability</span>
-          <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
+          <span class="chip" style="background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
         </div>
         <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
           ${days.map((dayLabel) => `<div class="muted" style="text-align:center;">${dayLabel}</div>`).join('')}
@@ -9469,9 +9471,9 @@ function renderAvailabilityRequestsPage(currentUser) {
             const blackoutDate = isBlackoutDate(cell.date);
             const requestIdsForDate = (cell.requests || []).map((request) => Number(request?.id)).filter((id) => Number.isFinite(id)).join(',');
             return `
-              <div class="card" data-view-availability-date="${escapeHtml(cell.date)}" title="View requests for ${escapeHtml(cell.date)}" style="min-height:96px; padding:8px; cursor:pointer; ${blackoutDate ? 'border-color:#AB5C57; box-shadow:inset 0 0 0 1px rgba(171,92,87,0.55);' : ''}">
+              <div class="card" data-view-availability-date="${escapeHtml(cell.date)}" title="View requests for ${escapeHtml(cell.date)}" style="min-height:96px; padding:8px; cursor:pointer; ${blackoutDate ? 'border-color:#000; box-shadow:inset 0 0 0 1px rgba(0,0,0,0.55);' : ''}">
                 <div style="font-weight:600; margin-bottom:6px;">${cell.day}</div>
-                ${blackoutDate ? '<div class="chip" style="margin-bottom:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>' : ''}
+                ${blackoutDate ? '<div class="chip" style="margin-bottom:6px; background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>' : ''}
                 <div style="display:flex; flex-direction:column; gap:4px;">
                   ${(cell.requests || []).slice(0, 3).map((request) => {
                     const typeMeta = getAvailabilityRequestTypeMeta(request);
@@ -9931,6 +9933,7 @@ function render() {
                         <h4>${day}</h4>
                         <div class="muted">${escapeHtml(plannerWeekDates[day]?.label || '')}</div>
                         ${getBlackoutDateMarker(plannerWeekDates[day]?.iso || '')}
+                        ${getAvailabilityCalendarMarkers(plannerWeekDates[day]?.iso || '')}
                         ${renderAdminScheduleDayShifts(sortedAdminWeeklyShifts.filter((shift) => shift.day === day))}
                       </div>
                     `).join('')}
@@ -9987,6 +9990,7 @@ function render() {
                   <div class="day-card" data-day="${selectedAgentScheduleDay}">
                     <h4>${selectedAgentScheduleDay}</h4>
                     ${getBlackoutDateMarker(weekDates[selectedAgentScheduleDay]?.iso || '')}
+                    ${getAvailabilityCalendarMarkers(weekDates[selectedAgentScheduleDay]?.iso || '')}
                     ${sortedVisibleShifts.filter((shift) => shift.day === selectedAgentScheduleDay).map((shift) => `
                       <div class="shift" draggable="true" data-shift-id="${shift.id}">
                         <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}<br />${formatTimeRange(shift.start, shift.end)}
@@ -10001,6 +10005,7 @@ function render() {
                     <div class="day-card" data-day="${day}">
                       <h4>${day}</h4>
                       ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
+                      ${getAvailabilityCalendarMarkers(weekDates[day]?.iso || '')}
                       ${sortedVisibleShifts.filter((shift) => shift.day === day).map((shift) => `
                         <div class="shift" draggable="true" data-shift-id="${shift.id}">
                           <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}<br />${formatTimeRange(shift.start, shift.end)}
@@ -10032,7 +10037,7 @@ function render() {
                 <div style="margin-bottom:10px;">
                   <div class="muted" style="margin-bottom:6px;">Blackout dates</div>
                   <div class="row" style="gap:6px; flex-wrap:wrap;">
-                    ${blackoutDates.map((dateValue) => `<span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}
+                    ${blackoutDates.map((dateValue) => `<span class="chip" style="background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}
                   </div>
                 </div>` : ''}
               <form id="agent-availability-form" class="stack">
@@ -10304,7 +10309,7 @@ function renderPublicAvailabilityRequestPage() {
       <div class="panel" style="margin-bottom:16px;">
         <h3 style="margin:0 0 8px;">Blackout dates</h3>
         <div class="row" style="gap:6px; flex-wrap:wrap;">
-          ${blackoutDates.map((dateValue) => `<span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}
+          ${blackoutDates.map((dateValue) => `<span class="chip" style="background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}
         </div>
       </div>` : ''}
 
@@ -10485,8 +10490,7 @@ function renderPublicAvailabilityViewPage() {
   const viewingAgentName = viewingAgentId ? (getAgent(viewingAgentId)?.name || '') : '';
 
   const allAvailabilityRequests = getAllAvailabilityRequests()
-    .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
-    .filter((request) => String(request?.recurrenceType || '').trim().toLowerCase() !== 'weekly');
+    .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted');
   const selectedMonth = publicAvailabilityViewUi.month || getCurrentLocalMonthValue();
   const calendarData = getAvailabilityCalendarCells(selectedMonth, allAvailabilityRequests);
   const publicViewDepartmentScope = viewingAgentId ? normalizeDepartment(getAgent(viewingAgentId)?.department) : getCurrentUserDepartmentScope();
@@ -10553,7 +10557,7 @@ function renderPublicAvailabilityViewPage() {
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">PTO</span>
           <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
           <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Repeating availability</span>
-          <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
+          <span class="chip" style="background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">Blackout date</span>
         </div>
         <div style="display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:8px; margin-bottom:8px;">
           ${days.map((dayLabel) => `<div class="muted" style="text-align:center;">${dayLabel}</div>`).join('')}
@@ -10566,12 +10570,12 @@ function renderPublicAvailabilityViewPage() {
             const blackoutDate = isBlackoutDate(cell.date, publicViewDepartmentScope);
             const cellRequests = cell.requests || [];
             return `
-              <div class="card" style="min-height:96px; padding:8px; ${blackoutDate ? 'border-color:#AB5C57; box-shadow:inset 0 0 0 1px rgba(171,92,87,0.55);' : ''}">
+              <div class="card" style="min-height:96px; padding:8px; ${blackoutDate ? 'border-color:#000; box-shadow:inset 0 0 0 1px rgba(0,0,0,0.55);' : ''}">
                 <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:6px;">
                   <span style="font-weight:600;">${cell.day}</span>
                   ${cellRequests.length > 0 ? `<button type="button" class="secondary" data-view-cell-requests="${cell.date}" style="padding:1px 6px; font-size:11px; margin:0; cursor:pointer;" title="View requests on ${cell.date}">View date</button>` : ''}
                 </div>
-                ${blackoutDate ? '<div class="chip" style="margin-bottom:6px; background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>' : ''}
+                ${blackoutDate ? '<div class="chip" style="margin-bottom:6px; background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">Blackout date</div>' : ''}
                 <div style="display:flex; flex-direction:column; gap:4px;">
                   ${cellRequests.slice(0, 3).map((request) => {
                     const typeMeta = getAvailabilityRequestTypeMeta(request);
@@ -10612,7 +10616,7 @@ function renderPublicAvailabilityViewPage() {
           </div>
           <div class="row" style="margin-top:6px; gap:6px; flex-wrap:wrap;">
             ${monthBlackoutDates.length > 0
-              ? monthBlackoutDates.map((dateValue) => `<span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')
+              ? monthBlackoutDates.map((dateValue) => `<span class="chip" style="background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')
               : '<span class="muted">No blackout dates in this month.</span>'}
           </div>
         </div>
@@ -13527,7 +13531,8 @@ function bindEvents() {
           }
         : agent);
 
-      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => (ids.includes(Number(item.id)) ? { ...item, status: 'approved' } : item));
+      const updatedAt = getCurrentIsoTimestamp();
+      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => (ids.includes(Number(item.id)) ? { ...item, status: 'approved', updatedAt } : item));
       saveAvailabilityRequests(nextAvailabilityRequests);
       saveState();
 
@@ -13562,7 +13567,8 @@ function bindEvents() {
       const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
       if (targetRequests.length === 0) return;
 
-      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => (ids.includes(Number(item.id)) ? { ...item, status: 'rejected' } : item));
+      const updatedAt = getCurrentIsoTimestamp();
+      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => (ids.includes(Number(item.id)) ? { ...item, status: 'rejected', updatedAt } : item));
       saveAvailabilityRequests(nextAvailabilityRequests);
       saveState();
 
