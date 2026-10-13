@@ -9885,36 +9885,6 @@ function render() {
               <div class="stack">
                 <div class="panel">
                   <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <h2 style="margin:0;">Role colors</h2>
-                    <button id="reset-role-colors" class="secondary" type="button">Reset role colors</button>
-                  </div>
-                  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:center; width:100%;">
-                    ${getRoleLegendItems().map((role) => `
-                      <label class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25); cursor:pointer; justify-content:center; width:100%; margin:0;" title="Click to change color">
-                        ${escapeHtml(role)}
-                        <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
-                      </label>
-                    `).join('')}
-                  </div>
-                </div>
-
-                <div class="panel">
-                  <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <h2 style="margin:0;">Location colors</h2>
-                    <button id="reset-agent-location-colors" class="secondary" type="button">Reset location colors</button>
-                  </div>
-                  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:center; width:100%;">
-                    ${getAgentLocationCatalog().map((location) => `
-                      <label class="chip" style="background:${getAgentLocationColor(location)}; color:#111; border:1px solid rgba(255,255,255,0.45); cursor:pointer; justify-content:center; width:100%; margin:0;" title="Click to change color">
-                        ${escapeHtml(location)}
-                        <input type="color" data-agent-location-color="${escapeHtml(location)}" value="${escapeHtml(getAgentLocationColor(location))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
-                      </label>
-                    `).join('')}
-                  </div>
-                </div>
-
-                <div class="panel">
-                  <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <h2 style="margin:0;">Weekly planner</h2>
                   </div>
                   <div class="row" style="margin-bottom:8px;">
@@ -9939,10 +9909,27 @@ function render() {
                       <input id="weekly-week-reference" type="date" value="${escapeHtml(plannerWeekReference)}" />
                     </div>
                   </div>
-                  <div class="row" style="margin-bottom:8px;">
-                    ${getRoleLegendItems().map((role) => `
-                      <span class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25);">${escapeHtml(role)}</span>
-                    `).join('')}
+                  <div class="stack" style="gap:6px; margin-bottom:8px;">
+                    <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+                      <strong class="muted">Roles:</strong>
+                      ${getRoleLegendItems().map((role) => `
+                        <label class="chip" style="background:${getRoleColor(role)}; border:1px solid rgba(255,255,255,0.25); cursor:pointer; margin:0;" title="Click to change color">
+                          ${escapeHtml(role)}
+                          <input type="color" data-role-color="${escapeHtml(role)}" value="${escapeHtml(getRoleColor(role))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
+                        </label>
+                      `).join('')}
+                      <button id="reset-role-colors" class="secondary" type="button">Reset role colors</button>
+                    </div>
+                    <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+                      <strong class="muted">Locations:</strong>
+                      ${getAgentLocationCatalog().map((location) => `
+                        <label class="chip" style="background:${getAgentLocationColor(location)}; color:#111; border:1px solid rgba(255,255,255,0.45); cursor:pointer; margin:0;" title="Click to change color">
+                          ${escapeHtml(location)}
+                          <input type="color" data-agent-location-color="${escapeHtml(location)}" value="${escapeHtml(getAgentLocationColor(location))}" style="opacity:0; width:0; height:0; padding:0; margin:0; border:0; position:absolute;" />
+                        </label>
+                      `).join('')}
+                      <button id="reset-agent-location-colors" class="secondary" type="button">Reset location colors</button>
+                    </div>
                   </div>
                   <div class="day-row">
                     ${days.map((day) => `
