@@ -9432,15 +9432,15 @@ function renderAvailabilityRequestsPage(currentUser) {
         <div class="panel" style="flex:1; min-width:320px; margin-bottom:0;">
           <h2>Share agent availability page</h2>
           <p class="muted">Share one link so agents can view availability and PTO requests, see blackout dates, and submit new requests. Personal links show each agent their own requests by name and other agents anonymously.</p>
-          <div class="row" style="flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+          <div class="row" style="flex-wrap:wrap; gap:8px; margin-bottom:8px; align-items:center;">
             <select id="availability-public-link-agent" style="max-width:260px;">
               <option value="">All agents (no names shown)</option>
               ${agentsByName.map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
             </select>
+            <input id="availability-public-link" type="text" value="${escapeHtml(publicAvailabilityLink)}" readonly style="flex:1 1 280px; min-width:220px; width:auto;" />
             <button id="availability-public-link-copy" class="secondary" type="button">Copy link</button>
             <a id="availability-public-link-open" href="${escapeHtml(publicAvailabilityLink)}" target="_blank" rel="noopener" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Open page</button></a>
           </div>
-          <input id="availability-public-link" type="text" value="${escapeHtml(publicAvailabilityLink)}" readonly />
         </div>
       </div>
 
