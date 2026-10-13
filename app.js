@@ -4646,7 +4646,7 @@ function loadDocxPreviewLibrary() {
 function renderPolicyPreviewModal() {
   return `
     <div id="policy-preview-modal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.58); padding:20px; align-items:center; justify-content:center;">
-      <div class="panel" style="width:min(1100px, 96vw); max-height:92vh; margin:0; display:flex; flex-direction:column; gap:10px;">
+      <div class="panel" style="width:min(1100px, 96vw); height:92vh; max-height:92vh; margin:0; display:flex; flex-direction:column; gap:10px; overflow:hidden;">
         <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
           <strong id="policy-preview-title">Policy preview</strong>
           <div class="row" style="gap:8px;">
@@ -4654,8 +4654,8 @@ function renderPolicyPreviewModal() {
             <button id="policy-preview-close" class="secondary" type="button">Close</button>
           </div>
         </div>
-        <div class="card" style="padding:8px; flex:1; min-height:64vh;">
-          <div id="policy-preview-body" style="width:100%; height:100%; min-height:62vh; overflow:auto; border-radius:8px; background:#fff;"></div>
+        <div class="card" style="padding:8px; flex:1; min-height:0; overflow:hidden;">
+          <div id="policy-preview-body" style="width:100%; height:100%; min-height:0; overflow:auto; overscroll-behavior:contain; border-radius:8px; background:#fff;"></div>
         </div>
       </div>
     </div>
