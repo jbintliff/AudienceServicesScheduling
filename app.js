@@ -9554,7 +9554,7 @@ function renderAvailabilityRequestsPage(currentUser) {
             </div>
           </form>
           <div class="row" style="gap:8px; flex-wrap:wrap; margin-top:10px;">
-            ${normalizeBlackoutDateEntries(state.blackoutDates).filter((entry) => isDateEntryInDepartmentScope(entry.department, departmentScope)).map((entry) => `<span class="chip" style="display:inline-flex; align-items:center; gap:6px;">${escapeHtml(entry.date)}<select data-blackout-department-select="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:2px 4px; font-size:12px; border-radius:6px;"><option value="" ${!entry.department ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${entry.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-blackout-date="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:4px 8px;">Remove</button></span>`).join('') || '<span class="muted">No blackout dates yet.</span>'}
+            ${normalizeBlackoutDateEntries(state.blackoutDates).filter((entry) => isDateEntryInDepartmentScope(entry.department, departmentScope)).map((entry) => `<span class="chip" style="display:inline-flex; align-items:center; gap:6px; background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(entry.date)}<select data-blackout-department-select="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:2px 4px; font-size:12px; border-radius:6px; background:#000; color:#fff;"><option value="" ${!entry.department ? 'selected' : ''}>All departments</option>${departmentOptions.map((department) => `<option value="${department}" ${entry.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}</select><button type="button" class="danger" data-remove-blackout-date="${escapeHtml(entry.date)}|${escapeHtml(entry.department)}" style="padding:4px 8px;">Remove</button></span>`).join('') || '<span class="muted">No blackout dates yet.</span>'}
           </div>
         </div>
 
@@ -10573,7 +10573,7 @@ function renderPublicAvailabilityViewPage() {
       <div class="panel" style="margin-bottom:16px;">
         <h3 style="margin:0 0 8px;">Blackout dates</h3>
         <div class="row" style="gap:6px; flex-wrap:wrap;">
-          ${blackoutDates.map((dateValue) => `<span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}
+          ${blackoutDates.map((dateValue) => `<span class="chip" style="background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}
         </div>
       </div>` : ''}
 
