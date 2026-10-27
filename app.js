@@ -12709,7 +12709,7 @@ function bindEvents() {
       recurrenceInstance: index + 1,
       recurrenceTotal: recurrencePlan.dates.length,
       requestedAt: nowIso,
-      status: 'pending'
+      status: 'approved'
     }));
 
     const nextAvailabilityRequests = [...getAllAvailabilityRequests(), ...nextManualRequests];
@@ -12726,14 +12726,14 @@ function bindEvents() {
         : unavailableDate;
       sendEmailNotification({
         to: recipientEmail,
-        subject: `${requestLabel} submitted for approval`,
-        body: `Hi ${nextManualRequests[0]?.requesterName || 'Agent'}, a ${requestLabel} request was submitted for admin approval.\n\nDate: ${dateLabel}\nTime: ${formatTimeRange(unavailableStart, unavailableEnd)}\nNote: ${note}`,
+        subject: `${requestLabel} approved`,
+        body: `Hi ${nextManualRequests[0]?.requesterName || 'Agent'}, an administrator submitted and approved a ${requestLabel} request for you.\n\nDate: ${dateLabel}\nTime: ${formatTimeRange(unavailableStart, unavailableEnd)}\nNote: ${note}`,
         type: 'availability-admin-added'
       });
     }
 
     const submittedCount = nextManualRequests.length;
-    alert(`${requestKind === 'vacation-time' ? 'PTO' : 'Availability'} request${submittedCount === 1 ? '' : 's'} submitted for admin approval (${submittedCount}).`);
+    alert(`${requestKind === 'vacation-time' ? 'PTO' : 'Availability'} request${submittedCount === 1 ? '' : 's'} submitted and automatically approved (${submittedCount}).`);
     render();
   });
 
