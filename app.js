@@ -1443,9 +1443,9 @@ async function initializeBackendSync() {
 }
 
 async function pollBackendSync() {
-  if (!backendApiBase || document.hidden || isPushingLocalSnapshot || isCalendarEditInProgress()) return;
+  if (!backendApiBase || document.hidden || isPushingLocalSnapshot || isSharedEditInProgress()) return;
   const remoteStore = await fetchBackendSnapshot();
-  if (!remoteStore || isCalendarEditInProgress()) {
+  if (!remoteStore || isSharedEditInProgress()) {
     if (localStorage.getItem(pendingStateSnapshotSyncKey) === '1') {
       await flushLocalSnapshotSync();
     }
@@ -1480,6 +1480,13 @@ function isCalendarEditInProgress() {
     document.querySelector('.calendar-view form[data-unsaved-edits="true"], #shift-edit-modal-overlay, #bulk-shift-edit-modal-overlay, #shift-absence-modal-overlay')
     || (activeElement?.matches('input, select, textarea') && activeElement.closest('.calendar-view'))
   );
+}
+
+function isSharedEditInProgress() {
+  if (pageMode === 'agents' && selectedAgentIds.size > 0) {
+    return true;
+  }
+  return isCalendarEditInProgress();
 }
 
 if (loadAvailabilityRequestsFromStorage().length === 0 && Array.isArray(state.availabilityRequests) && state.availabilityRequests.length > 0) {
@@ -1858,7 +1865,7 @@ function loadAuthUsers() {
   }
 }
 
-function saveAuthUsers() {
+function saveAuthUsers({ persistProfilePhotos = true } = {}) {
   // Persist auth users through shared storage so profile edits sync across devices.
   const profilePhotos = (Array.isArray(authUsers) ? authUsers : []).reduce((accumulator, user) => {
     const userId = String(user?.id || '');
@@ -1868,7 +1875,7 @@ function saveAuthUsers() {
     }
     return accumulator;
   }, {});
-  const didSavePhotos = saveProfilePhotos(profilePhotos);
+  const didSavePhotos = persistProfilePhotos ? saveProfilePhotos(profilePhotos) : true;
   const didSave = safeSetLocalStorage(authUsersKey, JSON.stringify(serializeAuthUsersForStorage(authUsers)));
   if (didSave && didSavePhotos && !isApplyingRemoteSnapshot && backendApiBase) {
     // Auth updates are critical for login; push a full snapshot best-effort.
@@ -12460,6 +12467,11 @@ function bindEvents() {
     const selectedTeam = String(formData.get('team') || '').trim();
     const managerValue = String(formData.get('managerId') || '').trim();
     const accessRole = String(formData.get('accessRole') || '').trim();
+    if (!selectedTeam && !managerValue && !accessRole) {
+      alert('Choose at least one bulk change to apply.');
+      return;
+    }
+    const selectedCount = selectedAgentIds.size;
     const updatedAt = getCurrentIsoTimestamp();
 
     state.agents = state.agents.map((agent) => {
@@ -12478,7 +12490,7 @@ function bindEvents() {
     }
 
     const didSaveState = saveState();
-    const didSaveAuthUsers = saveAuthUsers();
+    const didSaveAuthUsers = !accessRole || saveAuthUsers({ persistProfilePhotos: false });
     if (!didSaveState || !didSaveAuthUsers) {
       alert('Unable to save the bulk agent changes right now.');
       syncFromStorage();
@@ -12486,6 +12498,7 @@ function bindEvents() {
       return;
     }
     selectedAgentIds.clear();
+    alert(`Updated ${selectedCount} agent${selectedCount === 1 ? '' : 's'}.`);
     render();
   });
 
