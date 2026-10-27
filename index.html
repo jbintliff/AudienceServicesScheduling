@@ -83,7 +83,7 @@
       .status-badge { display:inline-flex; padding:4px 8px; border-radius:999px; font-size:0.8rem; background:#8599b8; color:#f8f4ef; }
       .status-badge.pending { background:#FDD592; color:#4B3A1F; }
       .status-badge.approved { background:#9fc39a; color:#1f3520; }
-      .status-badge.rejected { background:#AB5C57; color:#FFF1EF; }
+      .status-badge.rejected { background:#4A4A4D; color:#FFFFFF; }
       .app.calendar-view .calendar-admin-bulk-actions,
       .app.calendar-view .calendar-shift-actions {
         gap: 6px;
@@ -187,7 +187,7 @@
     <script>
       window.__SCHEDULER_API_URL__ = window.__SCHEDULER_API_URL__ || localStorage.getItem('agent-scheduler-backend-url-v1') || 'https://scheduling-app-backend-l66q.onrender.com/api';
     </script>
-    <script src="app.js?v=20261027-admin-auto-approve"></script>
+    <script src="app.js?v=20261027-denied-dark-grey"></script>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then((registrations) => {

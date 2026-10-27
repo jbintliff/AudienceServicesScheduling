@@ -40,7 +40,7 @@
       .status-badge { display:inline-flex; padding:4px 8px; border-radius:999px; font-size:0.8rem; background:#6B6B6E; }
       .status-badge.pending { background:#FDD592; color:#4B3A1F; }
       .status-badge.approved { background:#7AACAF; color:#17383B; }
-      .status-badge.rejected { background:#AB5C57; color:#FFF1EF; }
+      .status-badge.rejected { background:#4A4A4D; color:#FFFFFF; }
       @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr 1fr; } .day-row { grid-template-columns: 1fr 1fr; } }
       @media (max-width: 700px) { .stats { grid-template-columns: 1fr; } .day-row { grid-template-columns: 1fr; } }
     </style>
@@ -59,6 +59,6 @@
     <script>
       window.__SCHEDULER_API_URL__ = window.__SCHEDULER_API_URL__ || localStorage.getItem('agent-scheduler-backend-url-v1') || 'https://scheduling-app-backend-l66q.onrender.com/api';
     </script>
-    <script src="app.js?v=20261027-admin-auto-approve"></script>
+    <script src="app.js?v=20261027-denied-dark-grey"></script>
   </body>
 </html>

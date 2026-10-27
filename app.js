@@ -6115,7 +6115,7 @@ function openPublicAvailabilityDayModal(dateValue, requests, viewingAgentId) {
           const agentLabel = getPublicAvailabilityViewAgentLabel(request, viewingAgentId);
 
           return `
-            <div class="card" style="padding:10px 12px; border-left:4px solid ${statusValue === 'approved' ? '#7AACAF' : statusValue === 'rejected' ? '#AB5C57' : '#FDD592'};">
+            <div class="card" style="padding:10px 12px; border-left:4px solid ${statusValue === 'approved' ? '#7AACAF' : statusValue === 'rejected' ? '#4A4A4D' : '#FDD592'};">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
                 <div>
                   <div class="row" style="gap:6px; flex-wrap:wrap; margin-bottom:4px;">
@@ -9409,7 +9409,7 @@ function getAvailabilityStatusStyles(status) {
     return 'background:#7AACAF; color:#17383B;';
   }
   if (status === 'rejected') {
-    return 'background:#AB5C57; color:#FFF1EF;';
+    return 'background:#4A4A4D; color:#FFFFFF;';
   }
   return 'background:#FDD592; color:#4B3A1F;';
 }
@@ -9581,7 +9581,7 @@ function renderAvailabilityRequestsPage(currentUser) {
         <div class="row" style="gap:8px; margin-bottom:10px;">
           <span class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(0,0,0,0.2);">Pending</span>
           <span class="chip" style="background:#7AACAF; color:#17383B; border:1px solid rgba(255,255,255,0.2);">Approved</span>
-          <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
+          <span class="chip" style="background:#4A4A4D; color:#FFFFFF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">PTO</span>
           <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
           <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Repeating availability</span>
@@ -9608,7 +9608,7 @@ function renderAvailabilityRequestsPage(currentUser) {
                     const displayStyle = statusValue === 'pending'
                       ? 'background:#FDD592; color:#4B3A1F; border:1px solid rgba(75,58,31,0.25);'
                       : statusValue === 'rejected'
-                        ? 'background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);'
+                        ? 'background:#4A4A4D; color:#FFFFFF; border:1px solid rgba(255,255,255,0.2);'
                         : typeMeta.style;
                     return `
                     <div data-view-availability-request="${request.id}" title="${escapeHtml((getAgent(request.agentId)?.name || 'Unknown'))} - ${escapeHtml(typeMeta.label)}" style="padding:3px 6px; border-radius:999px; font-size:12px; cursor:pointer; ${displayStyle}">
@@ -9768,7 +9768,7 @@ function renderAvailabilityRequestsPage(currentUser) {
               ? `${entry.rangeStart || request.unavailableDate || 'Not set'} to ${entry.rangeEnd || request.unavailableDate || 'Not set'} • ${entry.occurrenceCount} date${entry.occurrenceCount === 1 ? '' : 's'}`
               : `${request.unavailableDate || 'Not set'} • ${request.unavailableStart || '--:--'} - ${request.unavailableEnd || '--:--'}`;
             return `
-            <div class="card" data-view-availability-request="${request.id}" style="border-left:4px solid ${requestStatus === 'approved' ? '#7AACAF' : requestStatus === 'rejected' ? '#AB5C57' : '#FDD592'}; padding:10px 12px; cursor:pointer;">
+            <div class="card" data-view-availability-request="${request.id}" style="border-left:4px solid ${requestStatus === 'approved' ? '#7AACAF' : requestStatus === 'rejected' ? '#4A4A4D' : '#FDD592'}; padding:10px 12px; cursor:pointer;">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px;">
                 <div class="row" style="align-items:flex-start; gap:10px; flex:1;">
                   <input type="checkbox" data-select-availability-request-ids="${requestIdsValue}" data-select-availability-request-status="${requestStatus}" aria-label="Select ${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')} request" style="margin-top:4px;" />
@@ -9840,7 +9840,7 @@ function renderAvailabilityRequestsPage(currentUser) {
             const toAgent = getAgent(request.toAgentId)?.name || 'Unknown';
             const swapFilterStatus = getSwapRequestFilterStatus(request);
             return `
-              <div class="card" style="border-left:4px solid ${request.status === 'completed' ? '#7AACAF' : request.status === 'rejected' ? '#AB5C57' : '#FDD592'};">
+              <div class="card" style="border-left:4px solid ${request.status === 'completed' ? '#7AACAF' : request.status === 'rejected' ? '#4A4A4D' : '#FDD592'};">
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
                     <strong>${escapeHtml(fromAgent)} → ${escapeHtml(toAgent)}</strong>
@@ -10420,7 +10420,7 @@ function renderPublicAvailabilityRequestPage() {
       <div class="card" style="padding:10px 12px;">
         <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
           <strong>${escapeHtml(typeMeta.label)}</strong>
-          <span class="chip" style="${statusValue === 'pending' ? 'background:#FDD592; color:#4B3A1F;' : statusValue === 'rejected' ? 'background:#AB5C57; color:#FFF1EF;' : 'background:#7AACAF; color:#17383B;'}">${escapeHtml(statusValue === 'rejected' ? 'Denied' : statusValue === 'approved' ? 'Approved' : 'Pending')}</span>
+          <span class="chip" style="${statusValue === 'pending' ? 'background:#FDD592; color:#4B3A1F;' : statusValue === 'rejected' ? 'background:#4A4A4D; color:#FFFFFF;' : 'background:#7AACAF; color:#17383B;'}">${escapeHtml(statusValue === 'rejected' ? 'Denied' : statusValue === 'approved' ? 'Approved' : 'Pending')}</span>
         </div>
         <div class="muted">Date: ${escapeHtml(request?.unavailableDate || 'Not set')}</div>
         <div class="muted">Time: ${escapeHtml(request?.unavailableStart || '--:--')} - ${escapeHtml(request?.unavailableEnd || '--:--')}</div>
@@ -10714,7 +10714,7 @@ function renderPublicAvailabilityViewPage() {
         <div class="row" style="gap:8px; margin-bottom:10px; flex-wrap:wrap;">
           <span class="chip" style="background:#FDD592; color:#4B3A1F; border:1px solid rgba(0,0,0,0.2);">Pending (Click yours to edit)</span>
           <span class="chip" style="background:#7AACAF; color:#17383B; border:1px solid rgba(255,255,255,0.2);">Approved</span>
-          <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
+          <span class="chip" style="background:#4A4A4D; color:#FFFFFF; border:1px solid rgba(255,255,255,0.2);">Denied</span>
           <span class="chip" style="background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);">PTO</span>
           <span class="chip" style="background:#F4A997; color:#4A2F2A; border:1px solid rgba(74,47,42,0.2);">One-time availability</span>
           <span class="chip" style="background:#D6C7E8; color:#3D2F52; border:1px solid rgba(61,47,82,0.24);">Repeating availability</span>
@@ -10747,7 +10747,7 @@ function renderPublicAvailabilityViewPage() {
                     const displayStyle = isPending
                       ? 'background:#FDD592; color:#4B3A1F; border:1px solid rgba(75,58,31,0.25);'
                       : statusValue === 'rejected'
-                        ? 'background:#AB5C57; color:#FFF1EF; border:1px solid rgba(255,255,255,0.2);'
+                        ? 'background:#4A4A4D; color:#FFFFFF; border:1px solid rgba(255,255,255,0.2);'
                         : typeMeta.style;
                     const agentLabel = getPublicAvailabilityViewAgentLabel(request, viewingAgentId);
 
