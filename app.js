@@ -9719,19 +9719,31 @@ function renderAvailabilityRequestsPage(currentUser) {
           <button id="availability-all-requests-toggle" class="secondary" type="button" title="${hideAllRequests ? 'View requests' : 'Hide requests'}" aria-label="${hideAllRequests ? 'View requests' : 'Hide requests'}">${hideAllRequests ? '\u25B6' : '\u25BC'}</button>
         </div>
         ${hideAllRequests ? '<div class="muted" style="margin-top:10px;">All requests are hidden.</div>' : `
-        <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
-          <input id="availability-all-from-filter" type="date" aria-label="All requests from date" value="${escapeHtml(allRequestFilters.from)}" />
-          <input id="availability-all-to-filter" type="date" aria-label="All requests to date" value="${escapeHtml(allRequestFilters.to)}" />
-          <select id="availability-all-agent-filter" style="max-width:220px;">
-            <option value="All" ${allRequestFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
-            ${visibleAgents.map((agent) => `<option value="${agent.id}" ${String(allRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
-          </select>
-          <select id="availability-all-status-filter" style="max-width:220px;">
-            <option value="All" ${allRequestFilters.status === 'All' ? 'selected' : ''}>All statuses</option>
-            <option value="pending" ${allRequestFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
-            <option value="approved" ${allRequestFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
-            <option value="rejected" ${allRequestFilters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
-          </select>
+        <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px; align-items:flex-end;">
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span class="muted">Date range from</span>
+            <input id="availability-all-from-filter" type="date" value="${escapeHtml(allRequestFilters.from)}" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span class="muted">Date range to</span>
+            <input id="availability-all-to-filter" type="date" value="${escapeHtml(allRequestFilters.to)}" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span class="muted">Agent</span>
+            <select id="availability-all-agent-filter" style="max-width:220px;">
+              <option value="All" ${allRequestFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
+              ${visibleAgents.map((agent) => `<option value="${agent.id}" ${String(allRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span class="muted">Status</span>
+            <select id="availability-all-status-filter" style="max-width:220px;">
+              <option value="All" ${allRequestFilters.status === 'All' ? 'selected' : ''}>All statuses</option>
+              <option value="pending" ${allRequestFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
+              <option value="approved" ${allRequestFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
+              <option value="rejected" ${allRequestFilters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
+            </select>
+          </label>
           <button id="availability-all-filters-apply" type="button">Apply filters</button>
           <button id="availability-all-filters-reset" class="secondary" type="button">Reset filters</button>
         </div>
@@ -9793,19 +9805,31 @@ function renderAvailabilityRequestsPage(currentUser) {
           <button id="availability-swap-requests-toggle" class="secondary" type="button" title="${hideSwapRequests ? 'View swap requests' : 'Hide swap requests'}" aria-label="${hideSwapRequests ? 'View swap requests' : 'Hide swap requests'}">${hideSwapRequests ? '\u25B6' : '\u25BC'}</button>
         </div>
         ${hideSwapRequests ? '<div class="muted" style="margin-top:10px;">Swap requests are hidden.</div>' : `
-        <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
-          <input id="availability-swap-from-filter" type="date" aria-label="Swap requests from date" value="${escapeHtml(swapRequestFilters.from)}" />
-          <input id="availability-swap-to-filter" type="date" aria-label="Swap requests to date" value="${escapeHtml(swapRequestFilters.to)}" />
-          <select id="availability-swap-agent-filter" style="max-width:220px;">
-            <option value="All" ${swapRequestFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
-            ${visibleAgents.map((agent) => `<option value="${agent.id}" ${String(swapRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
-          </select>
-          <select id="availability-swap-status-filter" style="max-width:220px;">
-            <option value="All" ${swapRequestFilters.status === 'All' ? 'selected' : ''}>All statuses</option>
-            <option value="pending" ${swapRequestFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
-            <option value="approved" ${swapRequestFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
-            <option value="rejected" ${swapRequestFilters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
-          </select>
+        <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px; align-items:flex-end;">
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span class="muted">Date range from</span>
+            <input id="availability-swap-from-filter" type="date" value="${escapeHtml(swapRequestFilters.from)}" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span class="muted">Date range to</span>
+            <input id="availability-swap-to-filter" type="date" value="${escapeHtml(swapRequestFilters.to)}" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span class="muted">Agent</span>
+            <select id="availability-swap-agent-filter" style="max-width:220px;">
+              <option value="All" ${swapRequestFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
+              ${visibleAgents.map((agent) => `<option value="${agent.id}" ${String(swapRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span class="muted">Status</span>
+            <select id="availability-swap-status-filter" style="max-width:220px;">
+              <option value="All" ${swapRequestFilters.status === 'All' ? 'selected' : ''}>All statuses</option>
+              <option value="pending" ${swapRequestFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
+              <option value="approved" ${swapRequestFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
+              <option value="rejected" ${swapRequestFilters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
+            </select>
+          </label>
           <button id="availability-swap-filters-apply" type="button">Apply filters</button>
           <button id="availability-swap-filters-reset" class="secondary" type="button">Reset filters</button>
         </div>
