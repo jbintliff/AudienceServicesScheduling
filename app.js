@@ -5393,17 +5393,27 @@ function saveAgentDetails(agentId, values) {
     }));
   }
 
-  const didSaveAuthUsers = saveAuthUsers({ persistProfilePhotos: false });
   const didSaveState = saveState();
-  if (!didSaveAuthUsers || !didSaveState) {
+  if (!didSaveState) {
     syncFromStorage();
     return { ok: false, message: 'Unable to save agent details permanently. Please check browser storage settings and try again.' };
+  }
+
+  const didSaveAuthUsers = saveAuthUsers({ persistProfilePhotos: false });
+  if (!didSaveAuthUsers) {
+    // The agent profile is already durable in the main state snapshot. Retry
+    // account metadata through the backend without discarding that profile edit.
+    void saveAuthUsersToBackend();
+    console.warn('Agent profile saved, but account metadata could not be saved locally.');
   }
 
   // Push agent/account changes immediately so other tabs/devices see updates right away.
   void flushLocalSnapshotSync();
 
-  return { ok: true };
+  return {
+    ok: true,
+    warning: didSaveAuthUsers ? '' : 'The agent profile was saved, but account access details may take a moment to synchronize.'
+  };
 }
 
 function openAgentEditModal(agent, onSave) {
@@ -5551,6 +5561,9 @@ function openAgentEditModal(agent, onSave) {
       return;
     }
     closeModal();
+    if (result?.warning) {
+      alert(result.warning);
+    }
   });
 
   document.addEventListener('keydown', onEscape);
