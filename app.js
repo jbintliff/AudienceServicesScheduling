@@ -556,15 +556,9 @@ const defaultState = {
     availabilityCalendarMonth: '',
     availabilityFrom: '',
     availabilityTo: '',
-    availabilityAllDate: '',
-    availabilityAllFrom: '',
-    availabilityAllTo: '',
     availabilityAllAgentId: 'All',
     availabilityAllStatus: 'All',
     availabilityAllRequestsHidden: false,
-    availabilitySwapDate: '',
-    availabilitySwapFrom: '',
-    availabilitySwapTo: '',
     availabilitySwapAgentId: 'All',
     availabilitySwapStatus: 'All',
     availabilitySwapRequestsHidden: false,
@@ -844,15 +838,9 @@ function getDefaultUiState() {
     availabilityCalendarMonth: '',
     availabilityFrom: '',
     availabilityTo: '',
-    availabilityAllDate: '',
-    availabilityAllFrom: '',
-    availabilityAllTo: '',
     availabilityAllAgentId: 'All',
     availabilityAllStatus: 'All',
     availabilityAllRequestsHidden: false,
-    availabilitySwapDate: '',
-    availabilitySwapFrom: '',
-    availabilitySwapTo: '',
     availabilitySwapAgentId: 'All',
     availabilitySwapStatus: 'All',
     availabilitySwapRequestsHidden: false,
@@ -908,15 +896,9 @@ function normalizeUiState(source) {
     availabilityCalendarMonth: source?.availabilityCalendarMonth || defaults.availabilityCalendarMonth,
     availabilityFrom: source?.availabilityFrom || defaults.availabilityFrom,
     availabilityTo: source?.availabilityTo || defaults.availabilityTo,
-    availabilityAllDate: source?.availabilityAllDate || defaults.availabilityAllDate,
-    availabilityAllFrom: source?.availabilityAllFrom || defaults.availabilityAllFrom,
-    availabilityAllTo: source?.availabilityAllTo || defaults.availabilityAllTo,
     availabilityAllAgentId: source?.availabilityAllAgentId || defaults.availabilityAllAgentId,
     availabilityAllStatus: source?.availabilityAllStatus || defaults.availabilityAllStatus,
     availabilityAllRequestsHidden: Boolean(source?.availabilityAllRequestsHidden),
-    availabilitySwapDate: source?.availabilitySwapDate || defaults.availabilitySwapDate,
-    availabilitySwapFrom: source?.availabilitySwapFrom || defaults.availabilitySwapFrom,
-    availabilitySwapTo: source?.availabilitySwapTo || defaults.availabilitySwapTo,
     availabilitySwapAgentId: source?.availabilitySwapAgentId || defaults.availabilitySwapAgentId,
     availabilitySwapStatus: source?.availabilitySwapStatus || defaults.availabilitySwapStatus,
     availabilitySwapRequestsHidden: Boolean(source?.availabilitySwapRequestsHidden),
@@ -2454,14 +2436,8 @@ function applyAccessForUser(user) {
     if (switchedIntoAdmin) {
       state.ui.availabilityFrom = '';
       state.ui.availabilityTo = '';
-      state.ui.availabilityAllDate = '';
-      state.ui.availabilityAllFrom = '';
-      state.ui.availabilityAllTo = '';
       state.ui.availabilityAllAgentId = 'All';
       state.ui.availabilityAllStatus = 'All';
-      state.ui.availabilitySwapDate = '';
-      state.ui.availabilitySwapFrom = '';
-      state.ui.availabilitySwapTo = '';
       state.ui.availabilitySwapAgentId = 'All';
       state.ui.availabilitySwapStatus = 'All';
       state.ui.availabilityAllRequestsHidden = false;
@@ -4024,7 +4000,6 @@ function getSwapRequestFilterStatus(request) {
 }
 
 function filterAvailabilityRequestsForAdminList(requests, filters = {}) {
-  const date = String(filters.date || '').trim();
   const from = String(filters.from || '').trim();
   const to = String(filters.to || '').trim();
   const agentId = String(filters.agentId || 'All');
@@ -4034,12 +4009,11 @@ function filterAvailabilityRequestsForAdminList(requests, filters = {}) {
     const requestDate = getAvailabilityRequestDate(request);
     const normalizedStatus = normalizeAvailabilityRequestStatus(request?.status);
     if (normalizedStatus === 'deleted') return false;
-    const matchesDate = !date || (requestDate && requestDate === date);
     const matchesFrom = !from || (requestDate && requestDate >= from);
     const matchesTo = !to || (requestDate && requestDate <= to);
     const matchesAgent = agentId === 'All' || String(request?.agentId || '') === agentId;
     const matchesStatus = status === 'All' || normalizedStatus === status;
-    return matchesDate && matchesFrom && matchesTo && matchesAgent && matchesStatus;
+    return matchesFrom && matchesTo && matchesAgent && matchesStatus;
   });
 }
 
@@ -4320,7 +4294,6 @@ function groupAvailabilityRequestsForAdminList(requests) {
 }
 
 function filterSwapRequestsForAdminList(requests, filters = {}) {
-  const date = String(filters.date || '').trim();
   const from = String(filters.from || '').trim();
   const to = String(filters.to || '').trim();
   const agentId = String(filters.agentId || 'All');
@@ -4329,14 +4302,13 @@ function filterSwapRequestsForAdminList(requests, filters = {}) {
   return (Array.isArray(requests) ? requests : []).filter((request) => {
     const requestDate = getSwapRequestDate(request);
     const normalizedStatus = getSwapRequestFilterStatus(request);
-    const matchesDate = !date || (requestDate && requestDate === date);
     const matchesFrom = !from || (requestDate && requestDate >= from);
     const matchesTo = !to || (requestDate && requestDate <= to);
     const matchesAgent = agentId === 'All'
       || String(request?.fromAgentId || '') === agentId
       || String(request?.toAgentId || '') === agentId;
     const matchesStatus = status === 'All' || normalizedStatus === status;
-    return matchesDate && matchesFrom && matchesTo && matchesAgent && matchesStatus;
+    return matchesFrom && matchesTo && matchesAgent && matchesStatus;
   });
 }
 
@@ -9547,17 +9519,19 @@ function renderAvailabilityRequestsPage(currentUser) {
     .sort((left, right) => (right.requestedAt || '').localeCompare(left.requestedAt || ''));
   const pendingCount = visibleAvailabilityRequests.filter((request) => request.status === 'pending').length;
   const pendingSwapCount = visibleSwapRequests.filter((request) => request.status === 'pending').length;
+  const requestDateRange = {
+    from: state.ui.availabilityFrom || '',
+    to: state.ui.availabilityTo || ''
+  };
   const allRequestFilters = {
-    date: state.ui.availabilityAllDate || '',
-    from: state.ui.availabilityAllFrom || '',
-    to: state.ui.availabilityAllTo || '',
+    from: requestDateRange.from,
+    to: requestDateRange.to,
     agentId: state.ui.availabilityAllAgentId || 'All',
     status: state.ui.availabilityAllStatus || 'All'
   };
   const swapRequestFilters = {
-    date: state.ui.availabilitySwapDate || '',
-    from: state.ui.availabilitySwapFrom || '',
-    to: state.ui.availabilitySwapTo || '',
+    from: requestDateRange.from,
+    to: requestDateRange.to,
     agentId: state.ui.availabilitySwapAgentId || 'All',
     status: state.ui.availabilitySwapStatus || 'All'
   };
@@ -9731,12 +9705,19 @@ function renderAvailabilityRequestsPage(currentUser) {
       </div>
 
       <div class="panel" style="margin-bottom:16px;">
-        <div class="row" style="margin-bottom:8px;">
-          <input id="availability-from-filter" type="date" value="${escapeHtml(state.ui.availabilityFrom || '')}" />
-          <input id="availability-to-filter" type="date" value="${escapeHtml(state.ui.availabilityTo || '')}" />
+        <div class="row" style="margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+            <span class="muted">From</span>
+            <input id="availability-from-filter" type="date" value="${escapeHtml(state.ui.availabilityFrom || '')}" />
+          </label>
+          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+            <span class="muted">To</span>
+            <input id="availability-to-filter" type="date" value="${escapeHtml(state.ui.availabilityTo || '')}" />
+          </label>
           <button id="availability-filters-apply" type="button">Apply filters</button>
           <button id="availability-filters-reset" class="secondary" type="button">Reset filters</button>
         </div>
+        <div class="muted">This date range filters both All requests and Swap requests.</div>
         <div class="muted">Total requests loaded: ${allAvailabilityRequests.length}</div>
         <div class="muted">Visible requests: ${visibleAvailabilityRequests.length} (${pendingCount} pending)</div>
         <div class="muted">Swap requests: ${visibleSwapRequests.length} (${pendingSwapCount} pending)</div>
@@ -9760,9 +9741,6 @@ function renderAvailabilityRequestsPage(currentUser) {
         </div>
         ${hideAllRequests ? '<div class="muted" style="margin-top:10px;">All requests are hidden.</div>' : `
         <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
-          <input id="availability-all-date-filter" type="date" value="${escapeHtml(allRequestFilters.date)}" />
-          <input id="availability-all-from-filter" type="date" value="${escapeHtml(allRequestFilters.from)}" />
-          <input id="availability-all-to-filter" type="date" value="${escapeHtml(allRequestFilters.to)}" />
           <select id="availability-all-agent-filter" style="max-width:220px;">
             <option value="All" ${allRequestFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
             ${visibleAgents.map((agent) => `<option value="${agent.id}" ${String(allRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
@@ -9835,9 +9813,6 @@ function renderAvailabilityRequestsPage(currentUser) {
         </div>
         ${hideSwapRequests ? '<div class="muted" style="margin-top:10px;">Swap requests are hidden.</div>' : `
         <div class="row" style="margin-top:10px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
-          <input id="availability-swap-date-filter" type="date" value="${escapeHtml(swapRequestFilters.date)}" />
-          <input id="availability-swap-from-filter" type="date" value="${escapeHtml(swapRequestFilters.from)}" />
-          <input id="availability-swap-to-filter" type="date" value="${escapeHtml(swapRequestFilters.to)}" />
           <select id="availability-swap-agent-filter" style="max-width:220px;">
             <option value="All" ${swapRequestFilters.agentId === 'All' ? 'selected' : ''}>All agents</option>
             ${visibleAgents.map((agent) => `<option value="${agent.id}" ${String(swapRequestFilters.agentId) === String(agent.id) ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
@@ -12796,14 +12771,8 @@ function bindEvents() {
   });
 
   document.getElementById('availability-all-filters-apply')?.addEventListener('click', () => {
-    const dateInput = document.getElementById('availability-all-date-filter');
-    const fromInput = document.getElementById('availability-all-from-filter');
-    const toInput = document.getElementById('availability-all-to-filter');
     const agentInput = document.getElementById('availability-all-agent-filter');
     const statusInput = document.getElementById('availability-all-status-filter');
-    state.ui.availabilityAllDate = dateInput?.value || '';
-    state.ui.availabilityAllFrom = fromInput?.value || '';
-    state.ui.availabilityAllTo = toInput?.value || '';
     state.ui.availabilityAllAgentId = agentInput?.value || 'All';
     state.ui.availabilityAllStatus = statusInput?.value || 'All';
     saveUiState();
@@ -12811,9 +12780,6 @@ function bindEvents() {
   });
 
   document.getElementById('availability-all-filters-reset')?.addEventListener('click', () => {
-    state.ui.availabilityAllDate = '';
-    state.ui.availabilityAllFrom = '';
-    state.ui.availabilityAllTo = '';
     state.ui.availabilityAllAgentId = 'All';
     state.ui.availabilityAllStatus = 'All';
     saveUiState();
@@ -12821,14 +12787,8 @@ function bindEvents() {
   });
 
   document.getElementById('availability-swap-filters-apply')?.addEventListener('click', () => {
-    const dateInput = document.getElementById('availability-swap-date-filter');
-    const fromInput = document.getElementById('availability-swap-from-filter');
-    const toInput = document.getElementById('availability-swap-to-filter');
     const agentInput = document.getElementById('availability-swap-agent-filter');
     const statusInput = document.getElementById('availability-swap-status-filter');
-    state.ui.availabilitySwapDate = dateInput?.value || '';
-    state.ui.availabilitySwapFrom = fromInput?.value || '';
-    state.ui.availabilitySwapTo = toInput?.value || '';
     state.ui.availabilitySwapAgentId = agentInput?.value || 'All';
     state.ui.availabilitySwapStatus = statusInput?.value || 'All';
     saveUiState();
@@ -12836,9 +12796,6 @@ function bindEvents() {
   });
 
   document.getElementById('availability-swap-filters-reset')?.addEventListener('click', () => {
-    state.ui.availabilitySwapDate = '';
-    state.ui.availabilitySwapFrom = '';
-    state.ui.availabilitySwapTo = '';
     state.ui.availabilitySwapAgentId = 'All';
     state.ui.availabilitySwapStatus = 'All';
     saveUiState();
