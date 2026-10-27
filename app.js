@@ -5310,7 +5310,7 @@ function claimUnassignedShiftForAgent(shiftId, agentId) {
   return { ok: true };
 }
 
-function saveAgentDetails(agentId, values) {
+async function saveAgentDetails(agentId, values) {
   const id = Number(agentId);
   const name = String(values?.name || '').trim();
   const email = normalizeEmail(values?.email);
@@ -5395,8 +5395,11 @@ function saveAgentDetails(agentId, values) {
 
   const didSaveState = saveState();
   if (!didSaveState) {
-    syncFromStorage();
-    return { ok: false, message: 'Unable to save agent details permanently. Please check browser storage settings and try again.' };
+    const didSaveBackend = await saveStateToBackendFallback();
+    if (!didSaveBackend) {
+      syncFromStorage();
+      return { ok: false, message: 'Unable to save agent details to browser storage or the shared backend. Please try again.' };
+    }
   }
 
   const didSaveAuthUsers = saveAuthUsers({ persistProfilePhotos: false });
@@ -5538,25 +5541,34 @@ function openAgentEditModal(agent, onSave) {
     closeModal();
   });
 
-  overlay.querySelector('#agent-edit-form')?.addEventListener('submit', (event) => {
+  overlay.querySelector('#agent-edit-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
     const formData = new FormData(event.currentTarget);
-    const result = onSave({
-      name: formData.get('name'),
-      email: formData.get('email'),
-      accessRole: formData.get('accessRole'),
-      team: formData.get('team'),
-      department: formData.get('department'),
-      location: formData.get('location'),
-      payRate: formData.get('payRate'),
-      attendancePoints: formData.get('attendancePoints'),
-      pronouns: formData.get('pronouns'),
-      shiftboardId: formData.get('shiftboardId'),
-      skills: formData.getAll('skills'),
-      maxInOfficeShifts: formData.get('maxInOfficeShifts'),
-      maxShiftsPerWeek: formData.get('maxShiftsPerWeek')
-    });
+    let result;
+    try {
+      result = await onSave({
+        name: formData.get('name'),
+        email: formData.get('email'),
+        accessRole: formData.get('accessRole'),
+        team: formData.get('team'),
+        department: formData.get('department'),
+        location: formData.get('location'),
+        payRate: formData.get('payRate'),
+        attendancePoints: formData.get('attendancePoints'),
+        pronouns: formData.get('pronouns'),
+        shiftboardId: formData.get('shiftboardId'),
+        skills: formData.getAll('skills'),
+        maxInOfficeShifts: formData.get('maxInOfficeShifts'),
+        maxShiftsPerWeek: formData.get('maxShiftsPerWeek')
+      });
+    } catch (error) {
+      console.error('Unable to save agent details.', error);
+      result = { ok: false, message: 'Unable to save agent details. Please try again.' };
+    }
     if (!result?.ok) {
+      if (submitButton) submitButton.disabled = false;
       alert(result?.message || 'Unable to save agent details.');
       return;
     }
@@ -13159,8 +13171,8 @@ function bindEvents() {
       const id = Number(button.getAttribute('data-edit-agent'));
       const agent = getAgent(id);
       if (!agent) return;
-      openAgentEditModal(agent, (updatedValues) => {
-        const result = saveAgentDetails(id, updatedValues);
+      openAgentEditModal(agent, async (updatedValues) => {
+        const result = await saveAgentDetails(id, updatedValues);
         if (result.ok) {
           render();
         }
