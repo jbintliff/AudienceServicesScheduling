@@ -1483,7 +1483,11 @@ function isCalendarEditInProgress() {
 }
 
 function isSharedEditInProgress() {
-  if (pageMode === 'agents' && selectedAgentIds.size > 0) {
+  if (pageMode === 'agents' && (
+    selectedAgentIds.size > 0
+    || document.getElementById('agent-edit-modal-overlay')
+    || document.getElementById('bulk-agent-edit-form')?.matches(':focus-within')
+  )) {
     return true;
   }
   return isCalendarEditInProgress();

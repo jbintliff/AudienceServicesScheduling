@@ -1,10 +1,9 @@
-const CACHE_NAME = 'scheduler-cache-v14';
+const CACHE_NAME = 'scheduler-cache-v15';
 const ASSETS = [
   './',
   './index.html',
   './calendar.html',
   './profile.html',
-  './app.js',
   './manifest.json',
   './icons/icon-192.svg',
   './icons/icon-512.svg'
@@ -22,6 +21,10 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  if (new URL(event.request.url).pathname.endsWith('/app.js')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
   event.respondWith(
     fetch(event.request)
       .then((response) => {
