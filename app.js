@@ -2620,7 +2620,7 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
         ${errorMessage ? `<div class="card" style="border-color:#ef4444; margin-bottom:12px;">${escapeHtml(errorMessage)}</div>` : ''}
         ${infoMessage ? `<div class="card" style="border-color:#16a34a; margin-bottom:12px;">${escapeHtml(infoMessage)}${resetLink ? `<div style="margin-top:8px;"><a href="${escapeHtml(resetLink)}" style="color:#93c5fd;">Open reset link</a></div>` : ''}</div>` : ''}
         <form id="login-form" class="stack">
-          <input name="email" type="email" placeholder="Email" required autocomplete="email" value="${escapeHtml(rememberedEmail)}" />
+          <input name="email" type="text" placeholder="Email or username" required autocomplete="username" value="${escapeHtml(rememberedEmail)}" />
           <input name="password" type="password" placeholder="Password" required autocomplete="current-password" value="${escapeHtml(rememberedPassword)}" />
           <label class="row" style="justify-content:flex-start; align-items:center; gap:8px;">
             <input name="savePassword" type="checkbox" value="1" ${shouldPrefillRememberedLogin ? 'checked' : ''} />
@@ -2642,7 +2642,10 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
     const normalizedTarget = normalizeEmail(targetEmail);
     if (!normalizedTarget) return [];
 
-    const directMatches = authUsers.filter((user) => normalizeEmail(user?.email) === normalizedTarget);
+    const directMatches = authUsers.filter((user) =>
+      normalizeEmail(user?.email) === normalizedTarget
+      || String(user?.username || '').trim().toLowerCase() === normalizedTarget
+    );
     const agentMatches = state.agents.filter((agent) => normalizeEmail(agent?.email) === normalizedTarget);
     const linkedUsers = agentMatches
       .map((agent) => getUserByAgentId(agent.id))
