@@ -2738,8 +2738,27 @@ function renderLoginPage(errorMessage = '', infoMessage = '', resetLink = '') {
       return;
     }
     if (isAgentLikeUser(foundUser) && !state.agents.some((agent) => agent.id === Number(foundUser.agentId))) {
-      renderLoginPage('This account is not linked to a valid agent record.');
-      return;
+      const matchingAgents = state.agents.filter((agent) => normalizeEmail(agent?.email) === normalizeEmail(foundUser.email));
+      if (matchingAgents.length !== 1) {
+        renderLoginPage('This account is not linked to a valid agent record.');
+        return;
+      }
+
+      const profileUpdatedAt = getCurrentIsoTimestamp();
+      const repairedUser = {
+        ...foundUser,
+        agentId: Number(matchingAgents[0].id),
+        updatedAt: profileUpdatedAt,
+        profileUpdatedAt
+      };
+      authUsers = authUsers.map((user) => Number(user.id) === Number(foundUser.id) ? repairedUser : user);
+      const didSaveRepairLocally = saveAuthUsers({ persistProfilePhotos: false });
+      const didSaveRepairRemotely = await saveAuthUsersToBackend();
+      if (!didSaveRepairLocally && !didSaveRepairRemotely) {
+        renderLoginPage('This account could not be linked to its agent record. Please try again.');
+        return;
+      }
+      foundUser = repairedUser;
     }
     saveRememberedLogin(email, password, shouldRememberLogin);
     currentSession = { userId: foundUser.id };
