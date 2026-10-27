@@ -1649,11 +1649,11 @@ function getAvailabilityRequestVisibilityReason(request, user) {
   const requestEmail = normalizeEmail(request.requesterEmail || '');
   const userEmail = normalizeEmail(user.email || '');
 
-  if (requestAgentId > 0 && requestAgentId === userAgentId) {
-    return 'agentId';
+  if (requestAgentId > 0) {
+    return requestAgentId === userAgentId ? 'agentId' : '';
   }
-  if (requestUserId > 0 && requestUserId === currentUserId) {
-    return 'requesterUserId';
+  if (requestUserId > 0) {
+    return requestUserId === currentUserId ? 'requesterUserId' : '';
   }
   if (requestEmail && userEmail && requestEmail === userEmail) {
     return 'requesterEmail';
