@@ -9129,7 +9129,9 @@ function renderAgentRequestsPage(currentUser) {
       return normalizedStatus === 'approved' || normalizedStatus === 'rejected' || normalizedStatus === 'deleted';
     })
     .sort((left, right) => (right.requestedAt || '').localeCompare(left.requestedAt || ''));
-  const approvedSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'completed');
+  const approvedSwapRequests = state.swapRequests.filter((request) =>
+    Number(request.fromAgentId) === currentAgentId && request.status === 'completed'
+  );
 
   root.innerHTML = `
     <div class="app">
