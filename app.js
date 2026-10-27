@@ -1,4 +1,4 @@
-const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+﻿const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
 const retiredTeamLabels = new Set(['patron services representative', 'patron services', 'patron services associate']);
 const defaultTeamOptions = ['Patron Services Associate', 'Audience Services Management', 'Box Office'];
@@ -478,6 +478,7 @@ const pageMode = (() => {
   if (queryMode === 'agents') return 'agents';
   if (queryMode === 'pending-requests') return 'pending-requests';
   if (queryMode === 'agent-requests') return 'agent-requests';
+  if (queryMode === 'request-time-off') return 'request-time-off';
   if (queryMode === 'profile') return 'profile';
   if (queryMode === 'email-outbox') return 'email-outbox';
   if (queryMode === 'availability-requests') return 'availability-requests';
@@ -491,6 +492,7 @@ const pageMode = (() => {
   if (mode === 'agents') return 'agents';
   if (mode === 'pending-requests') return 'pending-requests';
   if (mode === 'agent-requests') return 'agent-requests';
+  if (mode === 'request-time-off') return 'request-time-off';
   if (mode === 'profile') return 'profile';
   if (mode === 'email-outbox') return 'email-outbox';
   if (mode === 'availability-requests') return 'availability-requests';
@@ -2882,13 +2884,13 @@ function renderForgotPasswordTempPasswordPage(user, temporaryPassword, emailAddr
     const toggleButton = document.getElementById('forgot-password-temp-toggle-display');
     if (!(valueElement instanceof HTMLElement) || !(toggleButton instanceof HTMLButtonElement)) return;
     const sourcePassword = String(valueElement.getAttribute('data-temp-password') || '');
-    const isMasked = valueElement.textContent === '•'.repeat(sourcePassword.length);
+    const isMasked = valueElement.textContent === 'â€¢'.repeat(sourcePassword.length);
     if (isMasked) {
       valueElement.textContent = sourcePassword;
       toggleButton.textContent = 'Hide';
       return;
     }
-    valueElement.textContent = '•'.repeat(sourcePassword.length);
+    valueElement.textContent = 'â€¢'.repeat(sourcePassword.length);
     toggleButton.textContent = 'Show';
   });
 
@@ -3552,7 +3554,7 @@ function getAvailabilityCalendarMarkers(dateValue) {
     if (pendingCount > 0) {
       labelCount = pendingCount === matchingRequests.length
         ? `${matchingRequests.length} pending`
-        : `${matchingRequests.length} • ${pendingCount} pending`;
+        : `${matchingRequests.length} â€¢ ${pendingCount} pending`;
     }
     const label = `${cat.label} (${labelCount})`;
     const modalLabel = `${cat.label} - ${normalizedDate}`;
@@ -5248,7 +5250,7 @@ function openShiftAbsenceModal(shift, onSave) {
   overlay.innerHTML = `
     <div style="width:min(560px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
       <h2 style="margin:0 0 12px;">Mark shift as absent</h2>
-      <p class="muted" style="margin:0 0 14px;">${escapeHtml(getAgent(shift?.agentId)?.name || 'Agent')} • ${escapeHtml(shift?.date || shift?.day || '')} • ${escapeHtml(formatTimeRange(shift?.start || '00:00', shift?.end || '00:00'))}</p>
+      <p class="muted" style="margin:0 0 14px;">${escapeHtml(getAgent(shift?.agentId)?.name || 'Agent')} â€¢ ${escapeHtml(shift?.date || shift?.day || '')} â€¢ ${escapeHtml(formatTimeRange(shift?.start || '00:00', shift?.end || '00:00'))}</p>
       <form id="shift-absence-form" class="stack">
         <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
           <span>Reason</span>
@@ -6185,7 +6187,7 @@ function openPublicAvailabilityDayModal(dateValue, requests, viewingAgentId) {
                   ${isOwnRequest && request?.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
                 </div>
                 ${isOwnRequest && isPending ? `
-                  <button type="button" data-edit-pending-from-modal="${request.id}" style="padding:4px 10px; font-size:12px;">✏️ Edit request</button>
+                  <button type="button" data-edit-pending-from-modal="${request.id}" style="padding:4px 10px; font-size:12px;">âœï¸ Edit request</button>
                 ` : ''}
               </div>
             </div>
@@ -6679,7 +6681,7 @@ function getShiftRoleLocationText(shift) {
   const role = String(shift?.role || '').trim();
   const location = String(shift?.location || '').trim();
   const venue = String(shift?.venue || '').trim();
-  return [role, location, venue].filter(Boolean).join(' • ');
+  return [role, location, venue].filter(Boolean).join(' â€¢ ');
 }
 
 function getShiftRoleLocationHtml(shift) {
@@ -6727,7 +6729,7 @@ function renderCalendarShiftCard(shift, options = {}) {
       ${showRoleLocation ? `${getShiftRoleLocationHtml(shift)}${showTimeRange ? `<br />${formatTimeRange(shift.start, shift.end)}` : ''}` : (showTimeRange ? `${formatTimeRange(shift.start, shift.end)}` : '')}
       ${!isAgentView ? `<div class="row calendar-shift-actions" style="align-items:center; gap:3px; margin-top:3px; flex-wrap:wrap;"><span class="muted" style="text-transform:capitalize;">${absenceReason ? `absent (${escapeHtml(absenceReason)})` : ''}</span>${canManageCalendar ? (shift.status === shiftStatuses.published ? `<button type="button" class="secondary" data-unpublish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Unpublish</button>` : `<button type="button" class="success" data-publish-shift="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Publish</button>`) : ''}${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}" style="padding:1px 4px; min-height:20px; font-size:0.62rem;">Clear absent</button>` : ''}` : ''}</div>` : ''}
       ${isAgentView ? `
-        ${(absenceReason || isShiftOfferedForPickup(shift)) ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${absenceReason ? `absent (${escapeHtml(absenceReason)})` : ''}${absenceReason && isShiftOfferedForPickup(shift) ? ' • ' : ''}${isShiftOfferedForPickup(shift) ? 'offered for pickup' : ''}</div>` : ''}
+        ${(absenceReason || isShiftOfferedForPickup(shift)) ? `<div class="muted" style="margin-top:6px; text-transform:capitalize;">${absenceReason ? `absent (${escapeHtml(absenceReason)})` : ''}${absenceReason && isShiftOfferedForPickup(shift) ? ' â€¢ ' : ''}${isShiftOfferedForPickup(shift) ? 'offered for pickup' : ''}</div>` : ''}
         <div class="row" style="margin-top:6px;">
           ${canMarkThisShiftAbsent ? `<button type="button" class="secondary" data-mark-shift-absent="${shift.id}">${absenceReason ? 'Update absent' : 'Absent'}</button>${absenceReason ? `<button type="button" class="secondary" data-clear-shift-absent="${shift.id}">Clear absent</button>` : ''}` : ''}
           ${canAgentOfferShift(shift, currentAgentId) ? `<button type="button" class="secondary" data-offer-shift="${shift.id}">${isShiftOfferedForPickup(shift) ? 'Cancel offer' : 'Offer shift'}</button>` : ''}
@@ -7064,6 +7066,7 @@ function renderAgentNavigationLinks() {
   return [
     '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>',
     '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>',
+    '<a href="index.html?view=request-time-off" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Request time off</button></a>',
     '<a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>',
     '<a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Completed requests</button></a>',
     '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'
@@ -7339,7 +7342,7 @@ function renderCalendarPage(currentUser) {
                     <h4 style="margin:0;">${day}</h4>
                     <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
                     <div class="muted" style="font-size:0.72rem; font-weight:600;">Summary: ${dayRequests.length} request${dayRequests.length === 1 ? '' : 's'}</div>
-                    <div class="muted" style="font-size:0.72rem;">${daySummary.agentCount} agent${daySummary.agentCount === 1 ? '' : 's'}${isAgentView ? '' : ` • $${daySummary.cost.toFixed(2)}`}</div>
+                    <div class="muted" style="font-size:0.72rem;">${daySummary.agentCount} agent${daySummary.agentCount === 1 ? '' : 's'}${isAgentView ? '' : ` â€¢ $${daySummary.cost.toFixed(2)}`}</div>
                   </div>
                   ${hasDayRequests ? `<div data-view-day-availability-requests="${escapeHtml(dayDate)}" style="cursor:pointer;" title="View requests for this date"><span class="muted">View availability requests</span></div>` : ''}
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
@@ -7711,7 +7714,7 @@ function renderProfilePage(currentUser) {
                       <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                         <strong>${escapeHtml(adminUser.name || adminUser.username || 'Manager')}</strong>
                         <div class="row" style="gap:8px; align-items:center;">
-                          <div class="muted">Status: ${escapeHtml(adminUser.isActive === false ? 'Inactive' : 'Active')} • Access: ${escapeHtml(getUserRoleLabel(adminUser.role))}</div>
+                          <div class="muted">Status: ${escapeHtml(adminUser.isActive === false ? 'Inactive' : 'Active')} â€¢ Access: ${escapeHtml(getUserRoleLabel(adminUser.role))}</div>
                           <button type="button" class="secondary" data-toggle-manager-card="${adminUser.id}" title="${isManagerCardCollapsed ? 'Expand' : 'Collapse'}" aria-label="${isManagerCardCollapsed ? 'Expand' : 'Collapse'}">${isManagerCardCollapsed ? '\u25B6' : '\u25BC'}</button>
                         </div>
                       </div>
@@ -8613,7 +8616,7 @@ function renderManagerManagementPanel(currentUser) {
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <strong>${escapeHtml(adminUser.name || adminUser.username || 'Manager')}</strong>
                   <div class="row" style="gap:8px; align-items:center;">
-                    <div class="muted">Status: ${escapeHtml(adminUser.isActive === false ? 'Inactive' : 'Active')} • Access: ${escapeHtml(getUserRoleLabel(adminUser.role))}</div>
+                    <div class="muted">Status: ${escapeHtml(adminUser.isActive === false ? 'Inactive' : 'Active')} â€¢ Access: ${escapeHtml(getUserRoleLabel(adminUser.role))}</div>
                     <button type="button" class="secondary" data-toggle-manager-card="${adminUser.id}" title="${isManagerCardCollapsed ? 'Expand' : 'Collapse'}" aria-label="${isManagerCardCollapsed ? 'Expand' : 'Collapse'}">${isManagerCardCollapsed ? '\u25B6' : '\u25BC'}</button>
                   </div>
                 </div>
@@ -9169,7 +9172,7 @@ function renderAgentRequestsPage(currentUser) {
         <div class="request-list" style="margin-top:10px;">
           ${approvedSwapRequests.map((request) => `
             <div class="card">
-              <div class="muted">${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} → ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</div>
+              <div class="muted">${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} â†’ ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</div>
               <div class="muted">From shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'from'))}</div>
               <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
               <div class="muted">Approved: ${escapeHtml(request.completedAt ? new Date(request.completedAt).toLocaleString() : (request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown'))}</div>
@@ -9245,7 +9248,7 @@ function renderPendingRequestsPage(currentUser) {
             <div class="card" style="border-left:4px solid #fef08a;">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                 <div>
-                  <strong>${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} → ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</strong>
+                  <strong>${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} â†’ ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</strong>
                   <div class="muted">From shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'from'))}</div>
                   <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
                   <div class="muted">Approval state: ${escapeHtml(getSwapApprovalText(request))}</div>
@@ -9671,7 +9674,7 @@ function renderAvailabilityRequestsPage(currentUser) {
                         : typeMeta.style;
                     return `
                     <div data-view-availability-request="${request.id}" title="${escapeHtml((getAgent(request.agentId)?.name || 'Unknown'))} - ${escapeHtml(typeMeta.label)}" style="padding:3px 6px; border-radius:999px; font-size:12px; cursor:pointer; ${displayStyle}">
-                      ${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')} • ${escapeHtml(typeMeta.label)}
+                      ${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')} â€¢ ${escapeHtml(typeMeta.label)}
                     </div>
                   `;
                   }).join('')}
@@ -9824,8 +9827,8 @@ function renderAvailabilityRequestsPage(currentUser) {
             const typeMeta = getAvailabilityRequestTypeMeta(request);
             const requestIdsValue = entry.requestIds.join(',');
             const rangeText = entry.kind === 'recurring-group'
-              ? `${entry.rangeStart || request.unavailableDate || 'Not set'} to ${entry.rangeEnd || request.unavailableDate || 'Not set'} • ${entry.occurrenceCount} date${entry.occurrenceCount === 1 ? '' : 's'}`
-              : `${request.unavailableDate || 'Not set'} • ${request.unavailableStart || '--:--'} - ${request.unavailableEnd || '--:--'}`;
+              ? `${entry.rangeStart || request.unavailableDate || 'Not set'} to ${entry.rangeEnd || request.unavailableDate || 'Not set'} â€¢ ${entry.occurrenceCount} date${entry.occurrenceCount === 1 ? '' : 's'}`
+              : `${request.unavailableDate || 'Not set'} â€¢ ${request.unavailableStart || '--:--'} - ${request.unavailableEnd || '--:--'}`;
             return `
             <div class="card" data-view-availability-request="${request.id}" style="border-left:4px solid ${requestStatus === 'approved' ? '#7AACAF' : requestStatus === 'rejected' ? '#4A4A4D' : '#FDD592'}; padding:10px 12px; cursor:pointer;">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px;">
@@ -9837,7 +9840,7 @@ function renderAvailabilityRequestsPage(currentUser) {
                     <strong>${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')}</strong>
                     ${entry.kind === 'recurring-group' ? `<span class="muted">Recurring series</span>` : ''}
                   </div>
-                  <div class="muted">${escapeHtml(rangeText)} • ${escapeHtml(entry.kind === 'recurring-group' ? 'Repeats weekly' : getAvailabilityRecurrenceLabel(request))}</div>
+                  <div class="muted">${escapeHtml(rangeText)} â€¢ ${escapeHtml(entry.kind === 'recurring-group' ? 'Repeats weekly' : getAvailabilityRecurrenceLabel(request))}</div>
                   <div class="muted">Time window: ${escapeHtml(formatTimeRange(request.unavailableStart || '--:--', request.unavailableEnd || '--:--'))}</div>
                   <div class="muted">Submitted ${escapeHtml(entry.requestedAt ? new Date(entry.requestedAt).toLocaleString() : 'Unknown')}</div>
                   ${request.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
@@ -9902,7 +9905,7 @@ function renderAvailabilityRequestsPage(currentUser) {
               <div class="card" style="border-left:4px solid ${request.status === 'completed' ? '#7AACAF' : request.status === 'rejected' ? '#4A4A4D' : '#FDD592'};">
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
-                    <strong>${escapeHtml(fromAgent)} → ${escapeHtml(toAgent)}</strong>
+                    <strong>${escapeHtml(fromAgent)} â†’ ${escapeHtml(toAgent)}</strong>
                     <div class="muted">From shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'from'))}</div>
                     <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
                     <div class="muted">Approval state: ${escapeHtml(getSwapApprovalText(request))}</div>
@@ -9987,6 +9990,11 @@ function render() {
 
   if (pageMode === 'agent-requests') {
     renderAgentRequestsPage(currentUser);
+    return;
+  }
+
+  if (pageMode === 'request-time-off') {
+    renderAgentTimeOffPage(currentUser);
     return;
   }
 
@@ -10239,7 +10247,7 @@ function render() {
                   ${monthShifts.map((shift) => `
                     <div class="card">
                       <strong>${escapeHtml(shift.date || shift.day || 'Date not set')}</strong>
-                      <div class="muted">${escapeHtml(shift.day || '')} • ${formatTimeRange(shift.start, shift.end)}</div>
+                      <div class="muted">${escapeHtml(shift.day || '')} â€¢ ${formatTimeRange(shift.start, shift.end)}</div>
                       <div class="muted">${escapeHtml(getShiftRoleLocationText(shift))}</div>
                     </div>
                   `).join('') || '<div class="muted">No shifts in this month.</div>'}
@@ -10250,114 +10258,7 @@ function render() {
 
         <div class="stack">
           ${!isAgentView ? '' : `
-            <div class="panel">
-              <h2>Time Off</h2>
-              ${blackoutDates.length > 0 ? `
-                <div style="margin-bottom:10px;">
-                  <div class="muted" style="margin-bottom:6px;">Blackout dates</div>
-                  <div class="row" style="gap:6px; flex-wrap:wrap;">
-                    ${blackoutDates.map((dateValue) => `<span class="chip" style="background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}
-                  </div>
-                </div>` : ''}
-              <form id="agent-availability-form" class="stack">
-                <label style="display:flex; flex-direction:column; gap:6px;">
-                  <span>Request type</span>
-                  <select id="agent-request-kind" name="requestKind" required>
-                    <option value="one-time-availability">One-time availability</option>
-                    <option value="repeating-availability">Repeating availability</option>
-                    <option value="vacation-time">Vacation time</option>
-                  </select>
-                </label>
-
-                <div id="agent-one-time-fields" class="stack">
-                  <div class="row" style="flex-wrap:wrap;">
-                    <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
-                      <span>Date</span>
-                      <input name="oneTimeDate" type="date" />
-                    </label>
-                    <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
-                      <span>Start time</span>
-                      <input name="oneTimeStart" type="time" />
-                    </label>
-                    <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
-                      <span>End time</span>
-                      <input name="oneTimeEnd" type="time" />
-                    </label>
-                  </div>
-                </div>
-
-                <div id="agent-repeating-fields" class="stack" style="display:none;">
-                  <div class="row" style="flex-wrap:wrap;">
-                    <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
-                      <span>Day of week</span>
-                      <select name="repeatingDay">
-                        <option value="">Select day</option>
-                        ${days.map((day) => `<option value="${day}">${day}</option>`).join('')}
-                      </select>
-                    </label>
-                    <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
-                      <span>Start date</span>
-                      <input name="repeatingStartDate" type="date" />
-                    </label>
-                    <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
-                      <span>End date</span>
-                      <input name="repeatingEndDate" type="date" />
-                    </label>
-                    <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
-                      <span>Start time</span>
-                      <input name="repeatingStartTime" type="time" />
-                    </label>
-                    <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
-                      <span>End time</span>
-                      <input name="repeatingEndTime" type="time" />
-                    </label>
-                  </div>
-                </div>
-
-                <div id="agent-vacation-fields" class="stack" style="display:none;">
-                  <label style="display:flex; flex-direction:column; gap:6px;">
-                    <span>Vacation request type</span>
-                    <select id="agent-vacation-mode" name="vacationMode">
-                      <option value="single-date">Single date</option>
-                      <option value="date-range">Date range</option>
-                    </select>
-                  </label>
-
-                  <div id="agent-vacation-single-fields" class="stack">
-                    <div class="row" style="flex-wrap:wrap;">
-                      <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
-                        <span>Date</span>
-                        <input name="vacationSingleDate" type="date" />
-                      </label>
-                      <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
-                        <span>Start time</span>
-                        <input name="vacationSingleStart" type="time" />
-                      </label>
-                      <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
-                        <span>End time</span>
-                        <input name="vacationSingleEnd" type="time" />
-                      </label>
-                    </div>
-                  </div>
-
-                  <div id="agent-vacation-range-fields" class="stack" style="display:none;">
-                    <div class="row" style="flex-wrap:wrap;">
-                      <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
-                        <span>Start date</span>
-                        <input name="vacationRangeStartDate" type="date" />
-                      </label>
-                      <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
-                        <span>End date</span>
-                        <input name="vacationRangeEndDate" type="date" />
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <input name="note" placeholder="Reason or note" required />
-                <button type="submit">Submit request</button>
-              </form>
-            </div>
+            ${renderAgentTimeOffRequestPanel(blackoutDates)}
 
             <div class="panel">
               <h2>Swap a shift</h2>
@@ -10756,7 +10657,7 @@ function renderPublicAvailabilityViewPage() {
               <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
                 <div>
                   <strong>${escapeHtml(shift.date || 'Unknown date')} (${escapeHtml(shift.day || '')})</strong>
-                  <div class="muted">${escapeHtml(formatTimeRange(shift.start, shift.end))} • ${escapeHtml(shift.role || 'No role')}${shift.location ? ` • ${escapeHtml(shift.location)}` : ''}</div>
+                  <div class="muted">${escapeHtml(formatTimeRange(shift.start, shift.end))} â€¢ ${escapeHtml(shift.role || 'No role')}${shift.location ? ` â€¢ ${escapeHtml(shift.location)}` : ''}</div>
                 </div>
                 ${viewingAgentId ? `<button type="button" data-pick-up-shift="${shift.id}">Pick up shift</button>` : '<span class="muted">Sign in via your personal link to pick up</span>'}
               </div>
@@ -10813,13 +10714,13 @@ function renderPublicAvailabilityViewPage() {
                     if (canEdit) {
                       return `
                         <button type="button" data-edit-pending-request="${request.id}" title="Click to edit your pending request" style="padding:3px 6px; border-radius:999px; font-size:11px; ${displayStyle} cursor:pointer; text-align:left; border:1px solid rgba(0,0,0,0.3); font-weight:600; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                          ✏️ ${escapeHtml(agentLabel)} • ${escapeHtml(typeMeta.label)}
+                          âœï¸ ${escapeHtml(agentLabel)} â€¢ ${escapeHtml(typeMeta.label)}
                         </button>
                       `;
                     }
                     return `
                       <div title="${escapeHtml(agentLabel)} - ${escapeHtml(typeMeta.label)}" style="padding:3px 6px; border-radius:999px; font-size:12px; ${displayStyle}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                        ${escapeHtml(agentLabel)} • ${escapeHtml(typeMeta.label)}
+                        ${escapeHtml(agentLabel)} â€¢ ${escapeHtml(typeMeta.label)}
                       </div>
                     `;
                   }).join('')}
@@ -10832,7 +10733,7 @@ function renderPublicAvailabilityViewPage() {
         <div class="card" style="margin-top:10px; padding:8px 10px;">
           <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
             <strong style="font-size:0.95rem;">Blackout dates this month</strong>
-            <span class="muted" style="font-size:12px;">${monthBlackoutDates.length} this month • ${blackoutDates.length} total</span>
+            <span class="muted" style="font-size:12px;">${monthBlackoutDates.length} this month â€¢ ${blackoutDates.length} total</span>
           </div>
           <div class="row" style="margin-top:6px; gap:6px; flex-wrap:wrap;">
             ${monthBlackoutDates.length > 0
@@ -14138,3 +14039,200 @@ void initializeBackendSync().finally(() => {
     });
   }
 });
+
+function renderAgentTimeOffRequestPanel(blackoutDates = []) {
+  return `
+            <div class="panel">
+              <h2>Time Off</h2>
+              ${blackoutDates.length > 0 ? `
+                <div style="margin-bottom:10px;">
+                  <div class="muted" style="margin-bottom:6px;">Blackout dates</div>
+                  <div class="row" style="gap:6px; flex-wrap:wrap;">
+                    ${blackoutDates.map((dateValue) => `<span class="chip" style="background:#000; color:#fff; border:1px solid rgba(255,255,255,0.2);">${escapeHtml(dateValue)}</span>`).join('')}
+                  </div>
+                </div>` : ''}
+              <form id="agent-availability-form" class="stack">
+                <label style="display:flex; flex-direction:column; gap:6px;">
+                  <span>Request type</span>
+                  <select id="agent-request-kind" name="requestKind" required>
+                    <option value="one-time-availability">One-time availability</option>
+                    <option value="repeating-availability">Repeating availability</option>
+                    <option value="vacation-time">Vacation time</option>
+                  </select>
+                </label>
+
+                <div id="agent-one-time-fields" class="stack">
+                  <div class="row" style="flex-wrap:wrap;">
+                    <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                      <span>Date</span>
+                      <input name="oneTimeDate" type="date" />
+                    </label>
+                    <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                      <span>Start time</span>
+                      <input name="oneTimeStart" type="time" />
+                    </label>
+                    <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                      <span>End time</span>
+                      <input name="oneTimeEnd" type="time" />
+                    </label>
+                  </div>
+                </div>
+
+                <div id="agent-repeating-fields" class="stack" style="display:none;">
+                  <div class="row" style="flex-wrap:wrap;">
+                    <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                      <span>Day of week</span>
+                      <select name="repeatingDay">
+                        <option value="">Select day</option>
+                        ${days.map((day) => `<option value="${day}">${day}</option>`).join('')}
+                      </select>
+                    </label>
+                    <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                      <span>Start date</span>
+                      <input name="repeatingStartDate" type="date" />
+                    </label>
+                    <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                      <span>End date</span>
+                      <input name="repeatingEndDate" type="date" />
+                    </label>
+                    <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                      <span>Start time</span>
+                      <input name="repeatingStartTime" type="time" />
+                    </label>
+                    <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                      <span>End time</span>
+                      <input name="repeatingEndTime" type="time" />
+                    </label>
+                  </div>
+                </div>
+
+                <div id="agent-vacation-fields" class="stack" style="display:none;">
+                  <label style="display:flex; flex-direction:column; gap:6px;">
+                    <span>Vacation request type</span>
+                    <select id="agent-vacation-mode" name="vacationMode">
+                      <option value="single-date">Single date</option>
+                      <option value="date-range">Date range</option>
+                    </select>
+                  </label>
+
+                  <div id="agent-vacation-single-fields" class="stack">
+                    <div class="row" style="flex-wrap:wrap;">
+                      <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                        <span>Date</span>
+                        <input name="vacationSingleDate" type="date" />
+                      </label>
+                      <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                        <span>Start time</span>
+                        <input name="vacationSingleStart" type="time" />
+                      </label>
+                      <label style="display:flex; flex-direction:column; gap:6px; min-width:160px; flex:1;">
+                        <span>End time</span>
+                        <input name="vacationSingleEnd" type="time" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div id="agent-vacation-range-fields" class="stack" style="display:none;">
+                    <div class="row" style="flex-wrap:wrap;">
+                      <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                        <span>Start date</span>
+                        <input name="vacationRangeStartDate" type="date" />
+                      </label>
+                      <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                        <span>End date</span>
+                        <input name="vacationRangeEndDate" type="date" />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <input name="note" placeholder="Reason or note" required />
+                <button type="submit">Submit request</button>
+              </form>
+            </div>
+`;
+}
+
+function renderAgentTimeOffRequestCard(request) {
+  const statusValue = normalizeAvailabilityRequestStatus(request?.status);
+  const statusLabel = statusValue === 'rejected' ? 'Denied' : statusValue === 'approved' ? 'Approved' : 'Pending';
+  const statusStyle = statusValue === 'pending'
+    ? 'background:#FDD592; color:#4B3A1F;'
+    : statusValue === 'rejected'
+      ? 'background:#4A4A4D; color:#FFFFFF;'
+      : 'background:#7AACAF; color:#17383B;';
+  return `
+    <div class="card" style="padding:10px 12px;">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+        <strong>${escapeHtml(request?.unavailabilityType || 'Availability')}</strong>
+        <span class="chip" style="${statusStyle}">${escapeHtml(statusLabel)}</span>
+      </div>
+      <div class="muted">Date: ${escapeHtml(request?.unavailableDate || 'Not set')}</div>
+      <div class="muted">Time: ${escapeHtml(request?.unavailableStart || '--:--')} - ${escapeHtml(request?.unavailableEnd || '--:--')}</div>
+      <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
+      ${request?.note ? `<div class="muted">Note: ${escapeHtml(request.note)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderAgentTimeOffPage(currentUser) {
+  if (!isAgentLikeUser(currentUser)) {
+    root.innerHTML = `
+      <div class="app">
+        <div class="panel">
+          <h1>Request time off</h1>
+          <p class="muted">This page is available for agent accounts only.</p>
+          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const blackoutDates = getBlackoutDatesForScope(getCurrentUserDepartmentScope());
+  const today = getCurrentLocalIsoDate();
+  const myRequests = getAllAvailabilityRequests()
+    .filter((request) => isAvailabilityRequestVisibleToUser(request, currentUser))
+    .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+    .sort((left, right) => String(right?.unavailableDate || right?.requestedAt || '').localeCompare(String(left?.unavailableDate || left?.requestedAt || '')));
+  const upcomingRequests = myRequests.filter((request) => getAvailabilityRequestDate(request) >= today);
+  const pastRequests = myRequests.filter((request) => getAvailabilityRequestDate(request) < today);
+
+  root.innerHTML = `
+    <div class="app">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div>
+          <h1>Request time off</h1>
+          <p class="muted">Submit availability or PTO requests and track their approval status.</p>
+        </div>
+        <div class="row">
+          ${renderAgentNavigationLinks()}
+          ${renderUserNavChip(currentUser)}
+          <button id="logout-btn" class="secondary" type="button">Log out</button>
+        </div>
+      </div>
+
+      <div class="row" style="align-items:flex-start; gap:16px; flex-wrap:wrap;">
+        <div class="stack" style="flex:1 1 360px; min-width:320px;">
+          ${renderAgentTimeOffRequestPanel(blackoutDates)}
+        </div>
+        <div class="stack" style="flex:1 1 360px; min-width:320px;">
+          <div class="panel">
+            <h2>My upcoming requests</h2>
+            <div class="stack" style="gap:8px; margin-top:10px;">
+              ${upcomingRequests.map(renderAgentTimeOffRequestCard).join('') || '<div class="muted">No upcoming requests.</div>'}
+            </div>
+          </div>
+          <div class="panel">
+            <h2>Past requests</h2>
+            <div class="stack" style="gap:8px; margin-top:10px;">
+              ${pastRequests.slice(0, 20).map(renderAgentTimeOffRequestCard).join('') || '<div class="muted">No past requests.</div>'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  bindEvents();
+}
