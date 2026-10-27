@@ -7339,7 +7339,7 @@ function renderCalendarPage(currentUser) {
                     <h4 style="margin:0;">${day}</h4>
                     <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
                     <div class="muted" style="font-size:0.72rem; font-weight:600;">Summary: ${dayRequests.length} request${dayRequests.length === 1 ? '' : 's'}</div>
-                    <div class="muted" style="font-size:0.72rem;">${daySummary.agentCount} agent${daySummary.agentCount === 1 ? '' : 's'} • $${daySummary.cost.toFixed(2)}</div>
+                    <div class="muted" style="font-size:0.72rem;">${daySummary.agentCount} agent${daySummary.agentCount === 1 ? '' : 's'}${isAgentView ? '' : ` • $${daySummary.cost.toFixed(2)}`}</div>
                   </div>
                   ${hasDayRequests ? `<div data-view-day-availability-requests="${escapeHtml(dayDate)}" style="cursor:pointer;" title="View requests for this date"><span class="muted">View availability requests</span></div>` : ''}
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
@@ -8401,7 +8401,6 @@ function renderProfilePage(currentUser) {
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Location:</strong> ${escapeHtml(normalizeAgentLocation(viewAgent?.location) || 'Not set')}</div>
               <div><strong>Department:</strong> ${escapeHtml(viewAgent?.department || 'Not set')}</div>
-              <div><strong>Pay rate:</strong> $${escapeHtml(viewAgent?.payRate ?? 0)}/hr</div>
               <div><strong>Attendance points:</strong> ${escapeHtml(normalizeAttendancePoints(viewAgent?.attendancePoints))}</div>
               <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(viewAgent?.pronouns) || 'Not set')}</div>
               <div><strong>Shiftboard ID:</strong> ${escapeHtml(normalizeShiftboardId(viewAgent?.shiftboardId) || 'Not set')}</div>
