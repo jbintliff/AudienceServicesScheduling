@@ -4068,10 +4068,141 @@ function getAvailabilityRecurringSeriesRequestIds(seedRequest, requests = getAll
     .filter((id) => Number.isFinite(id));
 }
 
-function deleteAvailabilityRequestsByIds(requestIds, options = {}) {
-  const ids = Array.from(new Set((Array.isArray(requestIds) ? requestIds : [])
+function normalizeAvailabilityRequestIds(requestIds) {
+  return Array.from(new Set((Array.isArray(requestIds) ? requestIds : [])
     .map((value) => Number(value))
     .filter((value) => Number.isFinite(value))));
+}
+
+function sendAvailabilityRequestActionNotifications(targetRequests, action) {
+  const recipientGroups = new Map();
+
+  targetRequests.forEach((request) => {
+    const requestOwner = getUserByAgentId(request.agentId);
+    const recipientEmail = String(request.requesterEmail || requestOwner?.email || '').trim();
+    if (!recipientEmail) return;
+    const recipientKey = recipientEmail.toLowerCase();
+    if (!recipientGroups.has(recipientKey)) {
+      recipientGroups.set(recipientKey, {
+        email: recipientEmail,
+        name: request.requesterName || requestOwner?.username || getAgent(request.agentId)?.name || 'Agent',
+        requests: []
+      });
+    }
+    recipientGroups.get(recipientKey).requests.push(request);
+  });
+
+  recipientGroups.forEach((recipient) => {
+    const requestCount = recipient.requests.length;
+    const requestLabel = requestCount === 1 ? 'request' : `${requestCount} requests`;
+    const actionMeta = action === 'approved'
+      ? {
+          subject: 'Unavailability request approved',
+          body: `Hi ${recipient.name}, your unavailability ${requestLabel} ${requestCount === 1 ? 'has' : 'have'} been approved.`,
+          type: 'availability-approved'
+        }
+      : action === 'rejected'
+        ? {
+            subject: 'Unavailability request denied',
+            body: `Hi ${recipient.name}, your unavailability ${requestLabel} ${requestCount === 1 ? 'was' : 'were'} denied by an admin.\n\nIf you have questions, contact your manager.`,
+            type: 'availability-rejected'
+          }
+        : {
+            subject: 'Unavailability submission deleted',
+            body: `Hi ${recipient.name}, an admin deleted ${requestCount === 1 ? 'your unavailability submission' : `${requestCount} of your unavailability submissions`}.\n\nIf this was unexpected, contact your manager.`,
+            type: 'availability-deleted'
+          };
+
+    sendEmailNotification({
+      to: recipient.email,
+      subject: actionMeta.subject,
+      body: actionMeta.body,
+      type: actionMeta.type
+    });
+  });
+
+  return recipientGroups.size;
+}
+
+function approveAvailabilityRequestsByIds(requestIds) {
+  if (!canManageAvailability(getCurrentUser())) return false;
+  const ids = normalizeAvailabilityRequestIds(requestIds);
+  if (ids.length === 0) return false;
+
+  const allAvailabilityRequests = getAllAvailabilityRequests();
+  const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
+  if (targetRequests.length === 0) return false;
+
+  const ptoCapacityWarnings = getPtoApprovalCapacityWarnings(
+    targetRequests,
+    allAvailabilityRequests,
+    getCurrentUserDepartmentScope()
+  );
+  if (ptoCapacityWarnings.length > 0) {
+    const warningDetails = ptoCapacityWarnings.map((entry) => {
+      const additionLabel = entry.additionalAgentNames.join(', ');
+      const currentLabel = `${entry.approvedCount} already approved`;
+      return `${entry.date}: ${currentLabel}; approving ${additionLabel} would bring the total to ${entry.resultingCount}.`;
+    }).join('\n');
+    const shouldContinue = confirm(
+      `PTO coverage warning: this approval will exceed two people with approved PTO on the following date${ptoCapacityWarnings.length === 1 ? '' : 's'}:\n\n${warningDetails}\n\nApprove anyway?`
+    );
+    if (!shouldContinue) return false;
+  }
+
+  const targetAgentIds = new Set(targetRequests.map((request) => Number(request.agentId)).filter((id) => Number.isFinite(id)));
+  state.agents = state.agents.map((agent) => targetAgentIds.has(Number(agent.id))
+    ? {
+        ...agent,
+        availability: 'Unavailable'
+      }
+    : agent);
+
+  const updatedAt = getCurrentIsoTimestamp();
+  const nextAvailabilityRequests = allAvailabilityRequests.map((item) => (
+    ids.includes(Number(item.id)) ? { ...item, status: 'approved', updatedAt } : item
+  ));
+  saveAvailabilityRequests(nextAvailabilityRequests);
+  saveState();
+
+  const recipientCount = sendAvailabilityRequestActionNotifications(targetRequests, 'approved');
+  const outboxCount = loadEmailOutbox().length;
+  const emailStatus = recipientCount > 0
+    ? ` Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`
+    : ' No agent emails were found, so no notification emails were queued.';
+  alert(`Request${targetRequests.length === 1 ? '' : 's'} approved.${emailStatus}`);
+  render();
+  return true;
+}
+
+function rejectAvailabilityRequestsByIds(requestIds) {
+  if (!canManageAvailability(getCurrentUser())) return false;
+  const ids = normalizeAvailabilityRequestIds(requestIds);
+  if (ids.length === 0) return false;
+
+  const allAvailabilityRequests = getAllAvailabilityRequests();
+  const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
+  if (targetRequests.length === 0) return false;
+
+  const updatedAt = getCurrentIsoTimestamp();
+  const nextAvailabilityRequests = allAvailabilityRequests.map((item) => (
+    ids.includes(Number(item.id)) ? { ...item, status: 'rejected', updatedAt } : item
+  ));
+  saveAvailabilityRequests(nextAvailabilityRequests);
+  saveState();
+
+  const recipientCount = sendAvailabilityRequestActionNotifications(targetRequests, 'rejected');
+  const outboxCount = loadEmailOutbox().length;
+  const emailStatus = recipientCount > 0
+    ? ` Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`
+    : ' No agent emails were found, so no notification emails were queued.';
+  alert(`Request${targetRequests.length === 1 ? '' : 's'} denied.${emailStatus}`);
+  render();
+  return true;
+}
+
+function deleteAvailabilityRequestsByIds(requestIds, options = {}) {
+  const ids = normalizeAvailabilityRequestIds(requestIds);
   if (ids.length === 0) return false;
 
   const allAvailabilityRequests = getAllAvailabilityRequests();
@@ -4099,28 +4230,12 @@ function deleteAvailabilityRequestsByIds(requestIds, options = {}) {
   saveAvailabilityRequests(nextAvailabilityRequests);
   saveState();
 
-  const requestOwner = getUserByAgentId(primaryRequest.agentId);
-  const recipientEmail = primaryRequest.requesterEmail || requestOwner?.email || '';
-  const recipientName = primaryRequest.requesterName || requestOwner?.username || agentName || 'Agent';
-  if (recipientEmail) {
-    sendEmailNotification({
-      to: recipientEmail,
-      subject: 'Unavailability submission deleted',
-      body: `Hi ${recipientName}, an admin deleted your ${targetRequests.length > 1 ? `${targetRequests.length} recurring availability submissions` : `${String(primaryRequest.unavailabilityType || '').trim() || 'availability'} submission`}.
-
-Date: ${primaryRequest.unavailableDate || 'Not set'}
-Time: ${formatTimeRange(primaryRequest.unavailableStart, primaryRequest.unavailableEnd)}
-Status at deletion: ${primaryRequest.status || 'pending'}
-
-If this was unexpected, contact your manager.`,
-      type: 'availability-deleted'
-    });
-  }
+  const recipientCount = sendAvailabilityRequestActionNotifications(targetRequests, 'deleted');
 
   const outboxCount = loadEmailOutbox().length;
-  const emailStatus = recipientEmail
+  const emailStatus = recipientCount > 0
     ? ` Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`
-    : ' No agent email was found, so no notification email was queued.';
+    : ' No agent emails were found, so no notification emails were queued.';
   alert(`Submission${targetRequests.length === 1 ? '' : 's'} deleted.${emailStatus}`);
   render();
   return true;
@@ -9662,6 +9777,16 @@ function renderAvailabilityRequestsPage(currentUser) {
           <button id="availability-all-filters-reset" class="secondary" type="button">Reset filters</button>
         </div>
         <div class="muted">Visible after filters: ${groupedAvailabilityRequestsForList.length} (${filteredPendingCount} pending)</div>
+        <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap; align-items:center;">
+          <label class="row" style="justify-content:flex-start; align-items:center; gap:6px; white-space:nowrap;">
+            <input id="availability-select-all-requests" type="checkbox" ${groupedAvailabilityRequestsForList.length === 0 ? 'disabled' : ''} />
+            <span>Select all</span>
+          </label>
+          <span id="availability-selected-count" class="muted">0 selected</span>
+          <button id="availability-approve-selected" class="success" type="button" disabled>Approve selected</button>
+          <button id="availability-deny-selected" class="danger" type="button" disabled>Deny selected</button>
+          <button id="availability-delete-selected" class="danger" type="button" disabled>Delete selected</button>
+        </div>
         <div class="request-list" style="margin-top:12px;">
           ${groupedAvailabilityRequestsForList.map((entry) => {
             const request = entry.representativeRequest;
@@ -9674,7 +9799,9 @@ function renderAvailabilityRequestsPage(currentUser) {
             return `
             <div class="card" data-view-availability-request="${request.id}" style="border-left:4px solid ${requestStatus === 'approved' ? '#7AACAF' : requestStatus === 'rejected' ? '#AB5C57' : '#FDD592'}; padding:10px 12px; cursor:pointer;">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px;">
-                <div>
+                <div class="row" style="align-items:flex-start; gap:10px; flex:1;">
+                  <input type="checkbox" data-select-availability-request-ids="${requestIdsValue}" data-select-availability-request-status="${requestStatus}" aria-label="Select ${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')} request" style="margin-top:4px;" />
+                  <div>
                   <div style="margin-bottom:4px;"><span class="chip" style="${typeMeta.style}">${escapeHtml(typeMeta.label)}</span></div>
                   <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:2px;">
                     <strong>${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')}</strong>
@@ -9684,6 +9811,7 @@ function renderAvailabilityRequestsPage(currentUser) {
                   <div class="muted">Time window: ${escapeHtml(formatTimeRange(request.unavailableStart || '--:--', request.unavailableEnd || '--:--'))}</div>
                   <div class="muted">Submitted ${escapeHtml(entry.requestedAt ? new Date(entry.requestedAt).toLocaleString() : 'Unknown')}</div>
                   ${request.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
+                  </div>
                 </div>
                 <span class="status-badge ${requestStatus}">${requestStatus}</span>
               </div>
@@ -13479,7 +13607,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-view-availability-request]').forEach((item) => {
     item.addEventListener('click', (event) => {
-      if (event.target.closest('button')) return;
+      if (event.target.closest('button, input, label')) return;
       const id = Number(item.getAttribute('data-view-availability-request'));
       if (!id) return;
       const request = getAllAvailabilityRequests().find((entry) => Number(entry.id) === id);
@@ -13547,102 +13675,21 @@ function bindEvents() {
 
   document.querySelectorAll('[data-approve-availability-request-ids]').forEach((button) => {
     button.addEventListener('click', () => {
-      if (!canManageAvailability(getCurrentUser())) return;
       const ids = String(button.getAttribute('data-approve-availability-request-ids') || '')
         .split(',')
         .map((value) => Number(value))
         .filter((value) => Number.isFinite(value));
-      if (ids.length === 0) return;
-      const allAvailabilityRequests = getAllAvailabilityRequests();
-      const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
-      if (targetRequests.length === 0) return;
-
-      const ptoCapacityWarnings = getPtoApprovalCapacityWarnings(
-        targetRequests,
-        allAvailabilityRequests,
-        getCurrentUserDepartmentScope()
-      );
-      if (ptoCapacityWarnings.length > 0) {
-        const warningDetails = ptoCapacityWarnings.map((entry) => {
-          const additionLabel = entry.additionalAgentNames.join(', ');
-          const currentLabel = `${entry.approvedCount} already approved`;
-          return `${entry.date}: ${currentLabel}; approving ${additionLabel} would bring the total to ${entry.resultingCount}.`;
-        }).join('\n');
-        const shouldContinue = confirm(
-          `PTO coverage warning: this approval will exceed two people with approved PTO on the following date${ptoCapacityWarnings.length === 1 ? '' : 's'}:\n\n${warningDetails}\n\nApprove anyway?`
-        );
-        if (!shouldContinue) return;
-      }
-
-      const targetAgentIds = new Set(targetRequests.map((request) => Number(request.agentId)).filter((id) => Number.isFinite(id)));
-      state.agents = state.agents.map((agent) => targetAgentIds.has(Number(agent.id))
-        ? {
-            ...agent,
-            availability: 'Unavailable'
-          }
-        : agent);
-
-      const updatedAt = getCurrentIsoTimestamp();
-      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => (ids.includes(Number(item.id)) ? { ...item, status: 'approved', updatedAt } : item));
-      saveAvailabilityRequests(nextAvailabilityRequests);
-      saveState();
-
-      const primaryRequest = targetRequests[0];
-      const requestOwner = getUserByAgentId(primaryRequest.agentId);
-      const recipientEmail = primaryRequest.requesterEmail || requestOwner?.email || '';
-      const recipientName = primaryRequest.requesterName || requestOwner?.username || 'Agent';
-      if (recipientEmail) {
-        const seriesLabel = targetRequests.length > 1 ? ` (${targetRequests.length} requests)` : '';
-        sendEmailNotification({
-          to: recipientEmail,
-          subject: 'Unavailability request approved',
-          body: `Hi ${recipientName}, your unavailability request${seriesLabel} has been approved.`,
-          type: 'availability-approved'
-        });
-      }
-      const outboxCount = loadEmailOutbox().length;
-      alert(`Request${targetRequests.length === 1 ? '' : 's'} approved. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
-      render();
+      approveAvailabilityRequestsByIds(ids);
     });
   });
 
   document.querySelectorAll('[data-reject-availability-request-ids]').forEach((button) => {
     button.addEventListener('click', () => {
-      if (!canManageAvailability(getCurrentUser())) return;
       const ids = String(button.getAttribute('data-reject-availability-request-ids') || '')
         .split(',')
         .map((value) => Number(value))
         .filter((value) => Number.isFinite(value));
-      if (ids.length === 0) return;
-      const allAvailabilityRequests = getAllAvailabilityRequests();
-      const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
-      if (targetRequests.length === 0) return;
-
-      const updatedAt = getCurrentIsoTimestamp();
-      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => (ids.includes(Number(item.id)) ? { ...item, status: 'rejected', updatedAt } : item));
-      saveAvailabilityRequests(nextAvailabilityRequests);
-      saveState();
-
-      const primaryRequest = targetRequests[0];
-      const requestOwner = getUserByAgentId(primaryRequest.agentId);
-      const recipientEmail = primaryRequest.requesterEmail || requestOwner?.email || '';
-      const recipientName = primaryRequest.requesterName || requestOwner?.username || 'Agent';
-      if (recipientEmail) {
-        const seriesLabel = targetRequests.length > 1 ? ` (${targetRequests.length} requests)` : '';
-        sendEmailNotification({
-          to: recipientEmail,
-          subject: 'Unavailability request denied',
-          body: `Hi ${recipientName}, your unavailability request${seriesLabel} was denied by an admin.\n\nIf you have questions, contact your manager.`,
-          type: 'availability-rejected'
-        });
-      }
-
-      const outboxCount = loadEmailOutbox().length;
-      const emailStatus = recipientEmail
-        ? ` Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`
-        : ' No agent email was found, so no notification email was queued.';
-      alert(`Request${targetRequests.length === 1 ? '' : 's'} denied.${emailStatus}`);
-      render();
+      rejectAvailabilityRequestsByIds(ids);
     });
   });
 
@@ -13655,49 +13702,73 @@ function bindEvents() {
         .filter((value) => Number.isFinite(value));
       if (ids.length === 0) return;
       deleteAvailabilityRequestsByIds(ids);
-      return;
-      const allAvailabilityRequests = getAllAvailabilityRequests();
-      const targetRequests = allAvailabilityRequests.filter((item) => ids.includes(Number(item.id)));
-      if (targetRequests.length === 0) return;
-      const primaryRequest = targetRequests[0];
+    });
+  });
 
-      const agentName = getAgent(primaryRequest.agentId)?.name || primaryRequest.requesterName || 'this agent';
-      const requestLabel = targetRequests.length > 1
-        ? `${targetRequests.length} recurring availability submissions`
-        : `${String(primaryRequest.unavailabilityType || '').trim() || 'availability'} submission`;
-      const shouldDelete = confirm(
-        `Delete ${requestLabel} for ${agentName}${targetRequests.length > 1 ? '' : ` on ${primaryRequest.unavailableDate || 'the selected date'}`}?`
-      );
-      if (!shouldDelete) return;
+  const selectedAvailabilityRequestCheckboxes = Array.from(document.querySelectorAll('[data-select-availability-request-ids]'));
+  const selectAllAvailabilityRequests = document.getElementById('availability-select-all-requests');
+  const selectedAvailabilityRequestCount = document.getElementById('availability-selected-count');
+  const approveSelectedAvailabilityRequests = document.getElementById('availability-approve-selected');
+  const denySelectedAvailabilityRequests = document.getElementById('availability-deny-selected');
+  const deleteSelectedAvailabilityRequests = document.getElementById('availability-delete-selected');
 
-      const nextAvailabilityRequests = allAvailabilityRequests.map((item) => ids.includes(Number(item.id))
-        ? {
-            ...item,
-            status: 'deleted',
-            deletedAt: getCurrentIsoTimestamp()
-          }
-        : item);
-      saveAvailabilityRequests(nextAvailabilityRequests);
-      saveState();
+  const getSelectedAvailabilityRequestIds = (options = {}) => {
+    const pendingOnly = Boolean(options.pendingOnly);
+    return Array.from(new Set(selectedAvailabilityRequestCheckboxes
+      .filter((checkbox) => checkbox.checked)
+      .filter((checkbox) => !pendingOnly || checkbox.getAttribute('data-select-availability-request-status') === 'pending')
+      .flatMap((checkbox) => String(checkbox.getAttribute('data-select-availability-request-ids') || '')
+        .split(',')
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value)))));
+  };
 
-      const requestOwner = getUserByAgentId(primaryRequest.agentId);
-      const recipientEmail = primaryRequest.requesterEmail || requestOwner?.email || '';
-      const recipientName = primaryRequest.requesterName || requestOwner?.username || agentName || 'Agent';
-      if (recipientEmail) {
-        sendEmailNotification({
-          to: recipientEmail,
-          subject: 'Unavailability submission deleted',
-          body: `Hi ${recipientName}, an admin deleted your ${targetRequests.length > 1 ? `${targetRequests.length} recurring availability submissions` : `${String(primaryRequest.unavailabilityType || '').trim() || 'availability'} submission`}.\n\nDate: ${primaryRequest.unavailableDate || 'Not set'}\nTime: ${formatTimeRange(primaryRequest.unavailableStart, primaryRequest.unavailableEnd)}\nStatus at deletion: ${primaryRequest.status || 'pending'}\n\nIf this was unexpected, contact your manager.`,
-          type: 'availability-deleted'
-        });
-      }
+  const updateAvailabilityRequestSelectionControls = () => {
+    const selectedCheckboxes = selectedAvailabilityRequestCheckboxes.filter((checkbox) => checkbox.checked);
+    const selectedCount = selectedCheckboxes.length;
+    const selectedPendingCount = selectedCheckboxes.filter((checkbox) => checkbox.getAttribute('data-select-availability-request-status') === 'pending').length;
+    if (selectedAvailabilityRequestCount) {
+      selectedAvailabilityRequestCount.textContent = `${selectedCount} selected`;
+    }
+    if (selectAllAvailabilityRequests instanceof HTMLInputElement) {
+      selectAllAvailabilityRequests.checked = selectedCount > 0 && selectedCount === selectedAvailabilityRequestCheckboxes.length;
+      selectAllAvailabilityRequests.indeterminate = selectedCount > 0 && selectedCount < selectedAvailabilityRequestCheckboxes.length;
+    }
+    if (approveSelectedAvailabilityRequests instanceof HTMLButtonElement) {
+      approveSelectedAvailabilityRequests.disabled = selectedPendingCount === 0;
+    }
+    if (denySelectedAvailabilityRequests instanceof HTMLButtonElement) {
+      denySelectedAvailabilityRequests.disabled = selectedPendingCount === 0;
+    }
+    if (deleteSelectedAvailabilityRequests instanceof HTMLButtonElement) {
+      deleteSelectedAvailabilityRequests.disabled = selectedCount === 0;
+    }
+  };
 
-      const outboxCount = loadEmailOutbox().length;
-      const emailStatus = recipientEmail
-        ? ` Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`
-        : ' No agent email was found, so no notification email was queued.';
-      alert(`Submission${targetRequests.length === 1 ? '' : 's'} deleted.${emailStatus}`);
-      render();
+  selectAllAvailabilityRequests?.addEventListener('change', (event) => {
+    const checked = Boolean(event.currentTarget.checked);
+    selectedAvailabilityRequestCheckboxes.forEach((checkbox) => {
+      checkbox.checked = checked;
+    });
+    updateAvailabilityRequestSelectionControls();
+  });
+
+  selectedAvailabilityRequestCheckboxes.forEach((checkbox) => {
+    checkbox.addEventListener('change', updateAvailabilityRequestSelectionControls);
+  });
+
+  approveSelectedAvailabilityRequests?.addEventListener('click', () => {
+    approveAvailabilityRequestsByIds(getSelectedAvailabilityRequestIds({ pendingOnly: true }));
+  });
+
+  denySelectedAvailabilityRequests?.addEventListener('click', () => {
+    rejectAvailabilityRequestsByIds(getSelectedAvailabilityRequestIds({ pendingOnly: true }));
+  });
+
+  deleteSelectedAvailabilityRequests?.addEventListener('click', () => {
+    const ids = getSelectedAvailabilityRequestIds();
+    deleteAvailabilityRequestsByIds(ids, {
+      confirmMessage: `Delete the ${ids.length} selected availability submission${ids.length === 1 ? '' : 's'}?`
     });
   });
 
