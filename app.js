@@ -8624,7 +8624,7 @@ function renderAdminOptionsPage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>Admin options</h1>
-          <p class="muted">Manage shift templates, roles, venues, and role colors from one page.</p>
+          <p class="muted">Manage shift templates, policies, teams, locations, roles, and venues from one page.</p>
         </div>
         <div class="row">
           ${renderAdminNavigationLinks({ includeExport: true })}
@@ -8633,8 +8633,8 @@ function renderAdminOptionsPage(currentUser) {
         </div>
       </div>
 
-      <div class="grid" style="grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px;">
-        <div class="panel">
+      <div class="grid" style="grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px;">
+        <div class="panel" style="grid-column:1 / 3; grid-row:1;">
           <h2>Shift templates${blackoutDepartmentScope ? ` (${escapeHtml(blackoutDepartmentScope)})` : ' (All departments)'}</h2>
           <form id="add-shift-template-form" class="stack" style="margin-bottom:12px;">
             <div class="row" style="flex-wrap:wrap;">
@@ -8679,7 +8679,7 @@ function renderAdminOptionsPage(currentUser) {
         </div>
 
         <div style="display:contents;">
-        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-roles">
+        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-roles" style="grid-column:3; grid-row:2;">
           <h2>Roles${blackoutDepartmentScope ? ` (${escapeHtml(blackoutDepartmentScope)})` : ' (All departments)'}</h2>
           <form id="add-shift-role-form" class="row" style="margin-bottom:10px;">
             <input name="role" placeholder="Add role" required />
@@ -8713,8 +8713,8 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
-        <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; grid-column:1 / -1;">
-        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-teams">
+        <div style="display:contents;">
+        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-teams" style="grid-column:1; grid-row:2;">
           <h2>Teams</h2>
           <p class="muted">Manage team names and colors used across the dashboard and agent profiles.</p>
           <form id="add-team-form" class="row" style="margin-bottom:10px;">
@@ -8738,7 +8738,7 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
-        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-agent-locations">
+        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-agent-locations" style="grid-column:2; grid-row:2;">
           <h2>Locations</h2>
           <p class="muted">Manage the Location options assigned to agent profiles. These are separate from shift Venues.</p>
           <form id="add-agent-location-form" class="row" style="margin-bottom:10px;">
@@ -8762,7 +8762,7 @@ function renderAdminOptionsPage(currentUser) {
           </div>
         </div>
 
-        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-venues">
+        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-venues" style="grid-column:4; grid-row:2;">
           <h2>Venues</h2>
           ${blackoutDepartmentScope === 'Box Office' ? '' : `
           <form id="add-shift-location-form" class="row" style="margin-bottom:10px;">
@@ -8780,7 +8780,7 @@ function renderAdminOptionsPage(currentUser) {
 
         </div>
 
-        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-policies" style="grid-column:1 / -1;">
+        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-policies" style="grid-column:3 / 5; grid-row:1;">
           <h2>Policies</h2>
           <p class="muted">Upload policy files that agents can view and download from the Policies page.</p>
           <form id="upload-policy-form" class="row" style="margin-bottom:10px; flex-wrap:wrap;">
