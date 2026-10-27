@@ -1893,7 +1893,8 @@ function saveAuthUsers({ persistProfilePhotos = true } = {}) {
 function saveAuthUsersToBackend() {
   const serializedUsers = serializeAuthUsersForStorage(authUsers);
   if (!backendApiBase || serializedUsers.length === 0) return Promise.resolve(false);
-  return pushSharedKeyToBackend(authUsersKey, JSON.stringify(serializedUsers));
+  const rawUsers = JSON.stringify(serializedUsers);
+  return performSharedKeyPush(authUsersKey, rawUsers);
 }
 
 function loadPasswordResetRequests() {
@@ -3987,7 +3988,17 @@ function saveState() {
 }
 
 async function saveStateToBackendFallback() {
-  return pushSharedKeyToBackend(storageKey, JSON.stringify(getPersistableStateSnapshot()));
+  const serializedState = JSON.stringify(getPersistableStateSnapshot());
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const didSave = await performSharedKeyPush(storageKey, serializedState);
+    if (didSave) {
+      return true;
+    }
+    if (attempt < 2) {
+      await new Promise((resolve) => window.setTimeout(resolve, 750 * (attempt + 1)));
+    }
+  }
+  return false;
 }
 
 function didPersistTemplates() {
