@@ -1449,7 +1449,7 @@ async function pollBackendSync() {
   const remoteStore = await fetchBackendSnapshot();
   if (!remoteStore || isSharedEditInProgress()) {
     if (localStorage.getItem(pendingStateSnapshotSyncKey) === '1') {
-      await flushLocalSnapshotSync();
+      void flushLocalSnapshotSync();
     }
     return;
   }
@@ -9463,8 +9463,8 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Targets:</strong> shifts/week max ${escapeHtml(agent.maxShiftsPerWeek ?? 'Not set')}, in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
                 </div>
                 <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
-                  ${canEditAgentProfiles ? `<button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:6px 9px;">Edit</button>` : ''}
-                  ${isAdminUser(currentUser) ? `<button class="secondary" type="button" disabled title="Use Edit to make changes" style="padding:6px 9px; cursor:not-allowed;">Save</button><button class="secondary" type="button" data-resend-agent-invite="${agent.id}" style="padding:6px 9px;">Resend</button><button class="danger" data-remove-agent="${agent.id}" type="button" style="padding:6px 9px;">Remove</button>` : ''}
+                  ${canEditAgentProfiles ? `<button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:6px 9px;">Edit agent</button>` : ''}
+                  ${isAdminUser(currentUser) ? `<button class="secondary" type="button" data-resend-agent-invite="${agent.id}" style="padding:6px 9px;">Resend invite</button><button class="danger" data-remove-agent="${agent.id}" type="button" style="padding:6px 9px;">Remove</button>` : ''}
                 </div>
               </div>
             </div>
@@ -12421,8 +12421,9 @@ function bindEvents() {
     render();
   });
 
-  document.getElementById('bulk-agent-edit-form')?.addEventListener('submit', (event) => {
+  document.getElementById('bulk-agent-edit-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
+    const submitButton = event.currentTarget.querySelector('button[type="submit"]');
     if (selectedAgentIds.size === 0) {
       alert('Select at least one agent first.');
       return;
@@ -12453,17 +12454,38 @@ function bindEvents() {
         : user);
     }
 
-    const didSaveState = saveState();
-    const didSaveAuthUsers = !accessRole || saveAuthUsers({ persistProfilePhotos: false });
-    if (!didSaveState || !didSaveAuthUsers) {
-      alert('Unable to save the bulk agent changes right now.');
-      syncFromStorage();
-      render();
-      return;
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = 'Saving...';
     }
-    selectedAgentIds.clear();
-    alert(`Updated ${selectedCount} agent${selectedCount === 1 ? '' : 's'}.`);
-    render();
+
+    try {
+      const didSaveStateLocally = saveState();
+      const didSaveState = didSaveStateLocally || await saveStateToBackendFallback();
+      if (!didSaveState) {
+        alert('Unable to save the bulk agent changes to browser storage or the shared backend. Please try again.');
+        syncFromStorage();
+        render();
+        return;
+      }
+
+      const didSaveAuthUsersLocally = !accessRole || saveAuthUsers({ persistProfilePhotos: false });
+      const didSaveAuthUsers = didSaveAuthUsersLocally || await saveAuthUsersToBackend();
+      if (!didSaveAuthUsers) {
+        alert('The agent profiles were saved, but access-level changes could not be synchronized. Please try the access-level update again.');
+        render();
+        return;
+      }
+
+      await flushLocalSnapshotSync();
+      selectedAgentIds.clear();
+      alert(`Updated ${selectedCount} agent${selectedCount === 1 ? '' : 's'}.`);
+      render();
+    } catch (error) {
+      console.error('Unable to save bulk agent changes.', error);
+      alert('Unable to save the bulk agent changes. Please try again.');
+      render();
+    }
   });
 
   document.getElementById('toggle-availability-requests')?.addEventListener('click', () => {
