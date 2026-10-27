@@ -5393,7 +5393,7 @@ function saveAgentDetails(agentId, values) {
     }));
   }
 
-  const didSaveAuthUsers = saveAuthUsers();
+  const didSaveAuthUsers = saveAuthUsers({ persistProfilePhotos: false });
   const didSaveState = saveState();
   if (!didSaveAuthUsers || !didSaveState) {
     syncFromStorage();
