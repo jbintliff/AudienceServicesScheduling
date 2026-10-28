@@ -20,6 +20,8 @@ const sessionKey = 'agent-scheduler-session-v1';
 const availabilityRequestsKey = 'agent-scheduler-availability-requests-v1';
 const availabilityInboxKey = 'agent-scheduler-availability-inbox-v1';
 const availabilityRequestLedgerKey = 'agent-scheduler-availability-ledger-v1';
+const auxiliaryAvailabilityKeys = [availabilityRequestsKey, availabilityInboxKey, availabilityRequestLedgerKey];
+let skipAuxiliaryAvailabilityCaches = false;
 const passwordResetRequestsKey = 'agent-scheduler-password-reset-requests-v1';
 const rememberedLoginKey = 'agent-scheduler-remembered-login-v1';
 const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
@@ -1052,9 +1054,31 @@ function clearPendingStateSnapshotSyncIfCurrent(snapshotValue) {
   }
 }
 
+// The availability request caches duplicate data already held in the main state and on the server.
+// When browser storage is full they are dropped so the agent/schedule state can still be saved.
+function evictAuxiliaryAvailabilityCaches() {
+  skipAuxiliaryAvailabilityCaches = true;
+  auxiliaryAvailabilityKeys.forEach((key) => {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Nothing else to free if removal fails.
+    }
+  });
+}
+
 function safeSetLocalStorage(key, value) {
+  if (skipAuxiliaryAvailabilityCaches && auxiliaryAvailabilityKeys.includes(key)) {
+    return false;
+  }
   try {
-    localStorage.setItem(key, value);
+    try {
+      localStorage.setItem(key, value);
+    } catch (error) {
+      if (key !== storageKey && key !== authUsersKey) throw error;
+      evictAuxiliaryAvailabilityCaches();
+      localStorage.setItem(key, value);
+    }
     if (key === storageKey) {
       try {
         localStorage.setItem(pendingStateSnapshotSyncKey, '1');
@@ -1396,7 +1420,18 @@ function applyRemoteSnapshot(store) {
       if (!Object.prototype.hasOwnProperty.call(store, key)) return;
       const value = store[key];
       if (typeof value === 'string') {
-        localStorage.setItem(key, value);
+        if (skipAuxiliaryAvailabilityCaches && auxiliaryAvailabilityKeys.includes(key)) return;
+        try {
+          localStorage.setItem(key, value);
+        } catch {
+          if (key !== storageKey && key !== authUsersKey) return;
+          evictAuxiliaryAvailabilityCaches();
+          try {
+            localStorage.setItem(key, value);
+          } catch {
+            console.warn('Unable to store the shared snapshot locally.');
+          }
+        }
       }
     });
   } finally {
@@ -1488,6 +1523,7 @@ function isSharedEditInProgress() {
   if (pageMode === 'agents' && (
     selectedAgentIds.size > 0
     || document.getElementById('agent-edit-modal-overlay')
+    || document.getElementById('add-agent-modal-overlay')
     || document.getElementById('bulk-agent-edit-form')?.matches(':focus-within')
   )) {
     return true;
@@ -5445,16 +5481,21 @@ async function saveAgentDetails(agentId, values) {
     console.warn('Agent profile saved, but account metadata could not be saved locally.');
   }
 
-  // Push agent/account changes and wait for the result so "saved" reflects the shared backend, not just this browser.
+  // Wait for the shared backend (with retries for brief outages) so "saved" reflects what other devices will see.
   let didSyncBackend = true;
   if (backendApiBase) {
     didSyncBackend = false;
-    try {
-      didSyncBackend = await pushLocalSnapshotToBackend();
-    } catch {
-      didSyncBackend = false;
+    const rawState = JSON.stringify(getPersistableStateSnapshot());
+    const rawUsers = JSON.stringify(serializeAuthUsersForStorage(authUsers));
+    for (let attempt = 0; attempt < 4 && !didSyncBackend; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1000 * attempt));
+      }
+      didSyncBackend = await performSharedKeyPush(storageKey, rawState)
+        && await performSharedKeyPush(authUsersKey, rawUsers);
     }
     if (didSyncBackend) {
+      clearPendingStateSnapshotSyncIfCurrent(rawState);
       markSyncSuccess();
     }
   }
@@ -5467,6 +5508,102 @@ async function saveAgentDetails(agentId, values) {
   }
 
   return { ok: true, warning };
+}
+
+function openAddAgentModal(onSubmit) {
+  document.getElementById('add-agent-modal-overlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'add-agent-modal-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(2,6,23,0.72); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:min(720px, 100%); max-height:90vh; overflow:auto; background:#0b1220; color:#e5e7eb; border:1px solid rgba(255,255,255,0.18); border-radius:14px; padding:18px; box-shadow:0 24px 64px rgba(0,0,0,0.5);">
+      <h2 style="margin:0 0 12px;">Add agent</h2>
+      <p class="muted" style="margin:0 0 14px;">Create a new agent and their login account.</p>
+      <form id="add-agent-form" class="stack">
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Name</span>
+            <input name="name" required />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Email (optional)</span>
+            <input name="email" type="email" />
+          </label>
+        </div>
+        <div class="row" style="flex-wrap:wrap;">
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Access level</span>
+            <select name="accessRole" required>
+              <option value="${userRoles.agent}">Agent</option>
+              <option value="${userRoles.teamLead}">Team lead</option>
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Team</span>
+            <select name="team" required>
+              ${teamOptions.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join('')}
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Department</span>
+            <select name="department">
+              <option value="">No department</option>
+              ${departmentOptions.map((department) => `<option value="${escapeHtml(department)}">${escapeHtml(department)}</option>`).join('')}
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
+            <span>Location</span>
+            <select name="location">
+              <option value="">No location</option>
+              ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px;">
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Pay rate</span>
+            <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Pronouns</span>
+            <input name="pronouns" placeholder="e.g. she/her" maxlength="80" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Max shifts per week</span>
+            <input name="maxShiftsPerWeek" type="number" inputmode="numeric" step="1" min="0" />
+          </label>
+        </div>
+        <div class="row" style="justify-content:flex-end; margin-top:8px;">
+          <button type="button" id="add-agent-cancel" class="secondary">Cancel</button>
+          <button type="submit">Add agent</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  const closeModal = () => {
+    document.removeEventListener('keydown', onEscape);
+    overlay.remove();
+  };
+  const onEscape = (event) => {
+    if (event.key === 'Escape') closeModal();
+  };
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) closeModal();
+  });
+  overlay.querySelector('#add-agent-cancel')?.addEventListener('click', closeModal);
+  overlay.querySelector('#add-agent-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (onSubmit(new FormData(event.currentTarget))) {
+      closeModal();
+    }
+  });
+
+  document.addEventListener('keydown', onEscape);
+  document.body.appendChild(overlay);
+  overlay.querySelector('input[name="name"]')?.focus();
 }
 
 function openAgentEditModal(agent, onSave) {
@@ -9434,31 +9571,7 @@ function renderAgentsPage(currentUser) {
           <button type="submit">Apply to selected</button>
           <span id="selected-agent-count" class="muted">${selectedAgentIds.size} selected</span>
         </form>` : ''}
-        ${isAdminUser(currentUser) ? `<form id="add-agent-form" class="stack">
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(112px, 1fr)); gap:5px; align-items:end;">
-            <input name="name" placeholder="Name" required />
-            <input name="email" type="email" placeholder="Email (optional)" />
-            <select name="accessRole" required>
-              <option value="${userRoles.agent}">Agent</option>
-              <option value="${userRoles.teamLead}">Team lead</option>
-            </select>
-            <select name="team" required>
-              ${teamOptions.map((team) => `<option value="${team}">${escapeHtml(team)}</option>`).join('')}
-            </select>
-            <select name="department">
-              <option value="">No department</option>
-              ${departmentOptions.map((department) => `<option value="${department}">${escapeHtml(department)}</option>`).join('')}
-            </select>
-            <select name="location">
-              <option value="">No location</option>
-              ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
-            </select>
-            <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
-            <input name="pronouns" placeholder="Pronouns (e.g. she/her)" maxlength="80" />
-            <input name="maxShiftsPerWeek" type="number" inputmode="numeric" step="1" min="0" placeholder="Max shifts/week" />
-            <button type="submit" style="white-space:nowrap;">Add agent</button>
-          </div>
-        </form>` : ''}
+        ${isAdminUser(currentUser) ? `<div class="row" style="justify-content:flex-end;"><button type="button" id="open-add-agent-modal" style="white-space:nowrap;">Add agent</button></div>` : ''}
         <div class="agent-list" style="margin-top:8px; display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:6px;">
           ${sortedAgents.map((agent) => `
             <div class="card" style="padding:8px;">
@@ -9477,9 +9590,9 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Shiftboard ID:</strong> ${escapeHtml(normalizeShiftboardId(agent.shiftboardId) || 'Not set')}</div>
                   <div><strong>Targets:</strong> shifts/week max ${escapeHtml(agent.maxShiftsPerWeek ?? 'Not set')}, in-office max ${escapeHtml(agent.maxInOfficeShifts ?? 'Not set')}</div>
                 </div>
-                <div class="row" style="gap:6px; justify-content:flex-end; flex-wrap:wrap;">
-                  ${canEditAgentProfiles ? `<button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:6px 9px;">Edit agent</button>` : ''}
-                  ${isAdminUser(currentUser) ? `<button class="secondary" type="button" data-resend-agent-invite="${agent.id}" style="padding:6px 9px;">Resend invite</button><button class="danger" data-remove-agent="${agent.id}" type="button" style="padding:6px 9px;">Remove</button>` : ''}
+                <div class="row" style="gap:4px; justify-content:flex-end; flex-wrap:nowrap;">
+                  ${canEditAgentProfiles ? `<button class="secondary" type="button" data-edit-agent="${agent.id}" style="padding:4px 7px; font-size:12px; white-space:nowrap;">Edit agent</button>` : ''}
+                  ${isAdminUser(currentUser) ? `<button class="secondary" type="button" data-resend-agent-invite="${agent.id}" style="padding:4px 7px; font-size:12px; white-space:nowrap;">Resend invite</button><button class="danger" data-remove-agent="${agent.id}" type="button" style="padding:4px 7px; font-size:12px; white-space:nowrap;">Remove</button>` : ''}
                 </div>
               </div>
             </div>
@@ -11620,10 +11733,14 @@ function bindEvents() {
     });
   });
 
-  document.getElementById('add-agent-form')?.addEventListener('submit', (event) => {
-    event.preventDefault();
+  document.getElementById('open-add-agent-modal')?.addEventListener('click', () => {
     if (!isAdminUser(getCurrentUser())) return;
-    const formData = new FormData(event.currentTarget);
+    openAddAgentModal(submitNewAgent);
+  });
+
+  // Returns true when the agent was created so the modal can close; false keeps it open for corrections.
+  function submitNewAgent(formData) {
+    if (!isAdminUser(getCurrentUser())) return false;
     const name = formData.get('name')?.toString().trim();
     const email = normalizeEmail(formData.get('email'));
     const requestedAccessRole = normalizeUserRole(formData.get('accessRole'));
@@ -11635,11 +11752,11 @@ function bindEvents() {
     const maxShiftsPerWeek = normalizeMaxShiftsPerWeek(formData.get('maxShiftsPerWeek'));
     if (!name) {
       alert('Name is required to add an agent.');
-      return;
+      return false;
     }
     if (!Number.isFinite(payRate) || payRate < 0) {
       alert('Pay rate must be a valid non-negative amount (example: $15.45).');
-      return;
+      return false;
     }
     const emailInUse = email && authUsers.some((user) => {
       if (normalizeEmail(user.email) !== email) return false;
@@ -11648,7 +11765,7 @@ function bindEvents() {
     });
     if (emailInUse) {
       alert('That email is already in use by another account.');
-      return;
+      return false;
     }
     if (email) {
       authUsers = authUsers.filter((user) => {
@@ -11699,7 +11816,7 @@ function bindEvents() {
       alert('Unable to save the new agent permanently. Please check browser storage settings and try again.');
       syncFromStorage();
       render();
-      return;
+      return false;
     }
 
     state.ui.agentSearch = '';
@@ -11719,7 +11836,8 @@ function bindEvents() {
       alert(`Agent added and invitation email queued for delivery. Email outbox now has ${outboxCount} message${outboxCount === 1 ? '' : 's'}.`);
     }
     render();
-  });
+    return true;
+  }
 
   document.getElementById('add-shift-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();

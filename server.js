@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -39,6 +40,9 @@ function ensureDataFile() {
   }
   if (!fs.existsSync(dataFilePath)) {
     fs.writeFileSync(dataFilePath, getSeedDataFileContent(), 'utf8');
+    return;
+  }
+  if (isStoreCacheCurrent() && storeCache.agentCount > 0) {
     return;
   }
   if (getStoredAgentCountFromFile(dataFilePath) === 0 && getSeedAgentCount() > 0) {
@@ -97,22 +101,80 @@ function deletePolicyFileRecord(policyId) {
   }
 }
 
+// Parsed copy of data.json, reused until the file changes so frequent polling does not re-read and re-parse it.
+let storeCache = { mtimeMs: 0, size: 0, store: null, agentCount: 0, body: null, gzipBody: null };
+let lastGoodStore = null;
+
+function isStoreCacheCurrent() {
+  if (!storeCache.store) return false;
+  try {
+    const stat = fs.statSync(dataFilePath);
+    return stat.mtimeMs === storeCache.mtimeMs && stat.size === storeCache.size;
+  } catch {
+    return false;
+  }
+}
+
+function parseStoreFile(filePath) {
+  const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  return parsed?.store && typeof parsed.store === 'object' ? parsed.store : null;
+}
+
+// If data.json is unreadable, fall back to the newest readable backup instead of treating the data as empty.
+function readLatestBackupStore() {
+  try {
+    const backups = fs.readdirSync(dataBackupsDirPath)
+      .filter((name) => /^data-.*\.json$/.test(name))
+      .map((name) => ({ filePath: path.join(dataBackupsDirPath, name), mtimeMs: fs.statSync(path.join(dataBackupsDirPath, name)).mtimeMs }))
+      .sort((left, right) => right.mtimeMs - left.mtimeMs);
+    for (const backup of backups) {
+      try {
+        const store = parseStoreFile(backup.filePath);
+        if (store && getStoredAgentCount(store) > 0) return store;
+      } catch {
+        // Try the next backup.
+      }
+    }
+  } catch {
+    // No backups available.
+  }
+  return null;
+}
+
 function readStore() {
+  if (isStoreCacheCurrent()) {
+    return { ...storeCache.store };
+  }
   ensureDataFile();
   try {
-    const raw = fs.readFileSync(dataFilePath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return parsed?.store && typeof parsed.store === 'object' ? parsed.store : {};
-  } catch {
-    return {};
+    const stat = fs.statSync(dataFilePath);
+    const store = parseStoreFile(dataFilePath) || {};
+    storeCache = { mtimeMs: stat.mtimeMs, size: stat.size, store, agentCount: getStoredAgentCount(store), body: null, gzipBody: null };
+    if (storeCache.agentCount > 0) lastGoodStore = store;
+    return { ...store };
+  } catch (error) {
+    console.error('Failed to read data file; falling back to the last good copy or latest backup.', error);
+    storeCache = { mtimeMs: 0, size: 0, store: null, agentCount: 0, body: null, gzipBody: null };
+    return { ...(lastGoodStore || readLatestBackupStore() || {}) };
   }
+}
+
+function writeDataFileAtomically(contents) {
+  const tempPath = `${dataFilePath}.tmp`;
+  fs.writeFileSync(tempPath, contents, 'utf8');
+  fs.renameSync(tempPath, dataFilePath);
 }
 
 function backupCurrentDataFile() {
   ensureDataFile();
+  if (getStoredAgentCountFromFile(dataFilePath) === 0) return;
   if (!fs.existsSync(dataBackupsDirPath)) {
     fs.mkdirSync(dataBackupsDirPath, { recursive: true });
   }
+  const newestBackupMs = fs.readdirSync(dataBackupsDirPath)
+    .filter((name) => /^data-.*\.json$/.test(name))
+    .reduce((newest, name) => Math.max(newest, fs.statSync(path.join(dataBackupsDirPath, name)).mtimeMs), 0);
+  if (Date.now() - newestBackupMs < 2 * 60 * 1000) return;
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   fs.copyFileSync(dataFilePath, path.join(dataBackupsDirPath, `data-${timestamp}.json`));
 
@@ -216,7 +278,7 @@ function writeStore(incomingStore) {
   }
   backupCurrentDataFile();
   const next = { store };
-  fs.writeFileSync(dataFilePath, JSON.stringify(next, null, 2), 'utf8');
+  writeDataFileAtomically(JSON.stringify(next, null, 2));
 }
 
 function filterAllowedStore(store) {
@@ -484,8 +546,33 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-app.get('/api/snapshot', (_req, res) => {
-  res.json({ store: readStore() });
+app.get('/api/snapshot', (req, res) => {
+  const store = readStore();
+  if (!storeCache.store) {
+    res.json({ store });
+    return;
+  }
+  if (storeCache.body === null) {
+    storeCache.body = JSON.stringify({ store: storeCache.store });
+  }
+  const etag = `"${storeCache.mtimeMs}-${storeCache.size}"`;
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Vary', 'Accept-Encoding');
+  res.type('application/json');
+  if (req.fresh) {
+    res.status(304).end();
+    return;
+  }
+  if (/\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+    if (storeCache.gzipBody === null) {
+      storeCache.gzipBody = zlib.gzipSync(storeCache.body);
+    }
+    res.setHeader('Content-Encoding', 'gzip');
+    res.send(storeCache.gzipBody);
+    return;
+  }
+  res.send(storeCache.body);
 });
 
 app.put('/api/snapshot', (req, res) => {
@@ -640,6 +727,10 @@ app.get('/api/calendar-feed/:token.ics', (req, res) => {
     res.status(500).send('Calendar feed generation failed');
   }
 });
+
+// Keep serving after an unexpected error in a single request instead of dropping every client.
+process.on('uncaughtException', (error) => console.error('Uncaught exception', error));
+process.on('unhandledRejection', (error) => console.error('Unhandled rejection', error));
 
 app.listen(port, () => {
   console.log(`Scheduler backend running on http://localhost:${port}`);
