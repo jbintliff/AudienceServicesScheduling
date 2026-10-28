@@ -562,6 +562,7 @@ const defaultState = {
     availabilityAllTo: '',
     availabilityAllAgentId: 'All',
     availabilityAllStatus: 'All',
+    availabilityAllType: 'All',
     availabilityAllRequestsHidden: false,
     availabilitySwapFrom: '',
     availabilitySwapTo: '',
@@ -846,6 +847,7 @@ function getDefaultUiState() {
     availabilityAllTo: '',
     availabilityAllAgentId: 'All',
     availabilityAllStatus: 'All',
+    availabilityAllType: 'All',
     availabilityAllRequestsHidden: false,
     availabilitySwapFrom: '',
     availabilitySwapTo: '',
@@ -906,6 +908,7 @@ function normalizeUiState(source) {
     availabilityAllTo: source?.availabilityAllTo || defaults.availabilityAllTo,
     availabilityAllAgentId: source?.availabilityAllAgentId || defaults.availabilityAllAgentId,
     availabilityAllStatus: source?.availabilityAllStatus || defaults.availabilityAllStatus,
+    availabilityAllType: source?.availabilityAllType || defaults.availabilityAllType,
     availabilityAllRequestsHidden: Boolean(source?.availabilityAllRequestsHidden),
     availabilitySwapFrom: source?.availabilitySwapFrom || defaults.availabilitySwapFrom,
     availabilitySwapTo: source?.availabilitySwapTo || defaults.availabilitySwapTo,
@@ -2494,6 +2497,7 @@ function applyAccessForUser(user) {
       state.ui.availabilityAllTo = '';
       state.ui.availabilityAllAgentId = 'All';
       state.ui.availabilityAllStatus = 'All';
+      state.ui.availabilityAllType = 'All';
       state.ui.availabilitySwapFrom = '';
       state.ui.availabilitySwapTo = '';
       state.ui.availabilitySwapAgentId = 'All';
@@ -4083,6 +4087,7 @@ function filterAvailabilityRequestsForAdminList(requests, filters = {}) {
   const to = String(filters.to || '').trim();
   const agentId = String(filters.agentId || 'All');
   const status = String(filters.status || 'All');
+  const type = String(filters.type || 'All');
 
   return (Array.isArray(requests) ? requests : []).filter((request) => {
     const requestDate = getAvailabilityRequestDate(request);
@@ -4092,7 +4097,8 @@ function filterAvailabilityRequestsForAdminList(requests, filters = {}) {
     const matchesTo = !to || (requestDate && requestDate <= to);
     const matchesAgent = agentId === 'All' || String(request?.agentId || '') === agentId;
     const matchesStatus = status === 'All' || normalizedStatus === status;
-    return matchesFrom && matchesTo && matchesAgent && matchesStatus;
+    const matchesType = type === 'All' || getAvailabilityRequestTypeMeta(request).key === type;
+    return matchesFrom && matchesTo && matchesAgent && matchesStatus && matchesType;
   });
 }
 
@@ -9796,7 +9802,8 @@ function renderAvailabilityRequestsPage(currentUser) {
     from: state.ui.availabilityAllFrom || '',
     to: state.ui.availabilityAllTo || '',
     agentId: state.ui.availabilityAllAgentId || 'All',
-    status: state.ui.availabilityAllStatus || 'All'
+    status: state.ui.availabilityAllStatus || 'All',
+    type: state.ui.availabilityAllType || 'All'
   };
   const swapRequestFilters = {
     from: state.ui.availabilitySwapFrom || '',
@@ -10019,6 +10026,15 @@ function renderAvailabilityRequestsPage(currentUser) {
               <option value="pending" ${allRequestFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
               <option value="approved" ${allRequestFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
               <option value="rejected" ${allRequestFilters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:4px;">
+            <span class="muted">Request type</span>
+            <select id="availability-all-type-filter" style="max-width:220px;">
+              <option value="All" ${allRequestFilters.type === 'All' ? 'selected' : ''}>All types</option>
+              <option value="pto" ${allRequestFilters.type === 'pto' ? 'selected' : ''}>PTO</option>
+              <option value="availability-once" ${allRequestFilters.type === 'availability-once' ? 'selected' : ''}>One-time availability</option>
+              <option value="availability-recurring" ${allRequestFilters.type === 'availability-recurring' ? 'selected' : ''}>Repeating availability</option>
             </select>
           </label>
           <button id="availability-all-filters-apply" type="button">Apply filters</button>
@@ -12976,10 +12992,12 @@ function bindEvents() {
     const toInput = document.getElementById('availability-all-to-filter');
     const agentInput = document.getElementById('availability-all-agent-filter');
     const statusInput = document.getElementById('availability-all-status-filter');
+    const typeInput = document.getElementById('availability-all-type-filter');
     state.ui.availabilityAllFrom = fromInput?.value || '';
     state.ui.availabilityAllTo = toInput?.value || '';
     state.ui.availabilityAllAgentId = agentInput?.value || 'All';
     state.ui.availabilityAllStatus = statusInput?.value || 'All';
+    state.ui.availabilityAllType = typeInput?.value || 'All';
     saveUiState();
     render();
   });
@@ -12989,6 +13007,7 @@ function bindEvents() {
     state.ui.availabilityAllTo = '';
     state.ui.availabilityAllAgentId = 'All';
     state.ui.availabilityAllStatus = 'All';
+    state.ui.availabilityAllType = 'All';
     saveUiState();
     render();
   });
