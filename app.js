@@ -5566,13 +5566,36 @@ function openAddAgentModal(onSubmit) {
             <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
           </label>
           <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Attendance points</span>
+            <input name="attendancePoints" type="number" inputmode="numeric" step="1" min="0" value="0" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
             <span>Pronouns</span>
             <input name="pronouns" placeholder="e.g. she/her" maxlength="80" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Shiftboard ID</span>
+            <input name="shiftboardId" placeholder="Shiftboard ID" maxlength="80" />
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Max in-office shifts</span>
+            <input name="maxInOfficeShifts" type="number" inputmode="numeric" step="1" min="0" />
           </label>
           <label style="display:flex; flex-direction:column; gap:6px;">
             <span>Max shifts per week</span>
             <input name="maxShiftsPerWeek" type="number" inputmode="numeric" step="1" min="0" />
           </label>
+        </div>
+        <div class="card" style="padding:10px; margin-top:2px;">
+          <div style="font-weight:600; margin-bottom:6px;">Skills</div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:8px;">
+            ${agentSkillOptions.map((skill) => `
+              <label style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" name="skills" value="${escapeHtml(skill.value)}" />
+                <span>${escapeHtml(skill.label)}</span>
+              </label>
+            `).join('')}
+          </div>
         </div>
         <div class="row" style="justify-content:flex-end; margin-top:8px;">
           <button type="button" id="add-agent-cancel" class="secondary">Cancel</button>
@@ -11785,9 +11808,10 @@ function bindEvents() {
       location: normalizeAgentLocation(formData.get('location')),
       role,
       payRate,
-      attendancePoints: 0,
+      attendancePoints: normalizeAttendancePoints(formData.get('attendancePoints')),
       pronouns: normalizePronouns(formData.get('pronouns')),
-      skills: [],
+      shiftboardId: normalizeShiftboardId(formData.get('shiftboardId')),
+      skills: normalizeAgentSkills(formData.getAll('skills')),
       maxInOfficeShifts,
       maxShiftsPerWeek,
       availability: 'Available',
@@ -11806,6 +11830,7 @@ function bindEvents() {
       profileUpdatedAt: createdAt,
       mustChangePassword: true,
       calendarFeedToken: createCalendarFeedToken(),
+      pronouns: normalizePronouns(formData.get('pronouns')),
       role: accessRole,
       agentId
     });
