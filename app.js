@@ -9627,7 +9627,6 @@ function renderAgentsPage(currentUser) {
       <div class="panel">
         <div class="row" style="justify-content:space-between; margin-bottom:6px;">
           <h2 style="margin:0;">Agents</h2>
-          ${canEditAgentProfiles ? `<button id="clear-selected-agents" class="secondary" type="button">Clear selection</button>` : ''}
         </div>
         <div class="row" style="margin-bottom:6px; gap:8px; flex-wrap:wrap; align-items:center;">
           <input id="agent-search" placeholder="Search agents" value="${escapeHtml(state.ui.agentSearch)}" />
@@ -9654,9 +9653,10 @@ function renderAgentsPage(currentUser) {
           <button type="submit" style="white-space:nowrap;">Apply to selected</button>
           <span id="selected-agent-count" class="muted" style="white-space:nowrap;">${selectedAgentIds.size} selected</span>
         </form>` : ''}
+          ${canEditAgentProfiles ? `<button id="clear-selected-agents" class="secondary" type="button" style="white-space:nowrap;">Clear selection</button>` : ''}
+          ${isAdminUser(currentUser) ? `<button type="button" id="open-add-agent-modal" style="white-space:nowrap;">Add agent</button>` : ''}
         </div>
         <div class="muted" style="margin-bottom:6px;">Email is optional. Agents without an email can sign in with their username and temporary password.</div>
-        ${isAdminUser(currentUser) ? `<div class="row" style="justify-content:flex-end;"><button type="button" id="open-add-agent-modal" style="white-space:nowrap;">Add agent</button></div>` : ''}
         <div class="agent-list" style="margin-top:8px; display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:6px;">
           ${sortedAgents.map((agent) => `
             <div class="card" style="padding:8px;">
