@@ -15,7 +15,7 @@ Features included:
 - Agent profiles do not display or collect locations; location selection remains available for scheduled shifts
 - Set Employment Type to Full Time or Part Time when adding or editing agents; existing profiles show Not set until assigned
 - Bulk edit selected agents' employment type alongside their team, manager, and access level
-- The weekly schedule roster groups agents by Full Time, Part Time, then Not set, with names alphabetical within each group
+- The weekly schedule roster groups agents by Full Time, Part Time, then Not set, then by team alphabetically, with names alphabetical within each team
 - Weekly in-person limits count scheduled shifts with location `In Person/ TP`, not agent profile locations or shift roles
 - Request calendars show PTO first, then one-time availability, then repeating availability, including expanded daily request lists
 - Select multiple weekdays for repeating availability in agent and manual admin forms; selected days share the date range and times and are saved as separate weekly series

@@ -7352,17 +7352,24 @@ function renderCalendarPage(currentUser) {
       <div class="muted" style="font-size:0.72rem; margin-bottom:6px; ${unscheduledAgentCount > 0 ? 'color:#fca5a5;' : ''}">${unscheduledAgentCount === 0 ? 'Everyone has a shift this week' : `${unscheduledAgentCount} not scheduled this week`}</div>
       ${(() => {
         const employmentTypeOf = (agent) => normalizeEmploymentType(agent?.employmentType) || 'Not set';
+        const teamOf = (agent) => normalizeTeamLabel(agent?.team) || 'No team';
         const employmentTypeOrder = ['Full Time', 'Part Time', 'Not set'];
         const sorted = [...agentsByName].sort((a, b) =>
           employmentTypeOrder.indexOf(employmentTypeOf(a)) - employmentTypeOrder.indexOf(employmentTypeOf(b))
+          || teamOf(a).localeCompare(teamOf(b), undefined, { sensitivity: 'base' })
           || String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
         let lastEmploymentType = null;
+        let lastTeam = null;
         return sorted.map((agent) => {
           const employmentType = employmentTypeOf(agent);
-          const heading = employmentType !== lastEmploymentType ? `<div class="muted" style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; margin:8px 0 2px;">${escapeHtml(employmentType)}</div>` : '';
+          const team = teamOf(agent);
+          const newEmploymentType = employmentType !== lastEmploymentType;
+          const heading = newEmploymentType ? `<div class="muted" style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; margin:8px 0 2px;">${escapeHtml(employmentType)}</div>` : '';
+          const teamHeading = newEmploymentType || team !== lastTeam ? `<div class="muted" style="font-size:0.7rem; margin:6px 0 2px; padding-left:6px;">${escapeHtml(team)}</div>` : '';
           lastEmploymentType = employmentType;
+          lastTeam = team;
           const shiftCount = weekShiftCountByAgentId.get(Number(agent.id)) || 0;
-          return `${heading}<div class="week-roster-item${shiftCount === 0 ? ' unscheduled' : ''}"><span>${escapeHtml(agent.name || 'Unnamed')}</span><span class="week-roster-count">${shiftCount}</span></div>`;
+          return `${heading}${teamHeading}<div class="week-roster-item${shiftCount === 0 ? ' unscheduled' : ''}"><span>${escapeHtml(agent.name || 'Unnamed')}</span><span class="week-roster-count">${shiftCount}</span></div>`;
         }).join('');
       })()}
     </aside>`;
