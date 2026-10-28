@@ -7351,15 +7351,16 @@ function renderCalendarPage(currentUser) {
       <div style="font-weight:700;">All agents (${agentsByName.length})</div>
       <div class="muted" style="font-size:0.72rem; margin-bottom:6px; ${unscheduledAgentCount > 0 ? 'color:#fca5a5;' : ''}">${unscheduledAgentCount === 0 ? 'Everyone has a shift this week' : `${unscheduledAgentCount} not scheduled this week`}</div>
       ${(() => {
-        const teamOf = (agent) => normalizeTeamLabel(agent?.team) || 'No team';
+        const employmentTypeOf = (agent) => normalizeEmploymentType(agent?.employmentType) || 'Not set';
+        const employmentTypeOrder = ['Full Time', 'Part Time', 'Not set'];
         const sorted = [...agentsByName].sort((a, b) =>
-          teamOf(a).localeCompare(teamOf(b), undefined, { sensitivity: 'base' })
+          employmentTypeOrder.indexOf(employmentTypeOf(a)) - employmentTypeOrder.indexOf(employmentTypeOf(b))
           || String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
-        let lastTeam = null;
+        let lastEmploymentType = null;
         return sorted.map((agent) => {
-          const team = teamOf(agent);
-          const heading = team !== lastTeam ? `<div class="muted" style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; margin:8px 0 2px;">${escapeHtml(team)}</div>` : '';
-          lastTeam = team;
+          const employmentType = employmentTypeOf(agent);
+          const heading = employmentType !== lastEmploymentType ? `<div class="muted" style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; margin:8px 0 2px;">${escapeHtml(employmentType)}</div>` : '';
+          lastEmploymentType = employmentType;
           const shiftCount = weekShiftCountByAgentId.get(Number(agent.id)) || 0;
           return `${heading}<div class="week-roster-item${shiftCount === 0 ? ' unscheduled' : ''}"><span>${escapeHtml(agent.name || 'Unnamed')}</span><span class="week-roster-count">${shiftCount}</span></div>`;
         }).join('');
