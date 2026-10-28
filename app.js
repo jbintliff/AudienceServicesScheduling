@@ -5074,7 +5074,6 @@ async function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, en
   }
 
   const replacingShiftId = Number(options.replacingShiftId) || null;
-  const requestedRole = String(options.role || '').trim();
 
   const targetAgent = getAgent(agentId);
   const maxShiftsPerWeek = normalizeMaxShiftsPerWeek(targetAgent?.maxShiftsPerWeek);
@@ -5086,12 +5085,13 @@ async function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, en
     }
   }
 
-  const roleToEvaluate = requestedRole || targetAgent?.role || getPrimaryRole();
-
-  if (isAgentInOfficeLocation(targetAgent, roleToEvaluate)) {
+  if (isInOfficeShift({ location: options.location })) {
     const maxInOfficeShifts = normalizeMaxInOfficeShifts(targetAgent?.maxInOfficeShifts);
     if (Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts >= 0) {
-      const projectedInOfficeCount = getAssignedInOfficeShiftCount(agentId, date, { excludingShiftId: replacingShiftId }) + 1;
+      const projectedInOfficeCount = getAssignedInOfficeShiftCount(agentId, date, {
+        excludingShiftId: replacingShiftId,
+        shifts: options.shifts
+      }) + 1;
       if (projectedInOfficeCount > maxInOfficeShifts) {
         return promptInOfficeOverride(targetAgent?.name || 'This agent', projectedInOfficeCount, maxInOfficeShifts);
       }
@@ -5261,7 +5261,8 @@ function openShiftEditModal(shift, onSave) {
     if (!await confirmShiftAssignmentWithTimeOffWarning(nextAgentId, nextDate, nextStart, nextEnd, {
       replacingShiftId: Number(shift.id),
       durationHours: getDurationHours(nextStart, nextEnd),
-      role: nextRole
+      role: nextRole,
+      location: nextLocation
     })) {
       return;
     }
@@ -5370,6 +5371,11 @@ function claimUnassignedShiftForAgent(shiftId, agentId) {
     return { ok: false, message: 'This shift has already been picked up by another agent.' };
   }
   const targetAgent = getAgent(normalizedAgentId);
+  const maxInOfficeShifts = normalizeMaxInOfficeShifts(targetAgent?.maxInOfficeShifts);
+  if (isInOfficeShift(shift) && Number.isFinite(maxInOfficeShifts)
+    && getAssignedInOfficeShiftCount(normalizedAgentId, shift.date) + 1 > maxInOfficeShifts) {
+    return { ok: false, message: `${targetAgent?.name || 'You'} would exceed the weekly max in-office shifts by picking up this shift.` };
+  }
   const maxShiftsPerWeek = normalizeMaxShiftsPerWeek(targetAgent?.maxShiftsPerWeek);
   if (Number.isFinite(maxShiftsPerWeek) && getAssignedShiftCount(normalizedAgentId, shift.date) + 1 > maxShiftsPerWeek) {
     const shouldContinue = confirm(`${targetAgent?.name || 'You'} would be scheduled for ${getAssignedShiftCount(normalizedAgentId, shift.date) + 1} shifts this week, above the maximum of ${maxShiftsPerWeek}. Pick up this shift anyway?`);
@@ -6629,22 +6635,19 @@ function isInOfficeRole(role) {
     || normalizedRole === 'office';
 }
 
-function isAgentInOfficeLocation(agentOrId, fallbackRole = '') {
-  const agent = agentOrId && typeof agentOrId === 'object' ? agentOrId : getAgent(agentOrId);
-  const location = normalizeAgentLocation(agent?.location).toLowerCase();
-  if (location) return location.includes('in person') || location.includes('in-person') || location === 'office';
-  return isInOfficeRole(fallbackRole || agent?.role);
+function isInOfficeShift(shift) {
+  return String(shift?.location || '').trim().toLowerCase() === 'in person/ tp';
 }
 
 function getAssignedInOfficeShiftCount(agentId, referenceDateValue = '', options = {}) {
   const normalizedAgentId = Number(agentId);
   const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
   const excludingShiftId = Number(options.excludingShiftId) || null;
-  return state.shifts
+  return (options.shifts || state.shifts)
     .filter((shift) => Number(shift.agentId) === normalizedAgentId)
     .filter((shift) => shiftIsInWeek(shift, weekDates))
     .filter((shift) => !excludingShiftId || Number(shift.id) !== excludingShiftId)
-    .filter((shift) => isAgentInOfficeLocation(getAgent(shift.agentId), shift.role))
+    .filter(isInOfficeShift)
     .length;
 }
 
@@ -6737,8 +6740,8 @@ function getProjectedSwapHours(agentId, outgoingShift, incomingShift) {
 
 function getProjectedSwapInOfficeShiftCount(agentId, outgoingShift, incomingShift) {
   const currentInOfficeCount = getAssignedInOfficeShiftCount(agentId, outgoingShift?.date || incomingShift?.date || '');
-  const outgoingInOfficeCount = isAgentInOfficeLocation(getAgent(agentId), outgoingShift?.role) ? 1 : 0;
-  const incomingInOfficeCount = isAgentInOfficeLocation(getAgent(agentId), incomingShift?.role) ? 1 : 0;
+  const outgoingInOfficeCount = isInOfficeShift(outgoingShift) ? 1 : 0;
+  const incomingInOfficeCount = isInOfficeShift(incomingShift) ? 1 : 0;
   return currentInOfficeCount - outgoingInOfficeCount + incomingInOfficeCount;
 }
 
@@ -12008,7 +12011,8 @@ function bindEvents() {
     }
     if (!await confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, {
       durationHours: getDurationHours(start, end),
-      role
+      role,
+      location
     })) return;
 
     const createdAt = getCurrentIsoTimestamp();
@@ -13574,7 +13578,7 @@ function bindEvents() {
 
       const targetAgent = getAgent(currentAgentId);
       const maxInOfficeShifts = normalizeMaxInOfficeShifts(targetAgent?.maxInOfficeShifts);
-      if (isAgentInOfficeLocation(targetAgent, shift.role) && Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts >= 0) {
+      if (isInOfficeShift(shift) && Number.isFinite(maxInOfficeShifts) && maxInOfficeShifts >= 0) {
         const projectedInOfficeCount = getAssignedInOfficeShiftCount(currentAgentId, shift.date) + 1;
         if (projectedInOfficeCount > maxInOfficeShifts) {
           alert(`${targetAgent?.name || 'This agent'} would exceed their weekly max in-office shifts by picking up this shift.`);
@@ -13643,7 +13647,9 @@ function bindEvents() {
         if (!await confirmShiftAssignmentWithTimeOffWarning(shift.agentId, shift.date, nextStart, nextEnd, {
           replacingShiftId: Number(shift.id),
           durationHours: getDurationHours(nextStart, nextEnd),
-          role: nextRole
+          role: nextRole,
+          location: nextLocation,
+          shifts: state.shifts.map((item) => updatedShifts.find((updated) => Number(updated.id) === Number(item.id)) || item)
         })) return false;
         updatedShifts.push({
           ...shift,
@@ -14102,7 +14108,7 @@ function bindEvents() {
         const fromMaxInOffice = normalizeMaxInOfficeShifts(fromAgent?.maxInOfficeShifts);
         const toMaxInOffice = normalizeMaxInOfficeShifts(toAgent?.maxInOfficeShifts);
 
-        if (fromShift && toShift && isAgentInOfficeLocation(fromAgent, toShift.role) && Number.isFinite(fromMaxInOffice)) {
+        if (fromShift && toShift && isInOfficeShift(toShift) && Number.isFinite(fromMaxInOffice)) {
           const projectedFromInOffice = getAssignedInOfficeShiftCount(updatedRequest.fromAgentId, toShift.date || fromShift.date || '', {
             excludingShiftId: Number(fromShift.id)
           }) + 1;
@@ -14114,7 +14120,7 @@ function bindEvents() {
           }
         }
 
-        if (fromShift && toShift && isAgentInOfficeLocation(toAgent, fromShift.role) && Number.isFinite(toMaxInOffice)) {
+        if (fromShift && toShift && isInOfficeShift(fromShift) && Number.isFinite(toMaxInOffice)) {
           const projectedToInOffice = getAssignedInOfficeShiftCount(updatedRequest.toAgentId, fromShift.date || toShift.date || '', {
             excludingShiftId: Number(toShift.id)
           }) + 1;
@@ -14213,7 +14219,9 @@ function bindEvents() {
           const pastedShift = cloneShift(sourceShift, targetDay);
           if (!await confirmShiftAssignmentWithTimeOffWarning(pastedShift.agentId, pastedShift.date, pastedShift.start, pastedShift.end, {
             durationHours: pastedShift.durationHours,
-            role: pastedShift.role
+            role: pastedShift.role,
+            location: pastedShift.location,
+            shifts: [...state.shifts, ...pastedShifts]
           })) return;
           pastedShifts.push(pastedShift);
         }
@@ -14226,7 +14234,8 @@ function bindEvents() {
       const pastedShift = cloneShift(copiedShiftTemplate, day);
       if (!await confirmShiftAssignmentWithTimeOffWarning(pastedShift.agentId, pastedShift.date, pastedShift.start, pastedShift.end, {
         durationHours: pastedShift.durationHours,
-        role: pastedShift.role
+        role: pastedShift.role,
+        location: pastedShift.location
       })) return;
       state.shifts.push(pastedShift);
       saveState();
@@ -14303,7 +14312,8 @@ function bindEvents() {
       if (movedToNewDate && !await confirmShiftAssignmentWithTimeOffWarning(shiftToMove.agentId, targetDate, shiftToMove.start, shiftToMove.end, {
         replacingShiftId: Number(shiftToMove.id),
         durationHours: Number(shiftToMove.durationHours) || getDurationHours(shiftToMove.start, shiftToMove.end),
-        role: shiftToMove.role
+        role: shiftToMove.role,
+        location: shiftToMove.location
       })) {
         return;
       }

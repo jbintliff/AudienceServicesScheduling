@@ -12,6 +12,10 @@ Features included:
 - Search and filter agents and shifts
 - Import and export scheduler data as JSON
 - Track agent availability, time off, and assigned hours
+- Agent profiles do not display or collect locations; location selection remains available for scheduled shifts
+- Weekly in-person limits count scheduled shifts with location `In Person/ TP`, not agent profile locations or shift roles
+- Request calendars show PTO first, then one-time availability, then repeating availability, including expanded daily request lists
+- Select multiple weekdays for repeating availability in agent and manual admin forms; selected days share the date range and times and are saved as separate weekly series
 - Submit and approve swap requests from one workspace
 - Shared persistence through backend API sync
 
