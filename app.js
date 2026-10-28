@@ -6103,7 +6103,8 @@ function openAvailabilityRequestListModal(requests, dateLabel = '') {
   }
 
   const normalizedDateLabel = String(dateLabel || '').trim();
-  const orderedRequests = [...requestList].sort((left, right) => String(left?.requestedAt || '').localeCompare(String(right?.requestedAt || '')));
+  const orderedRequests = [...requestList].sort((left, right) => compareAvailabilityRequestTypes(left, right)
+    || String(left?.requestedAt || '').localeCompare(String(right?.requestedAt || '')));
 
   const overlay = document.createElement('div');
   overlay.id = 'availability-request-list-modal-overlay';
@@ -6333,7 +6334,9 @@ function openAgentPendingRequestEditModal(request, onSave) {
 }
 
 function openPublicAvailabilityDayModal(dateValue, requests, viewingAgentId) {
-  const requestList = Array.isArray(requests) ? requests.filter((r) => normalizeAvailabilityRequestStatus(r?.status) !== 'deleted') : [];
+  const requestList = Array.isArray(requests)
+    ? requests.filter((r) => normalizeAvailabilityRequestStatus(r?.status) !== 'deleted').sort(compareAvailabilityRequestTypes)
+    : [];
   if (requestList.length === 0) {
     alert('No requests for this date.');
     return;
@@ -9739,6 +9742,12 @@ function getAvailabilityRequestTypeMeta(request) {
   };
 }
 
+function compareAvailabilityRequestTypes(left, right) {
+  const typeOrder = ['pto', 'availability-once', 'availability-recurring'];
+  return typeOrder.indexOf(getAvailabilityRequestTypeMeta(left).key)
+    - typeOrder.indexOf(getAvailabilityRequestTypeMeta(right).key);
+}
+
 function getAvailabilityCalendarCells(monthValue, requests) {
   const normalizedMonth = monthValue || getCurrentLocalMonthValue();
   const monthStart = new Date(`${normalizedMonth}-01T00:00:00`);
@@ -9757,6 +9766,9 @@ function getAvailabilityCalendarCells(monthValue, requests) {
     acc[key].push(request);
     return acc;
   }, {});
+  Object.values(requestsByDate).forEach((dateRequests) => {
+    dateRequests.sort(compareAvailabilityRequestTypes);
+  });
 
   const cells = [];
   for (let index = 0; index < firstWeekDay; index += 1) {
