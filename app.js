@@ -5396,7 +5396,6 @@ async function saveAgentDetails(agentId, values) {
   const accessRole = requestedAccessRole === userRoles.admin ? userRoles.agent : requestedAccessRole;
   const team = normalizeTeamLabel(String(values?.team || '').trim() || teamOptions[0]);
   const department = normalizeDepartment(values?.department);
-  const location = normalizeAgentLocation(values?.location);
   const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
   const attendancePoints = normalizeAttendancePoints(values?.attendancePoints);
   const pronouns = normalizePronouns(values?.pronouns);
@@ -5426,7 +5425,6 @@ async function saveAgentDetails(agentId, values) {
         email,
         team,
         department,
-        location,
         payRate,
         attendancePoints,
         pronouns,
@@ -5558,13 +5556,6 @@ function openAddAgentModal(onSubmit) {
               ${departmentOptions.map((department) => `<option value="${escapeHtml(department)}">${escapeHtml(department)}</option>`).join('')}
             </select>
           </label>
-          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
-            <span>Location</span>
-            <select name="location">
-              <option value="">No location</option>
-              ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}">${escapeHtml(location)}</option>`).join('')}
-            </select>
-          </label>
         </div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px;">
           <label style="display:flex; flex-direction:column; gap:6px;">
@@ -5683,13 +5674,6 @@ function openAgentEditModal(agent, onSave) {
               ${departmentOptions.map((department) => `<option value="${department}" ${agent.department === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
             </select>
           </label>
-          <label style="display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1;">
-            <span>Location</span>
-            <select name="location">
-              <option value="">No location</option>
-              ${getAgentLocationCatalog().map((location) => `<option value="${escapeHtml(location)}" ${normalizeAgentLocation(agent.location) === location ? 'selected' : ''}>${escapeHtml(location)}</option>`).join('')}
-            </select>
-          </label>
         </div>
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px;">
           <label style="display:flex; flex-direction:column; gap:6px;">
@@ -5770,7 +5754,6 @@ function openAgentEditModal(agent, onSave) {
         accessRole: formData.get('accessRole'),
         team: formData.get('team'),
         department: formData.get('department'),
-        location: formData.get('location'),
         payRate: formData.get('payRate'),
         attendancePoints: formData.get('attendancePoints'),
         pronouns: formData.get('pronouns'),
@@ -8668,7 +8651,6 @@ function renderProfilePage(currentUser) {
               ${activeAgentUser?.profilePhotoDataUrl ? `<div style="margin-bottom:10px;"><img src="${escapeHtml(activeAgentUser.profilePhotoDataUrl)}" alt="Profile photo" style="width:84px; height:84px; border-radius:12px; object-fit:cover; border:1px solid rgba(255,255,255,0.35);" /></div>` : ''}
               <div><strong>Name:</strong> ${escapeHtml(viewAgent?.name || 'Not set')}</div>
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
-              <div><strong>Location:</strong> ${escapeHtml(normalizeAgentLocation(viewAgent?.location) || 'Not set')}</div>
               <div><strong>Department:</strong> ${escapeHtml(viewAgent?.department || 'Not set')}</div>
               <div><strong>Attendance points:</strong> ${escapeHtml(normalizeAttendancePoints(viewAgent?.attendancePoints))}</div>
               <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(viewAgent?.pronouns) || 'Not set')}</div>
@@ -9685,7 +9667,6 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Access level:</strong> ${escapeHtml(getUserRoleLabel(getUserByAgentId(agent.id)?.role || userRoles.agent))}</div>
                   <div><strong>Team:</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span></div>
                   <div><strong>Department:</strong> ${escapeHtml(agent.department || 'Not set')}</div>
-                  <div><strong>Location:</strong> ${escapeHtml(normalizeAgentLocation(agent.location) || 'Not set')}</div>
                   <div><strong>Email:</strong> ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   <div><strong>Managed by:</strong> ${escapeHtml(getAgentManagerSummary(agent))}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
@@ -11935,7 +11916,6 @@ function bindEvents() {
       email,
       team: normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]),
       department: normalizeDepartment(formData.get('department')),
-      location: normalizeAgentLocation(formData.get('location')),
       role,
       payRate,
       attendancePoints: normalizeAttendancePoints(formData.get('attendancePoints')),
