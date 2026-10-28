@@ -9629,16 +9629,14 @@ function renderAgentsPage(currentUser) {
           <h2 style="margin:0;">Agents</h2>
           ${canEditAgentProfiles ? `<button id="clear-selected-agents" class="secondary" type="button">Clear selection</button>` : ''}
         </div>
-        <div class="row" style="justify-content:space-between; margin-bottom:6px; gap:6px; flex-wrap:wrap;">
+        <div class="row" style="margin-bottom:6px; gap:8px; flex-wrap:wrap; align-items:center;">
           <input id="agent-search" placeholder="Search agents" value="${escapeHtml(state.ui.agentSearch)}" />
           <select id="agent-sort" style="max-width:220px;">
             <option value="name" ${agentSort === 'name' ? 'selected' : ''}>Sort: Name (A-Z)</option>
             <option value="team" ${agentSort === 'team' ? 'selected' : ''}>Sort: Team</option>
           </select>
-        </div>
-        <div class="muted" style="margin-bottom:6px;">Email is optional. Agents without an email can sign in with their username and temporary password.</div>
-        ${canEditAgentProfiles ? `<form id="bulk-agent-edit-form" class="row" style="margin-bottom:10px; gap:8px; flex-wrap:wrap; align-items:center;">
-          <strong>Bulk edit selected:</strong>
+        ${canEditAgentProfiles ? `<form id="bulk-agent-edit-form" class="row" style="margin:0; gap:8px; flex-wrap:wrap; align-items:center;">
+          <strong style="white-space:nowrap;">Bulk edit selected:</strong>
           <select name="team">
             <option value="">Keep team</option>
             ${getTeamCatalog().map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join('')}
@@ -9653,9 +9651,11 @@ function renderAgentsPage(currentUser) {
             <option value="${userRoles.agent}">Agent</option>
             <option value="${userRoles.teamLead}">Team lead</option>
           </select>
-          <button type="submit">Apply to selected</button>
-          <span id="selected-agent-count" class="muted">${selectedAgentIds.size} selected</span>
+          <button type="submit" style="white-space:nowrap;">Apply to selected</button>
+          <span id="selected-agent-count" class="muted" style="white-space:nowrap;">${selectedAgentIds.size} selected</span>
         </form>` : ''}
+        </div>
+        <div class="muted" style="margin-bottom:6px;">Email is optional. Agents without an email can sign in with their username and temporary password.</div>
         ${isAdminUser(currentUser) ? `<div class="row" style="justify-content:flex-end;"><button type="button" id="open-add-agent-modal" style="white-space:nowrap;">Add agent</button></div>` : ''}
         <div class="agent-list" style="margin-top:8px; display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:6px;">
           ${sortedAgents.map((agent) => `
