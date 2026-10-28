@@ -7311,10 +7311,20 @@ function renderCalendarPage(currentUser) {
     <aside class="week-roster">
       <div style="font-weight:700;">All agents (${agentsByName.length})</div>
       <div class="muted" style="font-size:0.72rem; margin-bottom:6px; ${unscheduledAgentCount > 0 ? 'color:#fca5a5;' : ''}">${unscheduledAgentCount === 0 ? 'Everyone has a shift this week' : `${unscheduledAgentCount} not scheduled this week`}</div>
-      ${agentsByName.map((agent) => {
-        const shiftCount = weekShiftCountByAgentId.get(Number(agent.id)) || 0;
-        return `<div class="week-roster-item${shiftCount === 0 ? ' unscheduled' : ''}"><span>${escapeHtml(agent.name || 'Unnamed')}</span><span class="week-roster-count">${shiftCount}</span></div>`;
-      }).join('')}
+      ${(() => {
+        const teamOf = (agent) => normalizeTeamLabel(agent?.team) || 'No team';
+        const sorted = [...agentsByName].sort((a, b) =>
+          teamOf(a).localeCompare(teamOf(b), undefined, { sensitivity: 'base' })
+          || String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+        let lastTeam = null;
+        return sorted.map((agent) => {
+          const team = teamOf(agent);
+          const heading = team !== lastTeam ? `<div class="muted" style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; margin:8px 0 2px;">${escapeHtml(team)}</div>` : '';
+          lastTeam = team;
+          const shiftCount = weekShiftCountByAgentId.get(Number(agent.id)) || 0;
+          return `${heading}<div class="week-roster-item${shiftCount === 0 ? ' unscheduled' : ''}"><span>${escapeHtml(agent.name || 'Unnamed')}</span><span class="week-roster-count">${shiftCount}</span></div>`;
+        }).join('');
+      })()}
     </aside>`;
 
   root.innerHTML = `
@@ -7573,15 +7583,30 @@ function renderCalendarPage(currentUser) {
                   return allDayShifts.length === 0 ? '<div class="muted">No shifts.</div>' : '';
                 }
 
-                const shiftsByTime = new Map();
+                const shiftsByTeam = new Map();
                 dayShifts.forEach((shift) => {
+                  const teamKey = normalizeTeamLabel(getAgent(shift?.agentId)?.team || '') || 'No team';
+                  const existing = shiftsByTeam.get(teamKey) || [];
+                  existing.push(shift);
+                  shiftsByTeam.set(teamKey, existing);
+                });
+                const sortedTeamGroups = Array.from(shiftsByTeam.entries()).sort(([leftTeam, leftShifts], [rightTeam, rightShifts]) => {
+                  const priorityDiff = getAgentTeamSortPriority(leftShifts[0]?.agentId) - getAgentTeamSortPriority(rightShifts[0]?.agentId);
+                  if (priorityDiff !== 0) return priorityDiff;
+                  return leftTeam.localeCompare(rightTeam, undefined, { sensitivity: 'base' });
+                });
+
+                return sortedTeamGroups.map(([teamName, teamShifts]) => {
+                const shiftsByTime = new Map();
+                teamShifts.forEach((shift) => {
                   const timeKey = getShiftTimeRangeKey(shift);
                   const existing = shiftsByTime.get(timeKey) || [];
                   existing.push(shift);
                   shiftsByTime.set(timeKey, existing);
                 });
 
-                return Array.from(shiftsByTime.entries()).map(([timeKey, timeGroupShifts]) => {
+                const teamHeading = `<div style="margin:10px 0 2px; padding-bottom:2px; border-bottom:1px solid rgba(255,255,255,0.2); font-weight:700; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.04em;">${escapeHtml(teamName)}</div>`;
+                return teamHeading + Array.from(shiftsByTime.entries()).map(([timeKey, timeGroupShifts]) => {
                   const [startTime, endTime] = String(timeKey).split('|');
                   const timeLabel = formatTimeRange(startTime, endTime);
                   const shiftsByRole = new Map();
@@ -7638,6 +7663,7 @@ function renderCalendarPage(currentUser) {
                     `;
                     }).join('')}
                   `;
+                }).join('');
                 }).join('');
               })()}
             </div>
