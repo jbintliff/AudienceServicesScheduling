@@ -9896,7 +9896,7 @@ function renderAvailabilityRequestsPage(currentUser) {
                         : typeMeta.style;
                     return `
                     <div data-view-availability-request="${request.id}" title="${escapeHtml((getAgent(request.agentId)?.name || 'Unknown'))} - ${escapeHtml(typeMeta.label)}" style="padding:3px 6px; border-radius:999px; font-size:12px; cursor:pointer; ${displayStyle}">
-                      ${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')} â€¢ ${escapeHtml(typeMeta.label)}
+                      ${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')} &bull; ${escapeHtml(typeMeta.label)}
                     </div>
                   `;
                   }).join('')}
