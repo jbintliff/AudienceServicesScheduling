@@ -7298,10 +7298,34 @@ function renderCalendarPage(currentUser) {
   const visibleShiftIdSet = new Set(sortedVisibleCalendarShifts.map((shift) => Number(shift.id)));
   selectedCalendarShiftIds = new Set(Array.from(selectedCalendarShiftIds).filter((id) => visibleShiftIdSet.has(Number(id))));
   const selectedShiftCount = selectedCalendarShiftIds.size;
+  // The roster uses every shift in the week (not the active filters) so a filter can't make someone look unscheduled.
+  const weekShiftCountByAgentId = state.shifts
+    .filter((shift) => shiftIsInWeek(shift, weekDates))
+    .reduce((counts, shift) => {
+      const agentId = Number(shift?.agentId);
+      if (agentId) counts.set(agentId, (counts.get(agentId) || 0) + 1);
+      return counts;
+    }, new Map());
+  const unscheduledAgentCount = agentsByName.filter((agent) => !weekShiftCountByAgentId.get(Number(agent.id))).length;
+  const weekRosterHtml = `
+    <aside class="week-roster">
+      <div style="font-weight:700;">All agents (${agentsByName.length})</div>
+      <div class="muted" style="font-size:0.72rem; margin-bottom:6px; ${unscheduledAgentCount > 0 ? 'color:#fca5a5;' : ''}">${unscheduledAgentCount === 0 ? 'Everyone has a shift this week' : `${unscheduledAgentCount} not scheduled this week`}</div>
+      ${agentsByName.map((agent) => {
+        const shiftCount = weekShiftCountByAgentId.get(Number(agent.id)) || 0;
+        return `<div class="week-roster-item${shiftCount === 0 ? ' unscheduled' : ''}"><span>${escapeHtml(agent.name || 'Unnamed')}</span><span class="week-roster-count">${shiftCount}</span></div>`;
+      }).join('')}
+    </aside>`;
 
   root.innerHTML = `
     <div class="app calendar-view">
       <style>
+        .calendar-view .schedule-with-roster { display:grid; grid-template-columns: 190px minmax(0,1fr); gap:8px; align-items:start; }
+        .calendar-view .week-roster { position:sticky; top:8px; max-height:85vh; overflow:auto; padding:8px; border:1px solid rgba(255,255,255,0.18); border-radius:10px; background:rgba(255,255,255,0.04); font-size:0.8rem; }
+        .calendar-view .week-roster-item { display:flex; justify-content:space-between; gap:6px; padding:2px 6px; border-radius:6px; line-height:1.3; }
+        .calendar-view .week-roster-item.unscheduled { background:rgba(239,68,68,0.28); font-weight:700; }
+        .calendar-view .week-roster-count { opacity:0.8; }
+        @media (max-width: 1100px) { .calendar-view .schedule-with-roster { grid-template-columns: 1fr; } .calendar-view .week-roster { position:static; max-height:240px; } }
         .calendar-view { padding-top: 10px; padding-bottom: 14px; }
         .calendar-view > .row:first-child { margin-bottom: 8px !important; }
         .calendar-view > .panel { margin-bottom: 8px !important; padding: 10px !important; }
@@ -7511,6 +7535,8 @@ function renderCalendarPage(currentUser) {
           `).join('')}
         </div>
         ${canManageCalendar ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-copy-full-schedule>Copy full schedule</button><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-edit-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Edit selected</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="secondary" data-unpublish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Unpublish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
+        <div class="${canManageCalendar ? 'schedule-with-roster' : ''}">
+        ${canManageCalendar ? weekRosterHtml : ''}
         <div class="day-row">
           ${days.map((day) => {
             const dayDate = String(weekDates[day]?.iso || '').slice(0, 10);
@@ -7617,6 +7643,7 @@ function renderCalendarPage(currentUser) {
             </div>
           `;
           }).join('')}
+        </div>
         </div>
         ${canManageCalendar ? `
           <div style="margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.12);">
