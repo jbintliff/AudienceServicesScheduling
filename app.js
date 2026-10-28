@@ -3374,6 +3374,11 @@ function normalizePronouns(value) {
   return String(value || '').trim().slice(0, 80);
 }
 
+function normalizeEmploymentType(value) {
+  const employmentType = String(value || '').trim();
+  return ['Full Time', 'Part Time'].includes(employmentType) ? employmentType : '';
+}
+
 function normalizeShiftboardId(value) {
   return String(value || '').trim().slice(0, 80);
 }
@@ -3915,6 +3920,7 @@ function loadState() {
             email: normalizeEmail(agent.email || linkedUserEmail),
             team: normalizeTeamLabel(agent.team),
             department: normalizeDepartment(agent.department),
+            employmentType: normalizeEmploymentType(agent.employmentType),
             role: normalizeRoleLabel(agent.role, normalizedRoleCatalog),
             location: normalizeAgentLocation(agent.location, normalizedAgentLocationCatalog),
             attendancePoints,
@@ -5402,6 +5408,7 @@ async function saveAgentDetails(agentId, values) {
   const accessRole = requestedAccessRole === userRoles.admin ? userRoles.agent : requestedAccessRole;
   const team = normalizeTeamLabel(String(values?.team || '').trim() || teamOptions[0]);
   const department = normalizeDepartment(values?.department);
+  const employmentType = normalizeEmploymentType(values?.employmentType);
   const payRate = parseCurrencyAmount(String(values?.payRate ?? '0').trim());
   const attendancePoints = normalizeAttendancePoints(values?.attendancePoints);
   const pronouns = normalizePronouns(values?.pronouns);
@@ -5412,6 +5419,9 @@ async function saveAgentDetails(agentId, values) {
 
   if (!name) {
     return { ok: false, message: 'Name is required for each agent.' };
+  }
+  if (String(values?.employmentType || '').trim() && !employmentType) {
+    return { ok: false, message: 'Select Full Time or Part Time for employment type.' };
   }
   if (!Number.isFinite(payRate) || payRate < 0) {
     return { ok: false, message: 'Pay rate must be a valid non-negative amount (example: $15.45).' };
@@ -5431,6 +5441,7 @@ async function saveAgentDetails(agentId, values) {
         email,
         team,
         department,
+        employmentType,
         payRate,
         attendancePoints,
         pronouns,
@@ -5569,6 +5580,14 @@ function openAddAgentModal(onSubmit) {
             <input name="payRate" type="text" inputmode="decimal" placeholder="$15.45" />
           </label>
           <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Employment Type</span>
+            <select name="employmentType">
+              <option value="">Select employment type</option>
+              <option value="Full Time">Full Time</option>
+              <option value="Part Time">Part Time</option>
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
             <span>Attendance points</span>
             <input name="attendancePoints" type="number" inputmode="numeric" step="1" min="0" value="0" />
           </label>
@@ -5687,6 +5706,14 @@ function openAgentEditModal(agent, onSave) {
             <input name="payRate" type="text" inputmode="decimal" value="${escapeHtml(Number(agent.payRate || 0).toFixed(2))}" />
           </label>
           <label style="display:flex; flex-direction:column; gap:6px;">
+            <span>Employment Type</span>
+            <select name="employmentType">
+              <option value="">Select employment type</option>
+              <option value="Full Time" ${normalizeEmploymentType(agent.employmentType) === 'Full Time' ? 'selected' : ''}>Full Time</option>
+              <option value="Part Time" ${normalizeEmploymentType(agent.employmentType) === 'Part Time' ? 'selected' : ''}>Part Time</option>
+            </select>
+          </label>
+          <label style="display:flex; flex-direction:column; gap:6px;">
             <span>Attendance points</span>
             <input name="attendancePoints" type="number" inputmode="numeric" step="1" min="0" value="${escapeHtml(normalizeAttendancePoints(agent.attendancePoints))}" />
           </label>
@@ -5760,6 +5787,7 @@ function openAgentEditModal(agent, onSave) {
         accessRole: formData.get('accessRole'),
         team: formData.get('team'),
         department: formData.get('department'),
+        employmentType: formData.get('employmentType'),
         payRate: formData.get('payRate'),
         attendancePoints: formData.get('attendancePoints'),
         pronouns: formData.get('pronouns'),
@@ -8655,6 +8683,7 @@ function renderProfilePage(currentUser) {
               <div><strong>Name:</strong> ${escapeHtml(viewAgent?.name || 'Not set')}</div>
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Department:</strong> ${escapeHtml(viewAgent?.department || 'Not set')}</div>
+              <div><strong>Employment Type:</strong> ${escapeHtml(normalizeEmploymentType(viewAgent?.employmentType) || 'Not set')}</div>
               <div><strong>Attendance points:</strong> ${escapeHtml(normalizeAttendancePoints(viewAgent?.attendancePoints))}</div>
               <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(viewAgent?.pronouns) || 'Not set')}</div>
               <div><strong>Shiftboard ID:</strong> ${escapeHtml(normalizeShiftboardId(viewAgent?.shiftboardId) || 'Not set')}</div>
@@ -9670,6 +9699,7 @@ function renderAgentsPage(currentUser) {
                   <div><strong>Access level:</strong> ${escapeHtml(getUserRoleLabel(getUserByAgentId(agent.id)?.role || userRoles.agent))}</div>
                   <div><strong>Team:</strong> <span class="chip" style="${getTeamBadgeStyle(agent.team)}">${escapeHtml(agent.team || teamOptions[0])}</span></div>
                   <div><strong>Department:</strong> ${escapeHtml(agent.department || 'Not set')}</div>
+                  <div><strong>Employment Type:</strong> ${escapeHtml(normalizeEmploymentType(agent.employmentType) || 'Not set')}</div>
                   <div><strong>Email:</strong> ${escapeHtml(getAgentAccountEmail(agent.id) || 'No login email')}</div>
                   <div><strong>Managed by:</strong> ${escapeHtml(getAgentManagerSummary(agent))}</div>
                   <div><strong>Pay rate:</strong> $${escapeHtml(Number(agent.payRate || 0).toFixed(2))}/hr</div>
@@ -11919,6 +11949,7 @@ function bindEvents() {
       email,
       team: normalizeTeamLabel(formData.get('team')?.toString().trim() || teamOptions[0]),
       department: normalizeDepartment(formData.get('department')),
+      employmentType: normalizeEmploymentType(formData.get('employmentType')),
       role,
       payRate,
       attendancePoints: normalizeAttendancePoints(formData.get('attendancePoints')),
