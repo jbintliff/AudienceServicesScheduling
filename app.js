@@ -9672,6 +9672,11 @@ function renderAgentsPage(currentUser) {
             <option value="">Keep team</option>
             ${getTeamCatalog().map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join('')}
           </select>
+          <select name="employmentType" aria-label="Bulk edit employment type">
+            <option value="">Keep employment type</option>
+            <option value="Full Time">Full Time</option>
+            <option value="Part Time">Part Time</option>
+          </select>
           <select name="managerId">
             <option value="">Keep managed by</option>
             <option value="__clear__">Clear managed by</option>
@@ -12733,9 +12738,15 @@ function bindEvents() {
     }
     const formData = new FormData(event.currentTarget);
     const selectedTeam = String(formData.get('team') || '').trim();
+    const employmentTypeValue = String(formData.get('employmentType') || '').trim();
+    const employmentType = normalizeEmploymentType(employmentTypeValue);
     const managerValue = String(formData.get('managerId') || '').trim();
     const accessRole = String(formData.get('accessRole') || '').trim();
-    if (!selectedTeam && !managerValue && !accessRole) {
+    if (employmentTypeValue && !employmentType) {
+      alert('Select Full Time or Part Time for employment type.');
+      return;
+    }
+    if (!selectedTeam && !employmentType && !managerValue && !accessRole) {
       alert('Choose at least one bulk change to apply.');
       return;
     }
@@ -12746,6 +12757,7 @@ function bindEvents() {
       if (!selectedAgentIds.has(Number(agent.id))) return agent;
       const nextAgent = { ...agent, updatedAt, profileUpdatedAt: updatedAt };
       if (selectedTeam) nextAgent.team = normalizeTeamLabel(selectedTeam);
+      if (employmentType) nextAgent.employmentType = employmentType;
       if (managerValue === '__clear__') nextAgent.managerId = null;
       if (managerValue && managerValue !== '__clear__') nextAgent.managerId = Number(managerValue);
       return nextAgent;
