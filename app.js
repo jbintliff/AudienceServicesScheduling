@@ -6501,6 +6501,22 @@ function buildWeeklyRecurringDates(startDate, weekdayLabel, endDate, maxOccurren
   return { dates, truncated };
 }
 
+function buildWeeklyRecurringPlans(startDate, weekdayLabels, endDate) {
+  const selectedDays = new Set((Array.isArray(weekdayLabels) ? weekdayLabels : []).map((day) => String(day || '').trim()));
+  return days
+    .filter((day) => selectedDays.has(day))
+    .map((day) => ({
+      day,
+      ...buildWeeklyRecurringDates(startDate, day, endDate)
+    }))
+    .filter((plan) => plan.dates.length > 0);
+}
+
+function getSelectedWeekdays(formData, fieldName) {
+  const selectedDays = new Set(formData.getAll(fieldName).map((value) => String(value || '').trim()));
+  return days.filter((day) => selectedDays.has(day));
+}
+
 function buildDateRangeDates(startDate, endDate, maxDays = 366) {
   const normalizedStartDate = String(startDate || '').slice(0, 10);
   const normalizedEndDate = String(endDate || '').slice(0, 10);
@@ -10521,9 +10537,15 @@ function captureActiveFormDrafts() {
   activeFormDrafts = Array.from(document.querySelectorAll('form')).map((form) => {
     if (!form.id) return null;
     const fields = {};
+    const checkboxCounts = Array.from(form.elements)
+      .filter((field) => field.type === 'checkbox' && field.name)
+      .reduce((counts, field) => counts.set(field.name, (counts.get(field.name) || 0) + 1), new Map());
     Array.from(form.elements).forEach((field) => {
       if (!field.name || field.type === 'file') return;
-      if (field.type === 'checkbox' || field.type === 'radio') {
+      if (field.type === 'checkbox' && checkboxCounts.get(field.name) > 1) {
+        if (!Array.isArray(fields[field.name])) fields[field.name] = [];
+        if (field.checked) fields[field.name].push(field.value);
+      } else if (field.type === 'checkbox' || field.type === 'radio') {
         fields[field.name] = field.checked;
       } else if (field instanceof HTMLSelectElement && field.multiple) {
         fields[field.name] = Array.from(field.selectedOptions).map((option) => option.value);
@@ -10542,7 +10564,9 @@ function restoreActiveFormDrafts() {
     Array.from(form.elements).forEach((field) => {
       if (!field.name || !(field.name in fields) || field.type === 'file') return;
       const value = fields[field.name];
-      if (field.type === 'checkbox' || field.type === 'radio') {
+      if (field.type === 'checkbox' && Array.isArray(value)) {
+        field.checked = value.includes(field.value);
+      } else if (field.type === 'checkbox' || field.type === 'radio') {
         field.checked = Boolean(value);
       } else if (field instanceof HTMLSelectElement && field.multiple && Array.isArray(value)) {
         Array.from(field.options).forEach((option) => {
@@ -10560,6 +10584,8 @@ function capturePublicAvailabilityFormDraft() {
   const form = document.getElementById('public-availability-form');
   if (form instanceof HTMLFormElement) {
     publicAvailabilityFormDraft = Object.fromEntries(new FormData(form).entries());
+    publicAvailabilityFormDraft.repeatingDays = Array.from(form.querySelectorAll('input[name="repeatingDays"]:checked'))
+      .map((input) => input.value);
   }
 }
 
@@ -10569,6 +10595,12 @@ function restorePublicAvailabilityFormDraft() {
   const form = document.getElementById('public-availability-form');
   if (!(form instanceof HTMLFormElement)) return;
   Object.entries(draft).forEach(([name, value]) => {
+    if (name === 'repeatingDays' && Array.isArray(value)) {
+      form.querySelectorAll('input[name="repeatingDays"]').forEach((input) => {
+        input.checked = value.includes(input.value);
+      });
+      return;
+    }
     const field = form.elements.namedItem(name);
     if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement) {
       field.value = String(value ?? '');
@@ -10716,13 +10748,12 @@ function renderPublicAvailabilityRequestPage() {
 
           <div id="public-repeating-fields" class="stack" style="display:none;">
             <div class="row" style="flex-wrap:wrap;">
-              <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
-                <span>Day of week</span>
-                <select name="repeatingDay">
-                  <option value="">Select day</option>
-                  ${days.map((day) => `<option value="${day}">${day}</option>`).join('')}
-                </select>
-              </label>
+              <div style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                <span>Days of the week</span>
+                <div class="row" style="gap:8px; flex-wrap:wrap;">
+                  ${days.map((day) => `<label class="row" style="gap:4px; white-space:nowrap;"><input type="checkbox" name="repeatingDays" value="${escapeHtml(day)}" /><span>${escapeHtml(day)}</span></label>`).join('')}
+                </div>
+              </div>
               <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
                 <span>Start date</span>
                 <input name="repeatingStartDate" type="date" />
@@ -11056,6 +11087,7 @@ function submitPublicAvailabilityRequest(formElement) {
   let recurrenceDay = '';
   let recurrenceEndDate = '';
   let recurrenceGroupId = '';
+  let recurrenceSeries = [];
   let recurrencePlan = { dates: [], truncated: false };
 
   if (requestKind === 'one-time-availability') {
@@ -11074,17 +11106,13 @@ function submitPublicAvailabilityRequest(formElement) {
     unavailableEnd = oneTimeEnd;
     recurrencePlan = { dates: [oneTimeDate], truncated: false };
   } else if (requestKind === 'repeating-availability') {
-    const repeatingDay = String(formData.get('repeatingDay') || '').trim();
+    const repeatingDays = getSelectedWeekdays(formData, 'repeatingDays');
     const repeatingStartDate = String(formData.get('repeatingStartDate') || '').trim();
     const repeatingEndDate = String(formData.get('repeatingEndDate') || '').trim();
     const repeatingStartTime = String(formData.get('repeatingStartTime') || '').trim();
     const repeatingEndTime = String(formData.get('repeatingEndTime') || '').trim();
-    if (!repeatingDay || !repeatingStartDate || !repeatingEndDate || !repeatingStartTime || !repeatingEndTime) {
-      alert('Repeating availability requires a day of week, start/end date range, and start/end time.');
-      return false;
-    }
-    if (!days.includes(repeatingDay)) {
-      alert('Select a valid day of the week for repeating availability.');
+    if (!repeatingDays.length || !repeatingStartDate || !repeatingEndDate || !repeatingStartTime || !repeatingEndTime) {
+      alert('Repeating availability requires at least one day of the week, a start/end date range, and start/end time.');
       return false;
     }
     if (toMinutes(repeatingEndTime) <= toMinutes(repeatingStartTime)) {
@@ -11094,10 +11122,17 @@ function submitPublicAvailabilityRequest(formElement) {
     unavailableStart = repeatingStartTime;
     unavailableEnd = repeatingEndTime;
     recurrenceType = 'weekly';
-    recurrenceDay = repeatingDay;
     recurrenceEndDate = repeatingEndDate;
-    recurrencePlan = buildWeeklyRecurringDates(repeatingStartDate, repeatingDay, repeatingEndDate);
-    recurrenceGroupId = `weekly-${currentId}-${Date.now()}-${createId()}`;
+    recurrenceSeries = buildWeeklyRecurringPlans(repeatingStartDate, repeatingDays, repeatingEndDate)
+      .map((series) => ({
+        ...series,
+        recurrenceGroupId: `weekly-${currentId}-${Date.now()}-${createId()}`
+      }));
+    recurrencePlan = {
+      dates: recurrenceSeries.flatMap((series) => series.dates),
+      truncated: recurrenceSeries.some((series) => series.truncated)
+    };
+    summaryLabel = `weekly on ${repeatingDays.join(', ')} from ${repeatingStartDate} through ${repeatingEndDate} (${formatTimeRange(repeatingStartTime, repeatingEndTime)})`;
   } else if (requestKind === 'vacation-time') {
     const vacationMode = String(formData.get('vacationMode') || 'single-date').trim();
     unavailabilityType = 'PTO';
@@ -11143,7 +11178,10 @@ function submitPublicAvailabilityRequest(formElement) {
   }
 
   const requestTimestamp = new Date().toISOString();
-  const nextRequests = recurrencePlan.dates.map((dateValue, index) => ({
+  const requestSeries = recurrenceSeries.length > 0
+    ? recurrenceSeries
+    : [{ day: recurrenceDay, dates: recurrencePlan.dates, recurrenceGroupId }];
+  const nextRequests = requestSeries.flatMap((series) => series.dates.map((dateValue, index) => ({
     id: createId(),
     agentId: currentId,
     requesterUserId: null,
@@ -11156,14 +11194,14 @@ function submitPublicAvailabilityRequest(formElement) {
     unavailableEnd,
     note,
     recurrenceType,
-    recurrenceDay,
+    recurrenceDay: series.day || recurrenceDay,
     recurrenceEndDate: recurrenceType === 'weekly' ? String(recurrenceEndDate).slice(0, 10) : '',
-    recurrenceGroupId,
+    recurrenceGroupId: series.recurrenceGroupId || recurrenceGroupId,
     recurrenceInstance: index + 1,
-    recurrenceTotal: recurrencePlan.dates.length,
+    recurrenceTotal: series.dates.length,
     requestedAt: requestTimestamp,
     status: 'pending'
-  }));
+  })));
 
   const nextAvailabilityRequests = [...getAllAvailabilityRequests(), ...nextRequests];
   saveAvailabilityRequests(nextAvailabilityRequests);
@@ -11267,6 +11305,7 @@ function submitAvailabilityRequest(formElement) {
   let recurrenceDay = '';
   let recurrenceEndDate = '';
   let recurrenceGroupId = '';
+  let recurrenceSeries = [];
   let recurrencePlan = { dates: [], truncated: false };
   let summaryLabel = '';
 
@@ -11288,17 +11327,13 @@ function submitAvailabilityRequest(formElement) {
     recurrencePlan = { dates: [oneTimeDate], truncated: false };
     summaryLabel = `${oneTimeDate} (${formatTimeRange(oneTimeStart, oneTimeEnd)})`;
   } else if (requestKind === 'repeating-availability') {
-    const repeatingDay = String(formData.get('repeatingDay') || '').trim();
+    const repeatingDays = getSelectedWeekdays(formData, 'repeatingDays');
     const repeatingStartDate = String(formData.get('repeatingStartDate') || '').trim();
     const repeatingEndDate = String(formData.get('repeatingEndDate') || '').trim();
     const repeatingStartTime = String(formData.get('repeatingStartTime') || '').trim();
     const repeatingEndTime = String(formData.get('repeatingEndTime') || '').trim();
-    if (!repeatingDay || !repeatingStartDate || !repeatingEndDate || !repeatingStartTime || !repeatingEndTime) {
-      alert('Repeating availability requires a day of week, start/end date range, and start/end time.');
-      return false;
-    }
-    if (!days.includes(repeatingDay)) {
-      alert('Select a valid day of the week for repeating availability.');
+    if (!repeatingDays.length || !repeatingStartDate || !repeatingEndDate || !repeatingStartTime || !repeatingEndTime) {
+      alert('Repeating availability requires at least one day of the week, a start/end date range, and start/end time.');
       return false;
     }
     if (toMinutes(repeatingEndTime) <= toMinutes(repeatingStartTime)) {
@@ -11309,11 +11344,17 @@ function submitAvailabilityRequest(formElement) {
     unavailableStart = repeatingStartTime;
     unavailableEnd = repeatingEndTime;
     recurrenceType = 'weekly';
-    recurrenceDay = repeatingDay;
     recurrenceEndDate = repeatingEndDate;
-    recurrencePlan = buildWeeklyRecurringDates(repeatingStartDate, repeatingDay, repeatingEndDate);
-    recurrenceGroupId = `weekly-${currentId}-${Date.now()}-${createId()}`;
-    summaryLabel = `weekly every ${repeatingDay} from ${repeatingStartDate} through ${repeatingEndDate} (${formatTimeRange(repeatingStartTime, repeatingEndTime)})`;
+    recurrenceSeries = buildWeeklyRecurringPlans(repeatingStartDate, repeatingDays, repeatingEndDate)
+      .map((series) => ({
+        ...series,
+        recurrenceGroupId: `weekly-${currentId}-${Date.now()}-${createId()}`
+      }));
+    recurrencePlan = {
+      dates: recurrenceSeries.flatMap((series) => series.dates),
+      truncated: recurrenceSeries.some((series) => series.truncated)
+    };
+    summaryLabel = `weekly on ${repeatingDays.join(', ')} from ${repeatingStartDate} through ${repeatingEndDate} (${formatTimeRange(repeatingStartTime, repeatingEndTime)})`;
   } else if (requestKind === 'vacation-time') {
     const vacationMode = String(formData.get('vacationMode') || 'single-date').trim();
     unavailabilityType = 'PTO';
@@ -11363,7 +11404,10 @@ function submitAvailabilityRequest(formElement) {
   const requesterName = getAgent(currentId)?.name || currentUser.username || 'Agent';
   const requestTimestamp = new Date().toISOString();
 
-  const nextRequests = recurrencePlan.dates.map((dateValue, index) => ({
+  const requestSeries = recurrenceSeries.length > 0
+    ? recurrenceSeries
+    : [{ day: recurrenceDay, dates: recurrencePlan.dates, recurrenceGroupId }];
+  const nextRequests = requestSeries.flatMap((series) => series.dates.map((dateValue, index) => ({
     id: createId(),
     agentId: currentId,
     requesterUserId: currentUser.id,
@@ -11376,14 +11420,14 @@ function submitAvailabilityRequest(formElement) {
     unavailableEnd,
     note,
     recurrenceType,
-    recurrenceDay,
+    recurrenceDay: series.day || recurrenceDay,
     recurrenceEndDate: recurrenceType === 'weekly' ? String(recurrenceEndDate).slice(0, 10) : '',
-    recurrenceGroupId,
+    recurrenceGroupId: series.recurrenceGroupId || recurrenceGroupId,
     recurrenceInstance: index + 1,
-    recurrenceTotal: recurrencePlan.dates.length,
+    recurrenceTotal: series.dates.length,
     requestedAt: requestTimestamp,
     status: 'pending'
-  }));
+  })));
 
   const nextAvailabilityRequests = [...getAllAvailabilityRequests(), ...nextRequests];
   saveAvailabilityRequests(nextAvailabilityRequests);
@@ -14343,13 +14387,12 @@ function renderAgentTimeOffRequestPanel(blackoutDates = []) {
 
                 <div id="agent-repeating-fields" class="stack" style="display:none;">
                   <div class="row" style="flex-wrap:wrap;">
-                    <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
-                      <span>Day of week</span>
-                      <select name="repeatingDay">
-                        <option value="">Select day</option>
-                        ${days.map((day) => `<option value="${day}">${day}</option>`).join('')}
-                      </select>
-                    </label>
+                    <div style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
+                      <span>Days of the week</span>
+                      <div class="row" style="gap:8px; flex-wrap:wrap;">
+                        ${days.map((day) => `<label class="row" style="gap:4px; white-space:nowrap;"><input type="checkbox" name="repeatingDays" value="${escapeHtml(day)}" /><span>${escapeHtml(day)}</span></label>`).join('')}
+                      </div>
+                    </div>
                     <label style="display:flex; flex-direction:column; gap:6px; min-width:200px; flex:1;">
                       <span>Start date</span>
                       <input name="repeatingStartDate" type="date" />
