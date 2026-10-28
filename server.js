@@ -167,9 +167,40 @@ function getSeedAgentCount() {
   return seedDataFilePaths.reduce((best, filePath) => Math.max(best, getStoredAgentCountFromFile(filePath)), 0);
 }
 
-function writeStore(store) {
+function getAgentRecencyMs(agent) {
+  const timestamp = Date.parse(String(agent?.profileUpdatedAt || agent?.updatedAt || ''));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+// Keep the stored version of any agent that is strictly newer than the incoming one, so a stale client cannot revert a recent edit.
+function preserveNewerAgents(currentStore, incomingStore) {
+  const stateKey = 'agent-scheduler-state-v4';
+  if (typeof currentStore?.[stateKey] !== 'string' || typeof incomingStore?.[stateKey] !== 'string') return incomingStore;
+  try {
+    const currentState = JSON.parse(currentStore[stateKey]);
+    const incomingState = JSON.parse(incomingStore[stateKey]);
+    if (!Array.isArray(currentState?.agents) || !Array.isArray(incomingState?.agents)) return incomingStore;
+    const currentById = new Map(currentState.agents.map((agent) => [String(agent?.id), agent]));
+    let didChange = false;
+    const agents = incomingState.agents.map((agent) => {
+      const currentAgent = currentById.get(String(agent?.id));
+      if (currentAgent && getAgentRecencyMs(currentAgent) > getAgentRecencyMs(agent)) {
+        didChange = true;
+        return currentAgent;
+      }
+      return agent;
+    });
+    if (!didChange) return incomingStore;
+    return { ...incomingStore, [stateKey]: JSON.stringify({ ...incomingState, agents }) };
+  } catch {
+    return incomingStore;
+  }
+}
+
+function writeStore(incomingStore) {
   ensureDataFile();
   const currentStore = readStore();
+  const store = preserveNewerAgents(currentStore, incomingStore);
   const currentAgentCount = getStoredAgentCount(currentStore);
   const nextAgentCount = getStoredAgentCount(store);
   const currentAuthUserCount = getStoredAuthUserCount(currentStore);

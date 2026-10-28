@@ -5445,13 +5445,28 @@ async function saveAgentDetails(agentId, values) {
     console.warn('Agent profile saved, but account metadata could not be saved locally.');
   }
 
-  // Push agent/account changes immediately so other tabs/devices see updates right away.
-  void flushLocalSnapshotSync();
+  // Push agent/account changes and wait for the result so "saved" reflects the shared backend, not just this browser.
+  let didSyncBackend = true;
+  if (backendApiBase) {
+    didSyncBackend = false;
+    try {
+      didSyncBackend = await pushLocalSnapshotToBackend();
+    } catch {
+      didSyncBackend = false;
+    }
+    if (didSyncBackend) {
+      markSyncSuccess();
+    }
+  }
 
-  return {
-    ok: true,
-    warning: didSaveAuthUsers ? '' : 'The agent profile was saved, but account access details may take a moment to synchronize.'
-  };
+  let warning = '';
+  if (!didSyncBackend) {
+    warning = 'The agent profile was saved on this device, but it could not be synced to the shared backend. Other devices will not see the change until sync succeeds; keep this page open and check again shortly.';
+  } else if (!didSaveAuthUsers) {
+    warning = 'The agent profile was saved, but account access details may take a moment to synchronize.';
+  }
+
+  return { ok: true, warning };
 }
 
 function openAgentEditModal(agent, onSave) {
