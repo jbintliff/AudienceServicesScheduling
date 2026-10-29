@@ -8851,11 +8851,8 @@ function renderProfilePage(currentUser) {
               <div><strong>Name:</strong> ${escapeHtml(viewAgent?.name || 'Not set')}</div>
               <div><strong>Team:</strong> ${escapeHtml(viewAgent?.team || 'Not set')}</div>
               <div><strong>Department:</strong> ${escapeHtml(viewAgent?.department || 'Not set')}</div>
-              <div><strong>Employment Type:</strong> ${escapeHtml(normalizeEmploymentType(viewAgent?.employmentType) || 'Not set')}</div>
               <div><strong>Attendance points:</strong> ${escapeHtml(normalizeAttendancePoints(viewAgent?.attendancePoints))}</div>
               <div><strong>Pronouns:</strong> ${escapeHtml(normalizePronouns(viewAgent?.pronouns) || 'Not set')}</div>
-              <div><strong>Shiftboard ID:</strong> ${escapeHtml(normalizeShiftboardId(viewAgent?.shiftboardId) || 'Not set')}</div>
-              <div><strong>Skills:</strong> ${escapeHtml(getAgentSkillsSummary(viewAgent?.skills))}</div>
               <div><strong>Email:</strong> ${escapeHtml(activeAgentUser?.email || 'Not set')}</div>
               <div><strong>Phone:</strong> ${escapeHtml(activeAgentUser?.phone || 'Not set')}</div>
             </div>
