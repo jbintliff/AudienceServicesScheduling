@@ -7623,7 +7623,7 @@ function renderCalendarPage(currentUser) {
                     <h4 style="margin:0;">${day}</h4>
                     <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
                     <div class="muted" style="font-size:0.72rem; font-weight:600;">Summary: ${dayRequests.length} request${dayRequests.length === 1 ? '' : 's'}</div>
-                    <div class="muted" style="font-size:0.72rem;">${daySummary.agentCount} agent${daySummary.agentCount === 1 ? '' : 's'}${isAgentView ? '' : ` â€¢ $${daySummary.cost.toFixed(2)}`}</div>
+                    <div class="muted" style="font-size:0.72rem;">${daySummary.agentCount} agent${daySummary.agentCount === 1 ? '' : 's'}${isAgentView ? '' : ` | $${daySummary.cost.toFixed(2)}`}</div>
                     <div class="muted" style="font-size:0.72rem;">In Person/ TP: ${daySummary.inPersonCount} / WFH: ${daySummary.workFromHomeCount}</div>
                   </div>
                   ${hasDayRequests ? `<div data-view-day-availability-requests="${escapeHtml(dayDate)}" style="cursor:pointer;" title="View requests for this date"><span class="muted">View availability requests</span></div>` : ''}
