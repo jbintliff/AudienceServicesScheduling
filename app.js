@@ -7313,6 +7313,7 @@ function renderCalendarPage(currentUser) {
   const weekReference = calendarFilters.weekReference || calendarFilters.date || getCurrentLocalIsoDate();
   const weekDates = getCalendarWeekDates(weekReference);
   const weekLabel = getCalendarWeekLabel(weekDates);
+  const weeklyCost = getWeeklySpend(weekReference);
   const locations = getAllLocations();
   const roleItems = getRoleLegendItems();
   const teamItems = getTeamCatalog();
@@ -7604,6 +7605,7 @@ function renderCalendarPage(currentUser) {
               <span class="chip" style="background:${getRoleColor(role)}; color:${getReadableTextColor(getRoleColor(role))}; border:1px solid rgba(255,255,255,0.75);">${escapeHtml(role)}</span>
             `).join('')}
           </div>
+          ${isAgentView ? '' : `<div class="muted calendar-weekly-cost"><strong>Weekly cost:</strong> $${weeklyCost.toFixed(2)}</div>`}
         </div>
         ${canManageCalendar ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-copy-full-schedule>Copy full schedule</button><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-edit-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Edit selected</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="secondary" data-unpublish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Unpublish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
         <div class="${canManageCalendar ? 'schedule-with-roster' : ''}">
