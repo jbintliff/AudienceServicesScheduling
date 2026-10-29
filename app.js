@@ -8867,7 +8867,7 @@ function renderProfilePage(currentUser) {
             </form>
           </div>
 
-          <div class="panel">
+          <div class="panel"${isAgentUser(getCurrentUser()) ? ' style="display:none;" aria-hidden="true"' : ''}>
             <h2>Personal calendar sync</h2>
             <p class="muted">Subscribe to this URL in Google Calendar, Apple Calendar, or Outlook to keep your shifts in your personal calendar.</p>
             <div class="stack" style="margin-top:10px;">
