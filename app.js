@@ -4465,15 +4465,7 @@ const defaultLocationColorMap = {
 };
 
 function getShiftLocationColor(shift) {
-  const normalizedLocation = String(shift?.location || '').trim().toLowerCase();
-  return getLocationColor(normalizedLocation);
-}
-
-function getLocationColor(location) {
-  const normalizedLocation = String(location || '').trim().toLowerCase();
-  const savedColor = state.locationColors?.[normalizedLocation];
-  if (savedColor) return savedColor;
-  return defaultLocationColorMap[normalizedLocation] || (normalizedLocation ? getGeneratedRoleColor(normalizedLocation) : defaultLocationColorMap.default);
+  return getAgentLocationColor(shift?.location);
 }
 
 function getAgentLocationColor(location) {
@@ -4486,7 +4478,6 @@ function getAgentLocationColor(location) {
 function getShiftRoleOutlineColor(shift) {
   const role = String(shift?.role || '').trim();
   if (!role) return '';
-  if (isSwapRestrictedAgent(shift?.agentId)) return getRoleColor('Booth Duty');
   return getRoleColor(role);
 }
 
@@ -6822,12 +6813,13 @@ function getFilteredCalendarShifts() {
   const search = pageMode === 'calendar' ? '' : (filters.search || '').trim().toLowerCase();
   const agentName = (filters.agentName || '').trim().toLowerCase();
   const selectedDate = (filters.date || '').trim();
+  const selectedTeam = filters.team || 'All';
   const departmentScope = getCurrentUserDepartmentScope();
   return state.shifts.filter((shift) => {
     const matchesDay = pageMode === 'calendar' || filters.day === 'All' || shift.day === filters.day;
     const matchesRole = filters.role === 'All' || String(shift.role || '') === String(filters.role);
     const agent = getAgent(shift.agentId);
-    const matchesTeam = filters.team === 'All' || (agent && normalizeTeamLabel(agent.team) === filters.team);
+    const matchesTeam = selectedTeam === 'All' || (agent && normalizeTeamLabel(agent.team) === selectedTeam);
     const matchesAgentName = !agentName || String(agent?.name || '').trim().toLowerCase() === agentName;
     const matchesDate = !selectedDate || (shift.date || '') === selectedDate;
     const matchesLocation = filters.location === 'All' || shift.location === filters.location;

@@ -10,6 +10,7 @@ Features included:
 - Create shifts manually with notes
 - Generate recurring shifts from templates
 - Search and filter agents and shifts
+- Schedule shift colors use the assigned role, or the location when no role is assigned, matching the configured legend colors
 - Import and export scheduler data as JSON
 - Track agent availability, time off, and assigned hours
 - Agent profiles do not display or collect locations; location selection remains available for scheduled shifts
