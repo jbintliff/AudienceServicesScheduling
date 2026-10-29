@@ -6472,6 +6472,15 @@ function getCurrentLocalMonthValue() {
   return getCurrentLocalIsoDate().slice(0, 7);
 }
 
+function getMonthDateValues(monthValue) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(monthValue || ''));
+  if (!match) return [];
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  return Array.from({ length: daysInMonth }, (_, index) => `${match[1]}-${match[2]}-${String(index + 1).padStart(2, '0')}`);
+}
+
 function getNextDateForWeekdayOnOrAfter(anchorDate, weekdayLabel) {
   const parsedDate = new Date(`${String(anchorDate || '').slice(0, 10)}T00:00:00`);
   const targetIndex = days.indexOf(String(weekdayLabel || ''));
@@ -8808,7 +8817,6 @@ function renderProfilePage(currentUser) {
   }
   const calendarSyncUrl = getAgentCalendarFeedUrl(activeAgentUser.calendarFeedToken);
   const activeRecurringAvailabilityGroups = getActiveRecurringAvailabilityGroupsForAgent(viewAgent?.id, getCurrentLocalIsoDate());
-  const profileMessageBoard = getDashboardMessageBoardState();
 
   root.innerHTML = `
     <div class="app agents-compact">
@@ -8834,8 +8842,6 @@ function renderProfilePage(currentUser) {
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
-
-      ${renderDashboardMessageTimeline(profileMessageBoard, currentUser)}
 
       <div class="grid" style="margin-top:16px; grid-template-columns:1fr;">
         <div class="stack">
@@ -10468,7 +10474,8 @@ function render() {
   }
   const viewAgent = getViewAgent();
   const currentAgentId = Number(viewAgent?.id);
-  const visibleShifts = isAgentView ? getAgentViewShifts() : [];
+  const hideAgentShifts = isAgentUser(currentUser);
+  const visibleShifts = isAgentView && !hideAgentShifts ? getAgentViewShifts() : [];
   const sortedVisibleShifts = [...visibleShifts].sort(compareCalendarShiftDisplayOrder);
   const blackoutDates = getBlackoutDatesForScope(getCurrentUserDepartmentScope());
   const plannerWeekReference = getActiveCalendarWeekReference();
@@ -10631,8 +10638,8 @@ function render() {
 
             </div>` : `
             <div class="panel">
-              <h2>My schedule</h2>
-              <div class="muted">Showing shifts for ${escapeHtml(viewAgent?.name || 'your selected agent')}.</div>
+              <h2>${hideAgentShifts ? 'Availability calendar' : 'My schedule'}</h2>
+              <div class="muted">${hideAgentShifts ? 'Showing availability and PTO requests for your team.' : `Showing shifts for ${escapeHtml(viewAgent?.name || 'your selected agent')}.`}</div>
               <div class="row" style="margin-top:10px; margin-bottom:10px;">
                 <select id="agent-schedule-view">
                   <option value="day" ${selectedAgentScheduleView === 'day' ? 'selected' : ''}>Day</option>
@@ -10652,7 +10659,7 @@ function render() {
                       <div class="shift" draggable="true" data-shift-id="${shift.id}">
                         <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}<br />${formatTimeRange(shift.start, shift.end)}
                       </div>
-                    `).join('') || '<div class="muted">No shifts for this day.</div>'}
+                    `).join('') || (hideAgentShifts ? (getAvailabilityCalendarMarkers(weekDates[selectedAgentScheduleDay]?.iso || '') ? '' : '<div class="muted">No availability or PTO requests for this day.</div>') : '<div class="muted">No shifts for this day.</div>')}
                   </div>
                 </div>
               ` : ''}
@@ -10672,7 +10679,20 @@ function render() {
                   `).join('')}
                 </div>
               ` : ''}
-              ${selectedAgentScheduleView === 'month' ? `
+              ${selectedAgentScheduleView === 'month' && hideAgentShifts ? `
+                <div class="request-list" style="margin-top:12px;">
+                  ${getMonthDateValues(selectedAgentScheduleMonth).map((isoDate) => {
+                    const markers = getAvailabilityCalendarMarkers(isoDate);
+                    return markers ? `
+                      <div class="card">
+                        <strong>${escapeHtml(isoDate)}</strong>
+                        ${markers}
+                      </div>
+                    ` : '';
+                  }).join('') || '<div class="muted">No availability or PTO requests in this month.</div>'}
+                </div>
+              ` : ''}
+              ${selectedAgentScheduleView === 'month' && !hideAgentShifts ? `
                 <div class="request-list" style="margin-top:12px;">
                   ${monthShifts.map((shift) => `
                     <div class="card">
