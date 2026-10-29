@@ -14732,11 +14732,11 @@ function renderAgentTimeOffPage(currentUser) {
         </div>
       </div>
 
-      <div class="row" style="align-items:flex-start; gap:16px; flex-wrap:wrap;">
-        <div class="stack" style="flex:1 1 360px; min-width:320px;">
+      <div class="stack" style="gap:16px;">
+        <div class="stack">
           ${renderAgentTimeOffRequestPanel(blackoutDates)}
         </div>
-        <div class="stack" style="flex:1 1 360px; min-width:320px;">
+        <div class="stack">
           <div class="panel">
             <h2>My upcoming requests</h2>
             <div class="stack" style="gap:8px; margin-top:10px;">
