@@ -580,6 +580,7 @@ const defaultState = {
       day: 'All',
       agentId: 'All',
       role: 'All',
+      team: 'All',
       agentName: '',
       date: '',
       weekReference: '',
@@ -929,6 +930,7 @@ function normalizeUiState(source) {
       day: source?.calendar?.day || defaults.calendar.day,
       agentId: source?.calendar?.agentId || defaults.calendar.agentId,
       role: source?.calendar?.role || defaults.calendar.role,
+      team: source?.calendar?.team || defaults.calendar.team,
       agentName: source?.calendar?.agentName || defaults.calendar.agentName,
       date: source?.calendar?.date || defaults.calendar.date,
       weekReference: source?.calendar?.weekReference || defaults.calendar.weekReference,
@@ -6610,16 +6612,22 @@ function getSpendByDay() {
 
 function getScheduleDaySummary(shifts) {
   const assignedAgentIds = new Set();
+  const inPersonAgentIds = new Set();
+  const workFromHomeAgentIds = new Set();
   let cost = 0;
   (Array.isArray(shifts) ? shifts : []).forEach((shift) => {
     const agentId = Number(shift?.agentId);
     const agent = getAgent(agentId);
     if (!agentId || !agent) return;
     assignedAgentIds.add(agentId);
+    if (isInOfficeShift(shift)) inPersonAgentIds.add(agentId);
+    if (isWorkFromHomeShift(shift)) workFromHomeAgentIds.add(agentId);
     cost += (Number(agent.payRate) || 0) * (Number(shift.durationHours) || getDurationHours(shift.start, shift.end));
   });
   return {
     agentCount: assignedAgentIds.size,
+    inPersonCount: inPersonAgentIds.size,
+    workFromHomeCount: workFromHomeAgentIds.size,
     cost
   };
 }
@@ -6665,6 +6673,10 @@ function isInOfficeRole(role) {
 
 function isInOfficeShift(shift) {
   return String(shift?.location || '').trim().toLowerCase() === 'in person/ tp';
+}
+
+function isWorkFromHomeShift(shift) {
+  return String(shift?.location || '').trim().toLowerCase() === 'work from home';
 }
 
 function getAssignedInOfficeShiftCount(agentId, referenceDateValue = '', options = {}) {
@@ -6814,14 +6826,15 @@ function getFilteredCalendarShifts() {
   return state.shifts.filter((shift) => {
     const matchesDay = pageMode === 'calendar' || filters.day === 'All' || shift.day === filters.day;
     const matchesRole = filters.role === 'All' || String(shift.role || '') === String(filters.role);
-    const matchesAgentName = !agentName || String(getAgent(shift.agentId)?.name || '').trim().toLowerCase() === agentName;
+    const agent = getAgent(shift.agentId);
+    const matchesTeam = filters.team === 'All' || (agent && normalizeTeamLabel(agent.team) === filters.team);
+    const matchesAgentName = !agentName || String(agent?.name || '').trim().toLowerCase() === agentName;
     const matchesDate = !selectedDate || (shift.date || '') === selectedDate;
     const matchesLocation = filters.location === 'All' || shift.location === filters.location;
     const matchesDepartment = isAgentInDepartmentScope(shift.agentId, departmentScope);
     const matchesRoleDepartment = isRoleInDepartmentScope(shift.role, departmentScope);
-    if (!matchesDay || !matchesRole || !matchesAgentName || !matchesDate || !matchesLocation || !matchesDepartment || !matchesRoleDepartment) return false;
+    if (!matchesDay || !matchesRole || !matchesTeam || !matchesAgentName || !matchesDate || !matchesLocation || !matchesDepartment || !matchesRoleDepartment) return false;
     if (!search) return true;
-    const agent = getAgent(shift.agentId);
     return [shift.role, shift.day, shift.location, shift.start, shift.end, agent?.name].join(' ').toLowerCase().includes(search);
   });
 }
@@ -7310,6 +7323,7 @@ function renderCalendarPage(currentUser) {
   const weekLabel = getCalendarWeekLabel(weekDates);
   const locations = getAllLocations();
   const roleItems = getRoleLegendItems();
+  const teamItems = getTeamCatalog();
   const agentCatalog = getAgentCatalogForUi();
   const teamLeadTeamGroups = isTeamLeadUser(currentUser)
     ? getManagedTeamsForUser(currentUser).map((team) => ({
@@ -7529,6 +7543,10 @@ function renderCalendarPage(currentUser) {
               ${agentNameItems.map((name) => `<option value="${escapeHtml(name)}" ${String(calendarFilters.agentName || '') === String(name) ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
             </select>
             <input id="calendar-date-filter" type="date" value="${escapeHtml(calendarFilters.date)}" />
+            <select id="calendar-team-filter">
+              <option value="All" ${calendarFilters.team === 'All' ? 'selected' : ''}>All teams</option>
+              ${teamItems.map((team) => `<option value="${escapeHtml(team)}" ${String(calendarFilters.team || 'All') === String(team) ? 'selected' : ''}>${escapeHtml(team)}</option>`).join('')}
+            </select>
             <select id="calendar-role-filter">
               <option value="All" ${calendarFilters.role === 'All' ? 'selected' : ''}>All roles</option>
               ${roleItems.map((role) => `<option value="${escapeHtml(role)}" ${String(calendarFilters.role || 'All') === String(role) ? 'selected' : ''}>${escapeHtml(role)}</option>`).join('')}
@@ -7614,6 +7632,7 @@ function renderCalendarPage(currentUser) {
                     <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
                     <div class="muted" style="font-size:0.72rem; font-weight:600;">Summary: ${dayRequests.length} request${dayRequests.length === 1 ? '' : 's'}</div>
                     <div class="muted" style="font-size:0.72rem;">${daySummary.agentCount} agent${daySummary.agentCount === 1 ? '' : 's'}${isAgentView ? '' : ` â€¢ $${daySummary.cost.toFixed(2)}`}</div>
+                    <div class="muted" style="font-size:0.72rem;">In Person/ TP: ${daySummary.inPersonCount} / WFH: ${daySummary.workFromHomeCount}</div>
                   </div>
                   ${hasDayRequests ? `<div data-view-day-availability-requests="${escapeHtml(dayDate)}" style="cursor:pointer;" title="View requests for this date"><span class="muted">View availability requests</span></div>` : ''}
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
@@ -12083,6 +12102,7 @@ function bindEvents() {
     state.ui.calendar.day = 'All';
     state.ui.calendar.agentId = 'All';
     state.ui.calendar.role = 'All';
+    state.ui.calendar.team = 'All';
     state.ui.calendar.agentName = '';
     state.ui.calendar.date = '';
     state.ui.calendar.location = 'All';
@@ -13144,6 +13164,7 @@ function bindEvents() {
   document.getElementById('calendar-filters-apply')?.addEventListener('click', () => {
     const agentNameSelect = document.getElementById('calendar-agent-name-filter');
     const dateInput = document.getElementById('calendar-date-filter');
+    const teamSelect = document.getElementById('calendar-team-filter');
     const roleSelect = document.getElementById('calendar-role-filter');
     const locationSelect = document.getElementById('calendar-location-filter');
     state.ui.calendar.day = 'All';
@@ -13151,6 +13172,7 @@ function bindEvents() {
     state.ui.calendar.date = dateInput?.value || '';
     state.ui.calendar.agentId = 'All';
     state.ui.calendar.role = roleSelect?.value || 'All';
+    state.ui.calendar.team = teamSelect?.value || 'All';
     state.ui.calendar.location = locationSelect?.value || 'All';
     saveUiState();
     render();
@@ -13168,6 +13190,7 @@ function bindEvents() {
     state.ui.calendar.day = 'All';
     state.ui.calendar.agentId = 'All';
     state.ui.calendar.role = 'All';
+    state.ui.calendar.team = 'All';
     state.ui.calendar.agentName = '';
     state.ui.calendar.date = '';
     state.ui.calendar.weekReference = '';
