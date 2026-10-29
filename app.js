@@ -7295,7 +7295,7 @@ function renderAdminNavigationLinks(options = {}) {
 function renderAgentNavigationLinks() {
   return [
     '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>',
-    '<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>',
+    ...(isAgentUser(getCurrentUser()) ? [] : ['<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>']),
     '<a href="index.html?view=request-time-off" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Request time off</button></a>',
     '<a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>',
     '<a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Completed requests</button></a>',
@@ -10321,7 +10321,7 @@ function render() {
     return;
   }
 
-  if (pageMode === 'calendar') {
+  if (pageMode === 'calendar' && !isAgentUser(currentUser)) {
     renderCalendarPage(currentUser);
     return;
   }
@@ -10357,7 +10357,6 @@ function render() {
     ? []
     : getFilteredCalendarShifts().filter((shift) => shift.status === shiftStatuses.published && shiftIsInWeek(shift, plannerWeekDates));
   const sortedAdminWeeklyShifts = [...adminWeeklyShifts].sort(compareCalendarShiftDisplayOrder);
-  const agentViewShifts = getAgentViewShifts();
   const todayDay = days[(new Date().getDay() + 6) % 7] || 'Mon';
   const selectedAgentScheduleView = ['day', 'week', 'month'].includes(state.ui.agentScheduleView) ? state.ui.agentScheduleView : 'week';
   const selectedAgentScheduleDay = days.includes(state.ui.agentScheduleDay) ? state.ui.agentScheduleDay : todayDay;
@@ -10379,7 +10378,7 @@ function render() {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>${isAgentView ? 'My scheduling view' : 'Agent Scheduling Hub'}</h1>
-          <p class="muted">${isAgentView ? 'View your schedule and request swaps without the admin management tools.' : 'A fuller staffing workspace for agents, templates, drag-and-drop scheduling, and pay tracking.'}</p>
+          <p class="muted">${isAgentView ? 'View your schedule and manage your availability and time off requests.' : 'A fuller staffing workspace for agents, templates, drag-and-drop scheduling, and pay tracking.'}</p>
           <p class="muted">${escapeHtml(getLastSyncStatusText())}</p>
         </div>
         <div class="row">
@@ -10565,24 +10564,7 @@ function render() {
         </div>
 
         <div class="stack">
-          ${!isAgentView ? '' : `
-            ${renderAgentTimeOffRequestPanel(blackoutDates)}
-
-            <div class="panel">
-              <h2>Swap a shift</h2>
-              <form id="swap-form" class="stack">
-                <input type="hidden" name="fromAgentId" value="${viewAgent?.id || ''}" />
-                <select name="shiftId" required>
-                  <option value="">Select a shift</option>
-                  ${agentViewShifts.map((shift) => `<option value="${shift.id}">${escapeHtml(getShiftSummary(shift))}</option>`).join('')}
-                </select>
-                <select name="toAgentId" required>
-                  <option value="">Swap with</option>
-                  ${getAgentCatalogForUi().filter((agent) => agent.id !== viewAgent?.id && !isSwapRestrictedAgent(agent)).map((agent) => `<option value="${agent.id}">${escapeHtml(agent.name)}</option>`).join('')}
-                </select>
-                <button type="submit">Request swap</button>
-              </form>
-            </div>`}
+          ${isAgentView ? renderAgentTimeOffRequestPanel(blackoutDates) : ''}
         </div>
       </div>
     </div>
