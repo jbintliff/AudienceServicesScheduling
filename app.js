@@ -7395,8 +7395,8 @@ function renderCalendarPage(currentUser) {
         .calendar-view .day-card { padding: 4px !important; min-height: 0; }
         .calendar-view .calendar-controls-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding-bottom:4px; }
         .calendar-view .calendar-controls-row > * { flex:0 0 auto; }
-        .calendar-view .shift { padding: 3px !important; margin-bottom: 2px; line-height: 1; font-size: 0.7rem; color: #000; overflow: hidden; }
-        .calendar-view .shift strong { font-size: 0.84rem; }
+        .calendar-view .shift { padding: 3px !important; margin-bottom: 2px; line-height: 1; font-size: 0.75rem; color: #000; overflow: hidden; }
+        .calendar-view .shift strong { font-size: 0.9rem; }
         .calendar-view .shift .muted { color: inherit !important; }
         .calendar-view .calendar-shift-actions { gap: 2px; margin-top: 2px !important; flex-wrap: wrap; }
         .calendar-view .calendar-shift-actions button { padding: 1px 3px; min-height: 20px; font-size: 0.62rem; flex: 1 1 auto; min-width: 0; }
