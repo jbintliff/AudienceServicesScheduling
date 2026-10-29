@@ -7301,7 +7301,7 @@ function renderAgentNavigationLinks() {
   return [
     '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>',
     ...(isAgentUser(getCurrentUser()) ? [] : ['<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>']),
-    '<a href="index.html?view=request-time-off" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Request time off</button></a>',
+    ...(isAgentUser(getCurrentUser()) ? [] : ['<a href="index.html?view=request-time-off" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Request time off</button></a>']),
     '<a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>',
     '<a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Completed requests</button></a>',
     '<a href="index.html?view=resources" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Resources</button></a>',
@@ -10440,7 +10440,7 @@ function render() {
     return;
   }
 
-  if (pageMode === 'request-time-off') {
+  if (pageMode === 'request-time-off' && !isAgentUser(currentUser)) {
     renderAgentTimeOffPage(currentUser);
     return;
   }
