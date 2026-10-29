@@ -7388,8 +7388,8 @@ function renderResourcesPage(currentUser) {
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                 <div>
                   <a href="${escapeHtml(normalizeResourceUrl(resource.url))}" target="_blank" rel="noopener noreferrer" style="font-weight:700;">${escapeHtml(resource.title || 'Resource')}</a>
-                  ${resource.description ? `<div class="muted" style="margin-top:6px;">${escapeHtml(resource.description)}</div>` : ''}
-                  <div class="muted" style="margin-top:4px;">${escapeHtml(resource.url || '')}</div>
+                  ${isAdminView && resource.description ? `<div class="muted" style="margin-top:6px;">${escapeHtml(resource.description)}</div>` : ''}
+                  ${isAdminView ? `<div class="muted" style="margin-top:4px;">${escapeHtml(resource.url || '')}</div>` : ''}
                 </div>
                 ${isAdminView ? `<button type="button" class="danger" data-remove-resource="${escapeHtml(resource.id || '')}">Remove</button>` : ''}
               </div>
