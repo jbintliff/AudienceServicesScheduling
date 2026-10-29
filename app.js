@@ -1,4 +1,4 @@
-﻿const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const roleOptions = ['Booth Duty', 'Booth Duty (Form)', 'Booth Duty Back-up'];
 const retiredTeamLabels = new Set(['patron services representative', 'patron services', 'patron services associate']);
 const defaultTeamOptions = ['Patron Services Associate', 'Audience Services Management', 'Box Office'];
@@ -9126,7 +9126,7 @@ function renderAdminOptionsPage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>Admin options</h1>
-          <p class="muted">Manage shift templates, policies, teams, locations, roles, and venues from one page.</p>
+          <p class="muted">Manage shift templates, teams, locations, roles, and venues from one page.</p>
         </div>
         <div class="row">
           ${renderAdminNavigationLinks({ includeExport: true })}
@@ -9136,7 +9136,7 @@ function renderAdminOptionsPage(currentUser) {
       </div>
 
       <div class="grid" style="grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px;">
-        <div class="panel" style="grid-column:1 / 3; grid-row:1;">
+        <div class="panel" style="grid-column:1 / -1; grid-row:1;">
           <h2>Shift templates${blackoutDepartmentScope ? ` (${escapeHtml(blackoutDepartmentScope)})` : ' (All departments)'}</h2>
           <form id="add-shift-template-form" class="stack" style="margin-bottom:12px;">
             <div class="row" style="flex-wrap:wrap;">
@@ -9282,40 +9282,6 @@ function renderAdminOptionsPage(currentUser) {
 
         </div>
 
-        <div class="panel" data-admin-options-collapsible data-admin-options-panel-key="admin-options-policies" style="grid-column:3 / 5; grid-row:1;">
-          <h2>Policies</h2>
-          <p class="muted">Upload policy files that agents can view and download from the Policies page.</p>
-          <form id="upload-policy-form" class="row" style="margin-bottom:10px; flex-wrap:wrap;">
-            <input name="policyFile" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
-            <select name="department">
-              <option value="" ${!blackoutDepartmentScope ? 'selected' : ''}>All departments</option>
-              ${departmentOptions.map((department) => `<option value="${department}" ${blackoutDepartmentScope === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
-            </select>
-            <button type="submit">Upload policy</button>
-          </form>
-          <div class="request-list">
-            ${(Array.isArray(state.policies) ? state.policies : []).filter((policy) => isDateEntryInDepartmentScope(policy.department, blackoutDepartmentScope)).map((policy) => `
-              <div class="card">
-                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
-                  <div>
-                    <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
-                      <strong>${escapeHtml(policy.name || 'Policy')}</strong>
-                      <span class="chip" style="font-size:0.72rem; padding:3px 8px;">${escapeHtml(getPolicyTypeLabel(policy))}</span>
-                      <span class="chip" style="font-size:0.72rem; padding:3px 8px;">${escapeHtml(policy.department || 'All departments')}</span>
-                    </div>
-                    <div class="muted">Uploaded: ${escapeHtml(policy.uploadedAt ? new Date(policy.uploadedAt).toLocaleString() : 'Unknown')}</div>
-                    <div class="muted">Size: ${escapeHtml(formatBytes(policy.sizeBytes))}</div>
-                  </div>
-                  <div class="row" style="gap:8px;">
-                    ${canPreviewPolicyInline(policy) ? `<button type="button" class="secondary" data-preview-policy="${policy.id}">Preview ${escapeHtml(getPolicyTypeLabel(policy))}</button>` : ''}
-                    <button type="button" class="secondary" data-download-policy="${policy.id}">Download</button>
-                    <button type="button" class="danger" data-delete-policy="${policy.id}">Delete</button>
-                  </div>
-                </div>
-              </div>
-            `).join('') || '<div class="muted">No policy files uploaded yet.</div>'}
-          </div>
-        </div>
         </div>
 
         <div style="grid-column:1 / -1;">
@@ -9501,7 +9467,7 @@ function renderPoliciesPage(currentUser, { publicView = false } = {}) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>Policies</h1>
-          <p class="muted">View, preview, and download policy files.${isAdminView ? ' Manage uploads in Admin Options.' : ''}</p>
+          <p class="muted">${isAdminView ? 'Upload policy files that agents can view and download from the Policies page.' : 'View, preview, and download policy files.'}</p>
         </div>
         <div class="row">
           ${publicView ? `
@@ -9520,6 +9486,16 @@ function renderPoliciesPage(currentUser, { publicView = false } = {}) {
 
       <div class="panel">
         <h2>Policy documents</h2>
+        ${isAdminView ? `
+          <form id="upload-policy-form" class="row" style="margin-top:10px; flex-wrap:wrap;">
+            <input name="policyFile" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
+            <select name="department">
+              <option value="" ${!policiesDepartmentScope ? 'selected' : ''}>All departments</option>
+              ${departmentOptions.map((department) => `<option value="${department}" ${policiesDepartmentScope === department ? 'selected' : ''}>${escapeHtml(department)}</option>`).join('')}
+            </select>
+            <button type="submit">Upload policy</button>
+          </form>
+        ` : ''}
         <div class="request-list" style="margin-top:12px;">
           ${policies.map((policy) => `
             <div class="card">
@@ -9528,6 +9504,7 @@ function renderPoliciesPage(currentUser, { publicView = false } = {}) {
                     <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
                       <strong>${escapeHtml(policy.name || 'Policy')}</strong>
                       <span class="chip" style="font-size:0.72rem; padding:3px 8px;">${escapeHtml(getPolicyTypeLabel(policy))}</span>
+                      ${isAdminView ? `<span class="chip" style="font-size:0.72rem; padding:3px 8px;">${escapeHtml(policy.department || 'All departments')}</span>` : ''}
                     </div>
                   <div class="muted">Uploaded: ${escapeHtml(policy.uploadedAt ? new Date(policy.uploadedAt).toLocaleString() : 'Unknown')}</div>
                   <div class="muted">Size: ${escapeHtml(formatBytes(policy.sizeBytes))}</div>
@@ -9535,6 +9512,7 @@ function renderPoliciesPage(currentUser, { publicView = false } = {}) {
                 <div class="row" style="gap:8px;">
                   ${canPreviewPolicyInline(policy) ? `<button type="button" class="secondary" data-preview-policy="${policy.id}">Preview ${escapeHtml(getPolicyTypeLabel(policy))}</button>` : ''}
                   <button type="button" class="secondary" data-download-policy="${policy.id}">Download</button>
+                  ${isAdminView ? `<button type="button" class="danger" data-delete-policy="${policy.id}">Delete</button>` : ''}
                 </div>
               </div>
               ${!canPreviewPolicyInline(policy) ? '<div class="muted" style="margin-top:8px;">Preview unavailable for this file type. Download to open locally.</div>' : ''}
