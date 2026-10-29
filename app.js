@@ -9647,13 +9647,14 @@ function renderPendingRequestsPage(currentUser) {
   const allAvailabilityRequests = getAllAvailabilityRequests();
   const pendingAvailabilityRequests = allAvailabilityRequests.filter((request) => isAvailabilityRequestVisibleToUser(request, currentUser) && normalizeAvailabilityRequestStatus(request.status) === 'pending');
   const pendingSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'pending');
+  const hideSwapRequests = isAgentUser(currentUser);
 
   root.innerHTML = `
     <div class="app">
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>Pending requests</h1>
-          <p class="muted">Your current unavailability and swap requests waiting on approval.</p>
+          <p class="muted">${hideSwapRequests ? 'Your current unavailability requests waiting on approval.' : 'Your current unavailability and swap requests waiting on approval.'}</p>
         </div>
         <div class="row">
           ${renderAgentNavigationLinks()}
@@ -9683,7 +9684,7 @@ function renderPendingRequestsPage(currentUser) {
         </div>
       </div>
 
-      <div class="panel">
+      ${hideSwapRequests ? '' : `<div class="panel">
         <h2>Pending swap requests</h2>
         <div class="request-list" style="margin-top:10px;">
           ${pendingSwapRequests.map((request) => `
@@ -9708,7 +9709,7 @@ function renderPendingRequestsPage(currentUser) {
             </div>
           `).join('') || '<div class="muted">No pending swap requests.</div>'}
         </div>
-      </div>
+      </div>`}
     </div>
   `;
 
