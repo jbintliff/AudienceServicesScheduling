@@ -13013,9 +13013,11 @@ function bindEvents() {
       const message = messageBoard.history.find((entry) => String(entry.id) === messageId);
       if (!message) return;
       if (!confirm('Delete this message from the message board timeline?')) return;
+      const remainingHistory = messageBoard.history.filter((entry) => String(entry.id) !== messageId);
       state.dashboardMessageBoard = normalizeDashboardMessageBoard({
         ...messageBoard,
-        history: messageBoard.history.filter((entry) => String(entry.id) !== messageId)
+        text: remainingHistory.length ? remainingHistory[remainingHistory.length - 1].text : '',
+        history: remainingHistory
       });
       saveState();
       render();
