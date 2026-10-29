@@ -7591,17 +7591,19 @@ function renderCalendarPage(currentUser) {
             </form>
           </div>` : ''}
         ${canManageCalendar ? `<div class="muted" style="margin-bottom:10px;">${copiedScheduleTemplate ? `Copied full schedule: ${copiedScheduleTemplate.length} shift${copiedScheduleTemplate.length === 1 ? '' : 's'}` : (copiedShiftTemplate ? `Copied: ${escapeHtml(getShiftSummary(copiedShiftTemplate))}` : 'Right-click a shift or use Copy full schedule, then click a destination day.')}</div>` : ''}
-        <div class="row" style="margin-bottom:10px;">
-          <span class="muted" style="font-weight:600;">Location:</span>
-          ${getAgentLocationCatalog().map((location) => `
-            <span class="chip" style="background:${getAgentLocationColor(location)}; color:${getReadableTextColor(getAgentLocationColor(location))}; border:1px solid rgba(255,255,255,0.75);">${escapeHtml(location)}</span>
-          `).join('')}
-        </div>
-        <div class="row" style="margin-bottom:10px;">
-          <span class="muted" style="font-weight:600;">Role:</span>
-          ${getRoleLegendItems().map((role) => `
-            <span class="chip" style="background:${getRoleColor(role)}; color:${getReadableTextColor(getRoleColor(role))}; border:1px solid rgba(255,255,255,0.75);">${escapeHtml(role)}</span>
-          `).join('')}
+        <div class="row calendar-legend-row">
+          <div class="row calendar-legend-group">
+            <span class="muted" style="font-weight:600;">Location:</span>
+            ${getAgentLocationCatalog().map((location) => `
+              <span class="chip" style="background:${getAgentLocationColor(location)}; color:${getReadableTextColor(getAgentLocationColor(location))}; border:1px solid rgba(255,255,255,0.75);">${escapeHtml(location)}</span>
+            `).join('')}
+          </div>
+          <div class="row calendar-legend-group">
+            <span class="muted" style="font-weight:600;">Role:</span>
+            ${getRoleLegendItems().map((role) => `
+              <span class="chip" style="background:${getRoleColor(role)}; color:${getReadableTextColor(getRoleColor(role))}; border:1px solid rgba(255,255,255,0.75);">${escapeHtml(role)}</span>
+            `).join('')}
+          </div>
         </div>
         ${canManageCalendar ? `<div class="row" style="margin-bottom:10px; justify-content:space-between; align-items:center;"><div class="muted">Selected shifts: ${selectedShiftCount}</div><div class="row calendar-admin-bulk-actions"><button type="button" class="secondary" data-copy-full-schedule>Copy full schedule</button><button type="button" class="secondary" data-select-visible-shifts>Select all visible</button><button type="button" class="secondary" data-edit-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Edit selected</button><button type="button" class="secondary" data-clear-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Clear</button><button type="button" class="success" data-publish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Publish selected</button><button type="button" class="secondary" data-unpublish-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Unpublish selected</button><button type="button" class="danger" data-remove-selected-shifts ${selectedShiftCount === 0 ? 'disabled' : ''}>Remove selected</button></div></div>` : ''}
         <div class="${canManageCalendar ? 'schedule-with-roster' : ''}">
