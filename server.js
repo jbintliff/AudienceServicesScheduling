@@ -22,6 +22,7 @@ const port = Number(process.env.PORT || 8787);
 const allowedKeys = new Set([
   'agent-scheduler-state-v4',
   'agent-scheduler-users-v1',
+  'agent-scheduler-resources-v1',
   'agent-scheduler-availability-requests-v1',
   'agent-scheduler-availability-inbox-v1',
   'agent-scheduler-availability-ledger-v1',

@@ -17,6 +17,7 @@ const agentLocationOptions = ['In Person/ TP', 'Work From Home'];
 const storageKey = 'agent-scheduler-state-v4';
 const authUsersKey = 'agent-scheduler-users-v1';
 const sessionKey = 'agent-scheduler-session-v1';
+const resourcesKey = 'agent-scheduler-resources-v1';
 const availabilityRequestsKey = 'agent-scheduler-availability-requests-v1';
 const availabilityInboxKey = 'agent-scheduler-availability-inbox-v1';
 const availabilityRequestLedgerKey = 'agent-scheduler-availability-ledger-v1';
@@ -58,6 +59,7 @@ const defaultBackendApiBase = 'https://scheduling-app-backend-l66q.onrender.com/
 const sharedStorageKeys = [
   storageKey,
   authUsersKey,
+  resourcesKey,
   availabilityRequestsKey,
   availabilityInboxKey,
   availabilityRequestLedgerKey,
@@ -488,6 +490,7 @@ const pageMode = (() => {
   if (queryMode === 'public-availability-view') return 'public-availability-view';
   if (queryMode === 'public-policies') return 'public-policies';
   if (queryMode === 'admin-options') return 'admin-options';
+  if (queryMode === 'resources') return 'resources';
   if (queryMode === 'policies') return 'policies';
   const mode = document.body?.dataset?.page;
   if (mode === 'calendar') return 'calendar';
@@ -502,6 +505,7 @@ const pageMode = (() => {
   if (mode === 'public-availability-view') return 'public-availability-view';
   if (mode === 'public-policies') return 'public-policies';
   if (mode === 'admin-options') return 'admin-options';
+  if (mode === 'resources') return 'resources';
   if (mode === 'policies') return 'policies';
   return 'dashboard';
 })();
@@ -7277,6 +7281,7 @@ function renderAdminNavigationLinks(options = {}) {
       <summary class="secondary" style="list-style:none; cursor:pointer; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.08); color:#fff; user-select:none;">Admin</summary>
       <div style="position:absolute; top:calc(100% + 6px); left:0; min-width:220px; background:#0b1220; border:1px solid rgba(255,255,255,0.18); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; z-index:1000;">
         <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Admin Options</a>
+        <a href="index.html?view=resources" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Resources</a>
         ${isBoxOfficeScoped ? '' : '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Email Outbox</a>'}
         ${includeExport ? '<button id="export-data-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export JSON</button><button id="export-published-schedule-csv-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export published schedule CSV</button>' : ''}
         ${includeImport ? '<label class="secondary" style="display:block; width:100%; box-sizing:border-box; color:#fff; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); cursor:pointer;"><input id="import-data-input" type="file" accept="application/json" hidden />Import JSON</label>' : ''}
@@ -7299,12 +7304,146 @@ function renderAgentNavigationLinks() {
     '<a href="index.html?view=request-time-off" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Request time off</button></a>',
     '<a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>',
     '<a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Completed requests</button></a>',
+    '<a href="index.html?view=resources" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Resources</button></a>',
     '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'
   ].join('');
 }
 
 function renderAbsenceManagerNavigationLinks() {
   return renderAgentNavigationLinks();
+}
+
+function getResourceLinks() {
+  try {
+    const saved = localStorage.getItem(resourcesKey);
+    if (!saved) return [];
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed)
+      ? parsed.filter((resource) => resource && typeof resource === 'object')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeResourceUrl(value) {
+  const rawUrl = String(value || '').trim();
+  if (!rawUrl) return '';
+  try {
+    const url = new URL(/^[a-z][a-z\d+.-]*:/i.test(rawUrl) ? rawUrl : `https://${rawUrl}`);
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function renderResourcesPage(currentUser) {
+  const isAdminView = isAdminUser(currentUser);
+  const canViewResources = isAdminView || isAgentLikeUser(currentUser);
+  if (!canViewResources) {
+    root.innerHTML = `
+      <div class="app">
+        <div class="panel">
+          <h1>Resources</h1>
+          <p class="muted">This page is available for admin and agent accounts only.</p>
+          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const resources = getResourceLinks().filter((resource) => normalizeResourceUrl(resource.url));
+  root.innerHTML = `
+    <div class="app">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div>
+          <h1>Resources</h1>
+          <p class="muted">${isAdminView ? 'Add links for agents to access from their Resources page.' : 'Helpful links shared by your administrators.'}</p>
+        </div>
+        <div class="row">
+          ${isAdminView ? renderAdminNavigationLinks({ includeExport: true }) : renderAgentNavigationLinks()}
+          ${renderUserNavChip(currentUser)}
+          <button id="logout-btn" class="secondary" type="button">Log out</button>
+        </div>
+      </div>
+
+      ${isAdminView ? `
+        <div class="panel" style="margin-bottom:16px;">
+          <h2>Add a resource link</h2>
+          <form id="resource-link-form" class="stack">
+            <input name="title" type="text" placeholder="Resource name" required maxlength="120" />
+            <input name="url" type="url" placeholder="https://example.com" required />
+            <textarea name="description" rows="2" placeholder="Description (optional)" maxlength="500"></textarea>
+            <div><button type="submit">Add link</button></div>
+          </form>
+        </div>
+      ` : ''}
+
+      <div class="panel">
+        <h2>Shared links</h2>
+        <div class="request-list" style="margin-top:12px;">
+          ${resources.map((resource) => `
+            <div class="card">
+              <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+                <div>
+                  <a href="${escapeHtml(normalizeResourceUrl(resource.url))}" target="_blank" rel="noopener noreferrer" style="font-weight:700;">${escapeHtml(resource.title || 'Resource')}</a>
+                  ${resource.description ? `<div class="muted" style="margin-top:6px;">${escapeHtml(resource.description)}</div>` : ''}
+                  <div class="muted" style="margin-top:4px;">${escapeHtml(resource.url || '')}</div>
+                </div>
+                ${isAdminView ? `<button type="button" class="danger" data-remove-resource="${escapeHtml(resource.id || '')}">Remove</button>` : ''}
+              </div>
+            </div>
+          `).join('') || '<div class="muted">No resource links have been added yet.</div>'}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('resource-link-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!isAdminUser(getCurrentUser())) return;
+    const formData = new FormData(event.currentTarget);
+    const title = String(formData.get('title') || '').trim();
+    const rawUrl = String(formData.get('url') || '').trim();
+    const url = normalizeResourceUrl(rawUrl);
+    const description = String(formData.get('description') || '').trim();
+    if (!title || !rawUrl || !url) {
+      alert('Enter a resource name and a valid HTTP or HTTPS link.');
+      return;
+    }
+
+    const nextResources = [...getResourceLinks(), {
+      id: String(createId()),
+      title,
+      url,
+      description,
+      createdAt: new Date().toISOString()
+    }];
+    if (!safeSetLocalStorage(resourcesKey, JSON.stringify(nextResources))) {
+      alert('Unable to save this resource link. Check browser storage and try again.');
+      return;
+    }
+    render();
+  });
+
+  document.querySelectorAll('[data-remove-resource]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!isAdminUser(getCurrentUser())) return;
+      const id = button.getAttribute('data-remove-resource');
+      const nextResources = getResourceLinks().filter((resource) => String(resource.id || '') !== id);
+      if (!safeSetLocalStorage(resourcesKey, JSON.stringify(nextResources))) {
+        alert('Unable to remove this resource link. Check browser storage and try again.');
+        return;
+      }
+      render();
+    });
+  });
+
+  document.getElementById('logout-btn')?.addEventListener('click', () => {
+    clearSession();
+    render();
+  });
 }
 
 function renderCalendarPage(currentUser) {
@@ -10318,6 +10457,11 @@ function render() {
 
   if (pageMode === 'policies') {
     renderPoliciesPage(currentUser);
+    return;
+  }
+
+  if (pageMode === 'resources') {
+    renderResourcesPage(currentUser);
     return;
   }
 
