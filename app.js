@@ -7387,8 +7387,8 @@ function renderAgentNavigationLinks() {
     ...(isAgentUser(getCurrentUser()) ? [] : ['<a href="index.html?view=request-time-off" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Request time off</button></a>']),
     '<a href="index.html?view=availability-pto-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability/PTO Requests</button></a>',
     '<a href="index.html?view=resources" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Resources</button></a>',
-    '<a href="index.html?view=projects" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Projects</button></a>',
     '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>',
+    '<a href="index.html?view=projects" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Projects</button></a>',
     '<a href="index.html?view=meeting-follow-ups" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">1:1 Meetings / Follow ups</button></a>'
   ].join('');
 }
