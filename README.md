@@ -22,6 +22,7 @@ Features included:
 - Select multiple weekdays for repeating availability in agent and manual admin forms; selected days share the date range and times and are saved as separate weekly series
 - Submit and approve swap requests from one workspace
 - Share admin-managed resource links with agents from their Resources page
+- Create 1:1 meeting follow-ups, attach documents, and assign them to agents
 - Shared persistence through backend API sync
 
 ## Run with backend sync (recommended)

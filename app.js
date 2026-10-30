@@ -18,6 +18,7 @@ const storageKey = 'agent-scheduler-state-v4';
 const authUsersKey = 'agent-scheduler-users-v1';
 const sessionKey = 'agent-scheduler-session-v1';
 const resourcesKey = 'agent-scheduler-resources-v1';
+const meetingFollowUpsKey = 'agent-scheduler-meeting-follow-ups-v1';
 const availabilityRequestsKey = 'agent-scheduler-availability-requests-v1';
 const availabilityInboxKey = 'agent-scheduler-availability-inbox-v1';
 const availabilityRequestLedgerKey = 'agent-scheduler-availability-ledger-v1';
@@ -60,6 +61,7 @@ const sharedStorageKeys = [
   storageKey,
   authUsersKey,
   resourcesKey,
+  meetingFollowUpsKey,
   availabilityRequestsKey,
   availabilityInboxKey,
   availabilityRequestLedgerKey,
@@ -491,6 +493,7 @@ const pageMode = (() => {
   if (queryMode === 'public-policies') return 'public-policies';
   if (queryMode === 'admin-options') return 'admin-options';
   if (queryMode === 'resources') return 'resources';
+  if (queryMode === 'meeting-follow-ups') return 'meeting-follow-ups';
   if (queryMode === 'policies') return 'policies';
   const mode = document.body?.dataset?.page;
   if (mode === 'calendar') return 'calendar';
@@ -506,6 +509,7 @@ const pageMode = (() => {
   if (mode === 'public-policies') return 'public-policies';
   if (mode === 'admin-options') return 'admin-options';
   if (mode === 'resources') return 'resources';
+  if (mode === 'meeting-follow-ups') return 'meeting-follow-ups';
   if (mode === 'policies') return 'policies';
   return 'dashboard';
 })();
@@ -7292,6 +7296,7 @@ function renderAdminNavigationLinks(options = {}) {
       <div style="position:absolute; top:calc(100% + 6px); left:0; min-width:220px; background:#0b1220; border:1px solid rgba(255,255,255,0.18); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; z-index:1000;">
         <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Admin Options</a>
         <a href="index.html?view=resources" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Resources</a>
+        <a href="index.html?view=meeting-follow-ups" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">1:1 Meetings / Follow ups</a>
         <a href="index.html?view=policies" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Policies</a>
         ${isBoxOfficeScoped ? '' : '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Email Outbox</a>'}
         ${includeExport ? '<button id="export-data-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export JSON</button><button id="export-published-schedule-csv-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export published schedule CSV</button>' : ''}
@@ -7314,6 +7319,7 @@ function renderAgentNavigationLinks() {
     '<a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>',
     '<a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Completed requests</button></a>',
     '<a href="index.html?view=resources" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Resources</button></a>',
+    '<a href="index.html?view=meeting-follow-ups" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">1:1 Meetings / Follow ups</button></a>',
     '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'
   ].join('');
 }
@@ -7444,6 +7450,241 @@ function renderResourcesPage(currentUser) {
       if (!safeSetLocalStorage(resourcesKey, JSON.stringify(nextResources))) {
         alert('Unable to remove this resource link. Check browser storage and try again.');
         return;
+      }
+      render();
+    });
+  });
+
+  document.getElementById('logout-btn')?.addEventListener('click', () => {
+    clearSession();
+    render();
+  });
+}
+
+function getMeetingFollowUps() {
+  try {
+    const saved = localStorage.getItem(meetingFollowUpsKey);
+    if (!saved) return [];
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed)
+      ? parsed.filter((followUp) => followUp && typeof followUp === 'object')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function renderMeetingFollowUpsPage(currentUser) {
+  const isAdminView = isAdminUser(currentUser);
+  const isAgentView = isAgentLikeUser(currentUser);
+  if (!isAdminView && !isAgentView) {
+    root.innerHTML = `
+      <div class="app">
+        <div class="panel">
+          <h1>1:1 Meetings / Follow ups</h1>
+          <p class="muted">This page is available for admin and agent accounts only.</p>
+          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const currentAgentId = Number(currentUser?.agentId);
+  const followUps = getMeetingFollowUps()
+    .filter((followUp) => isAdminView || (Array.isArray(followUp.agentIds) && followUp.agentIds.some((id) => Number(id) === currentAgentId)))
+    .sort((left, right) => String(right.meetingDate || right.createdAt || '').localeCompare(String(left.meetingDate || left.createdAt || '')));
+  const availableAgents = Array.isArray(state.agents) ? state.agents : [];
+
+  root.innerHTML = `
+    <div class="app">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div>
+          <h1>1:1 Meetings / Follow ups</h1>
+          <p class="muted">${isAdminView ? 'Create meeting follow-ups, attach documents, and assign them to agents.' : 'Review your assigned 1:1 meeting follow-ups and documents.'}</p>
+        </div>
+        <div class="row">
+          ${isAdminView ? renderAdminNavigationLinks({ includeExport: true }) : renderAgentNavigationLinks()}
+          ${renderUserNavChip(currentUser)}
+          <button id="logout-btn" class="secondary" type="button">Log out</button>
+        </div>
+      </div>
+
+      ${isAdminView ? `
+        <div class="panel" style="margin-bottom:16px;">
+          <h2>Add a meeting follow-up</h2>
+          ${availableAgents.length ? `
+            <form id="meeting-follow-up-form" class="stack">
+              <div class="row">
+                <input name="title" type="text" placeholder="Meeting or follow-up title" required maxlength="160" />
+                <input name="meetingDate" type="date" aria-label="Meeting date" />
+              </div>
+              <textarea name="notes" rows="3" placeholder="Notes or follow-up details (optional)" maxlength="4000"></textarea>
+              <label class="stack" style="gap:6px;">
+                <span>Assign to agents (select multiple with Ctrl or Command)</span>
+                <select name="agentIds" multiple required size="${Math.min(Math.max(availableAgents.length, 2), 8)}">
+                  ${availableAgents.map((agent) => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name || 'Agent')}${agent.team ? ` — ${escapeHtml(agent.team)}` : ''}</option>`).join('')}
+                </select>
+              </label>
+              <label class="stack" style="gap:6px;">
+                <span>Documents (optional, up to 25 MB each)</span>
+                <input name="documents" type="file" multiple />
+              </label>
+              <div><button type="submit">Save and assign</button></div>
+            </form>
+          ` : '<p class="muted">Add agent profiles before assigning follow-ups.</p>'}
+        </div>
+      ` : ''}
+
+      <div class="panel">
+        <h2>${isAdminView ? 'Meeting follow-ups' : 'Your assigned follow-ups'}</h2>
+        <div class="request-list" style="margin-top:12px;">
+          ${followUps.map((followUp) => {
+            const assignedAgents = (Array.isArray(followUp.agentIds) ? followUp.agentIds : [])
+              .map((id) => getAgent(id)?.name)
+              .filter(Boolean);
+            const documents = Array.isArray(followUp.documents) ? followUp.documents : [];
+            return `
+              <article class="card">
+                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+                  <div>
+                    <strong>${escapeHtml(followUp.title || 'Meeting follow-up')}</strong>
+                    <div class="muted">${followUp.meetingDate ? `Meeting date: ${escapeHtml(followUp.meetingDate)}` : `Added: ${escapeHtml(followUp.createdAt ? new Date(followUp.createdAt).toLocaleDateString() : 'Unknown')}`}</div>
+                    ${isAdminView ? `<div class="muted">Assigned to: ${escapeHtml(assignedAgents.join(', ') || 'No current agent profiles')}</div>` : ''}
+                    ${followUp.notes ? `<p style="white-space:pre-wrap; margin:8px 0 0;">${escapeHtml(followUp.notes)}</p>` : ''}
+                  </div>
+                  ${isAdminView ? `<button type="button" class="danger" data-remove-meeting-follow-up="${escapeHtml(followUp.id || '')}">Delete</button>` : ''}
+                </div>
+                ${documents.length ? `
+                  <div class="stack" style="margin-top:12px;">
+                    <strong>Documents</strong>
+                    ${documents.map((file) => `
+                      <div class="row" style="justify-content:space-between;">
+                        <span>${escapeHtml(file.name || 'Document')} <span class="muted">(${escapeHtml(formatBytes(file.sizeBytes))})</span></span>
+                        <button type="button" class="secondary" data-download-meeting-document="${escapeHtml(file.id || '')}" data-follow-up-id="${escapeHtml(followUp.id || '')}">Download</button>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : '<div class="muted" style="margin-top:10px;">No documents attached.</div>'}
+              </article>
+            `;
+          }).join('') || `<div class="muted">${isAdminView ? 'No meeting follow-ups have been added yet.' : 'No follow-ups have been assigned to you yet.'}</div>`}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('meeting-follow-up-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!isAdminUser(getCurrentUser())) return;
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const title = String(formData.get('title') || '').trim();
+    const notes = String(formData.get('notes') || '').trim();
+    const meetingDate = String(formData.get('meetingDate') || '').trim();
+    const agentIds = [...new Set(formData.getAll('agentIds').map((id) => Number(id)).filter((id) => Number.isFinite(id) && availableAgents.some((agent) => Number(agent.id) === id)))];
+    const fileInput = form.querySelector('input[name="documents"]');
+    const selectedFiles = Array.from(fileInput?.files || []);
+    if (!title || agentIds.length === 0) {
+      alert('Enter a title and assign this follow-up to at least one agent.');
+      return;
+    }
+    if (selectedFiles.some((file) => file.size > maxPolicyUploadBytes)) {
+      alert('Each document must be 25 MB or smaller.');
+      return;
+    }
+    if (selectedFiles.some((file) => file.size === 0)) {
+      alert('Empty documents cannot be uploaded. Choose a file with content and try again.');
+      return;
+    }
+
+    const followUpId = String(createId());
+    const uploadedDocuments = [];
+    for (const [index, file] of selectedFiles.entries()) {
+      const documentId = `meeting-follow-up-${followUpId}-${index}`;
+      let bytes;
+      try {
+        bytes = new Uint8Array(await file.arrayBuffer());
+      } catch (error) {
+        console.error('Unable to read a meeting follow-up document.', error);
+        await Promise.all(uploadedDocuments.map((document) => deletePolicyFileBytes(document.id)));
+        alert(`Unable to read ${file.name}. Please try again.`);
+        return;
+      }
+      const didSaveFile = await savePolicyFileBytes(documentId, file.type || 'application/octet-stream', bytes);
+      if (!didSaveFile) {
+        await Promise.all([
+          deletePolicyFileBytes(documentId),
+          ...uploadedDocuments.map((document) => deletePolicyFileBytes(document.id))
+        ]);
+        alert(`Unable to save ${file.name} to shared storage. Please check the backend connection and try again.`);
+        return;
+      }
+      uploadedDocuments.push({
+        id: documentId,
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size
+      });
+    }
+
+    const nextFollowUps = [...getMeetingFollowUps(), {
+      id: followUpId,
+      title,
+      notes,
+      meetingDate,
+      agentIds,
+      documents: uploadedDocuments,
+      createdAt: getCurrentIsoTimestamp(),
+      createdBy: String(currentUser.id || '')
+    }];
+    if (!safeSetLocalStorage(meetingFollowUpsKey, JSON.stringify(nextFollowUps))) {
+      await Promise.all(uploadedDocuments.map((document) => deletePolicyFileBytes(document.id)));
+      alert('Unable to save this meeting follow-up. Check browser storage and try again.');
+      return;
+    }
+    render();
+  });
+
+  document.querySelectorAll('[data-download-meeting-document]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const activeUser = getCurrentUser();
+      const followUpId = button.getAttribute('data-follow-up-id');
+      const documentId = button.getAttribute('data-download-meeting-document');
+      const followUp = getMeetingFollowUps().find((item) => String(item.id) === String(followUpId));
+      const canAccess = isAdminUser(activeUser)
+        || (isAgentLikeUser(activeUser) && Array.isArray(followUp?.agentIds) && followUp.agentIds.some((id) => Number(id) === Number(activeUser.agentId)));
+      const file = followUp?.documents?.find((item) => String(item.id) === String(documentId));
+      if (!canAccess || !file) return;
+      const bytes = await loadPolicyFileBytes(file.id);
+      if (!bytes?.length) {
+        alert(`Unable to load ${file.name || 'this document'} from storage. Please try again or contact an admin.`);
+        return;
+      }
+      const blobUrl = URL.createObjectURL(new Blob([bytes], { type: file.mimeType || 'application/octet-stream' }));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = file.name || 'meeting-follow-up-document';
+      link.click();
+      URL.revokeObjectURL(blobUrl);
+    });
+  });
+
+  document.querySelectorAll('[data-remove-meeting-follow-up]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (!isAdminUser(getCurrentUser())) return;
+      const followUpId = button.getAttribute('data-remove-meeting-follow-up');
+      const followUp = getMeetingFollowUps().find((item) => String(item.id) === String(followUpId));
+      if (!followUp || !confirm(`Delete "${followUp.title || 'this follow-up'}" and its attached documents?`)) return;
+      const nextFollowUps = getMeetingFollowUps().filter((item) => String(item.id) !== String(followUpId));
+      if (!safeSetLocalStorage(meetingFollowUpsKey, JSON.stringify(nextFollowUps))) {
+        alert('Unable to delete this meeting follow-up. Check browser storage and try again.');
+        return;
+      }
+      const deleteResults = await Promise.all((Array.isArray(followUp.documents) ? followUp.documents : []).map((file) => deletePolicyFileBytes(file.id)));
+      if (deleteResults.some((didDelete) => !didDelete)) {
+        alert('The follow-up was deleted, but one or more attached documents could not be removed from local storage.');
       }
       render();
     });
@@ -10444,6 +10685,11 @@ function render() {
 
   if (pageMode === 'resources') {
     renderResourcesPage(currentUser);
+    return;
+  }
+
+  if (pageMode === 'meeting-follow-ups') {
+    renderMeetingFollowUpsPage(currentUser);
     return;
   }
 

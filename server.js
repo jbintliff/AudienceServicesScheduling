@@ -23,6 +23,7 @@ const allowedKeys = new Set([
   'agent-scheduler-state-v4',
   'agent-scheduler-users-v1',
   'agent-scheduler-resources-v1',
+  'agent-scheduler-meeting-follow-ups-v1',
   'agent-scheduler-availability-requests-v1',
   'agent-scheduler-availability-inbox-v1',
   'agent-scheduler-availability-ledger-v1',
