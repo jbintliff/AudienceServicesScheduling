@@ -7708,6 +7708,20 @@ function renderProjectsPage(currentUser) {
   }
 }
 
+function filterProjectTimeEntries(entries, filters) {
+  const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: appTimeZone, year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  return entries.filter((entry) => {
+    if (filters.agentId && String(entry.agentId) !== filters.agentId) return false;
+    if (!filters.from && !filters.to) return true;
+    const parts = Object.fromEntries(dateFormatter.formatToParts(new Date(entry.startedAt))
+      .map((part) => [part.type, part.value]));
+    const date = `${parts.year}-${parts.month}-${parts.day}`;
+    return (!filters.from || date >= filters.from) && (!filters.to || date <= filters.to);
+  });
+}
+
 function renderTimeTrackingEntriesPage(currentUser) {
   if (!isAdminUser(currentUser)) {
     root.innerHTML = `<div class="app"><div class="panel"><h1>Time Tracking Entries</h1>
@@ -7728,7 +7742,20 @@ function renderTimeTrackingEntriesPage(currentUser) {
     return;
   }
 
-  const totalElapsed = () => entries.reduce((total, entry) => total + getProjectElapsedMs(entry), 0);
+  const query = new URLSearchParams(window.location.search);
+  const filters = {
+    agentId: query.get('agent') || '',
+    from: query.get('from') || '',
+    to: query.get('to') || ''
+  };
+  const hasFilters = Boolean(filters.agentId || filters.from || filters.to);
+  const invalidDateRange = filters.from && filters.to && filters.from > filters.to;
+  const filteredEntries = filterProjectTimeEntries(entries, filters);
+  const agentIds = new Set([...state.agents.map((agent) => Number(agent.id)), ...entries.map((entry) => entry.agentId)]);
+  const filterAgents = [...agentIds].map((id) => ({
+    id, name: getAgent(id)?.name || `Agent #${id} (profile unavailable)`
+  })).sort((left, right) => left.name.localeCompare(right.name));
+  const totalElapsed = () => filteredEntries.reduce((total, entry) => total + getProjectElapsedMs(entry), 0);
   const statusLabels = { running: 'Running', paused: 'Paused', stopped: 'Stopped' };
   root.innerHTML = `
     <div class="app">
@@ -7739,10 +7766,32 @@ function renderTimeTrackingEntriesPage(currentUser) {
         </div>
       </div>
       <div class="panel">
-        <h2>All agent entries (${entries.length})</h2>
+        <form id="time-tracking-filters" action="index.html" method="get" class="stack" style="margin-bottom:16px;">
+          <input type="hidden" name="view" value="time-tracking-entries" />
+          <div class="row">
+            <label class="stack">Agent
+              <select name="agent">
+                <option value="">All agents</option>
+                ${filterAgents.map((agent) => `<option value="${agent.id}" ${String(agent.id) === filters.agentId ? 'selected' : ''}>${escapeHtml(agent.name)}</option>`).join('')}
+              </select>
+            </label>
+            <label class="stack">From date
+              <input name="from" type="date" value="${escapeHtml(filters.from)}" />
+            </label>
+            <label class="stack">To date
+              <input name="to" type="date" value="${escapeHtml(filters.to)}" />
+            </label>
+          </div>
+          <p class="muted">Dates match when entries started, in Eastern time. Both dates are inclusive.</p>
+          <div class="row"><button type="submit">Apply filters</button>
+            <a href="index.html?view=time-tracking-entries">Clear filters</a>
+          </div>
+        </form>
+        ${invalidDateRange ? '<p role="alert">From date must be on or before To date.</p>' : ''}
+        <h2>${hasFilters ? `Filtered entries (${filteredEntries.length} of ${entries.length})` : `All agent entries (${entries.length})`}</h2>
         <p>Total tracked time: <strong id="admin-project-total">${formatProjectDuration(totalElapsed())}</strong></p>
         <div class="stack">
-          ${entries.map((entry, index) => {
+          ${filteredEntries.map((entry, index) => {
             const agent = getAgent(entry.agentId);
             return `
               <article class="card" style="overflow-wrap:anywhere;">
@@ -7751,20 +7800,20 @@ function renderTimeTrackingEntriesPage(currentUser) {
                 <p>${statusLabels[entry.status]} &middot;
                   <strong data-admin-project-elapsed="${index}">${formatProjectDuration(getProjectElapsedMs(entry))}</strong>
                 </p>
-                <p class="muted">Started: ${escapeHtml(new Date(entry.startedAt).toLocaleString())}<br />
-                  Stopped: ${entry.status === 'stopped' ? escapeHtml(new Date(entry.stoppedAt).toLocaleString()) : 'Not stopped'}
+                <p class="muted">Started (Eastern): ${escapeHtml(formatEasternDateTime(entry.startedAt))}<br />
+                  Stopped (Eastern): ${entry.status === 'stopped' ? escapeHtml(formatEasternDateTime(entry.stoppedAt)) : 'Not stopped'}
                 </p>
                 <p style="white-space:pre-wrap;">${escapeHtml(entry.details || 'No work details provided.')}</p>
               </article>`;
-          }).join('') || '<p class="muted">No agent time tracking entries yet.</p>'}
+          }).join('') || `<p class="muted">${entries.length ? 'No time tracking entries match these filters.' : 'No agent time tracking entries yet.'}</p>`}
         </div>
       </div>
     </div>`;
   bindEvents();
-  if (entries.some((entry) => entry.status === 'running')) {
+  if (filteredEntries.some((entry) => entry.status === 'running')) {
     projectTimerInterval = window.setInterval(() => {
       document.querySelectorAll('[data-admin-project-elapsed]').forEach((element) => {
-        const entry = entries[Number(element.dataset.adminProjectElapsed)];
+        const entry = filteredEntries[Number(element.dataset.adminProjectElapsed)];
         element.textContent = formatProjectDuration(getProjectElapsedMs(entry));
       });
       const total = document.getElementById('admin-project-total');
