@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
-import { mergeProjectTimeStore, projectTimeEntriesKey } from './backend/project-time.js';
+import { mergeProjectTimeStore, projectTimeEntriesKey, registerProjectTimeRoutes } from './backend/project-time.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -539,6 +539,7 @@ function buildAgentCalendarFeed(store, token) {
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '40mb' }));
+registerProjectTimeRoutes(app, { readStore, writeStore });
 
 app.get('/api/health', (_req, res) => {
   const store = readStore();

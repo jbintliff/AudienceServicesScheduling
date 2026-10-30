@@ -40,6 +40,9 @@ Admins can open **Admin > Time Tracking Entries** to review all agents' project 
 start/stop timestamps, statuses, and elapsed time, plus a total across all entries.
 Running durations update live; paused time is excluded. This admin-only page is read-only and uses the existing backend sync.
 Entries saved on the agent **Projects** page appear here after backend sync, including running and paused timers.
+Project actions send the entries to `PUT /api/project-time-entries`; the backend validates and merges them
+into its persistent data file before responding. Both the agent and admin pages read these same records
+from `GET /api/project-time-entries`. Entries survive backend restarts when `DATA_DIR` uses the configured persistent disk.
 Filter by **Agent**, **From date**, and **To date**, then select **Apply filters**; **Clear filters** restores all entries.
 Dates use the entry's start date in Eastern time, inclusive of both endpoints. Counts and totals reflect only matching entries.
 Filters remain applied through refresh and incoming synced entries.

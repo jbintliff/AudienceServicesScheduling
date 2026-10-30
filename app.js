@@ -1252,9 +1252,12 @@ async function performSharedKeyPush(key, rawValue) {
   const previousWrite = sharedKeyWriteQueues.get(key) || Promise.resolve();
   const nextWrite = previousWrite.catch(() => {}).then(async () => {
     try {
-      const requestBody = JSON.stringify({ value: rawValue });
+      const isProjectTimeWrite = key === projectTimeEntriesKey;
+      const requestBody = JSON.stringify(isProjectTimeWrite
+        ? { entries: getProjectTimeEntries(rawValue) }
+        : { value: rawValue });
       const canUseKeepalive = new Blob([requestBody]).size <= 60 * 1024;
-      const response = await requestBackend(`/store/${encodeURIComponent(key)}`, {
+      const response = await requestBackend(isProjectTimeWrite ? '/project-time-entries' : `/store/${encodeURIComponent(key)}`, {
         method: 'PUT',
         keepalive: canUseKeepalive,
         body: requestBody
@@ -1308,7 +1311,13 @@ async function fetchBackendSnapshot() {
     return null;
   }
   const payload = await response.json();
-  return payload?.store && typeof payload.store === 'object' ? payload.store : null;
+  const store = payload?.store && typeof payload.store === 'object' ? payload.store : null;
+  if (store && (pageMode === 'projects' || pageMode === 'time-tracking-entries')) {
+    const entries = await fetchProjectTimeEntriesFromBackend();
+    if (entries === null) return null;
+    store[projectTimeEntriesKey] = JSON.stringify(entries);
+  }
+  return store;
 }
 
 async function performLocalSnapshotPush() {
@@ -7555,9 +7564,26 @@ function projectEntriesAreConfirmed(localRaw, remoteRaw) {
   });
 }
 
+async function fetchProjectTimeEntriesFromBackend() {
+  try {
+    const response = await requestBackend('/project-time-entries', { cache: 'no-store' });
+    if (!response) {
+      setProjectSyncStatus('Cannot load backend time entries. Check the connection and deploy the updated backend, then retry. Local entries are retained.', true);
+      return null;
+    }
+    const payload = await response.json();
+    if (!Array.isArray(payload?.entries)) throw new Error('The backend returned invalid time entries.');
+    return getProjectTimeEntries(JSON.stringify(payload.entries));
+  } catch (error) {
+    console.error('Unable to read backend project time entries.', error);
+    setProjectSyncStatus('Unable to read backend time entries. Local entries are retained; check the backend and retry sync.', true);
+    return null;
+  }
+}
+
 async function confirmProjectTimeSync(rawValue) {
-  const remoteStore = await fetchBackendSnapshot();
-  if (!remoteStore || !projectEntriesAreConfirmed(rawValue, remoteStore[projectTimeEntriesKey])) {
+  const remoteEntries = await fetchProjectTimeEntriesFromBackend();
+  if (remoteEntries === null || !projectEntriesAreConfirmed(rawValue, JSON.stringify(remoteEntries))) {
     setProjectSyncStatus('The backend did not confirm these time entries. Local entries are retained. Ask an admin to deploy the updated backend, then retry sync.', true);
     return false;
   }
@@ -7789,7 +7815,7 @@ function renderProjectsPage(currentUser) {
     render();
     const status = document.getElementById(form.id)?.querySelector('[role="status"]')
       || document.getElementById('project-save-status');
-    if (status) status.textContent = 'Saved on this device.';
+    if (status) status.textContent = 'Saved locally; backend confirmation is shown above.';
   };
   document.querySelector('form[id^="project-timer-"]')?.addEventListener('submit', (event) => {
     event.preventDefault();
