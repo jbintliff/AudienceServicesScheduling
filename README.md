@@ -48,13 +48,14 @@ Dates use the entry's start date in Eastern time, inclusive of both endpoints. C
 Filters remain applied through refresh and incoming synced entries.
 
 ### Time tracking sync troubleshooting
-The Projects and admin Time Tracking Entries pages show backend sync status and a **Refresh / retry sync** button.
+Both pages show backend sync status. Agent Projects syncs automatically without a refresh button;
+the admin Time Tracking Entries page retains its **Refresh / retry sync** button.
 Agent saves remain pending on the device until a read-back confirms the backend retained the entries.
 Failed or outdated-backend writes are retried instead of being marked successful by a general snapshot upload.
 If the page reports an outdated backend, deploy the updated backend as well as the frontend.
 Include [backend/project-time.js](backend/project-time.js), which is required by both server entry points.
 Verify `/api/health` returns `"projectTimeTrackingVersion": 1`.
-After deployment, reopen Projects in each browser containing unsynced agent entries and select **Refresh / retry sync**.
+After deployment, reopen Projects in each browser containing unsynced agent entries to retry sync automatically.
 Do not clear those browsers' storage before sync succeeds; device-only entries cannot be recovered from the admin page.
 
 ## Run with backend sync (recommended)

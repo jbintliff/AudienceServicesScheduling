@@ -7543,10 +7543,10 @@ function setProjectSyncStatus(message, hasError = false) {
   }
 }
 
-function renderProjectSyncStatus() {
+function renderProjectSyncStatus(showRefresh = true) {
   return `<div class="panel" style="margin-bottom:16px;">
     <p id="project-sync-status" role="${projectSyncHasError ? 'alert' : 'status'}">${escapeHtml(projectSyncStatus)}</p>
-    <button id="project-sync-retry" type="button" class="secondary">Refresh / retry sync</button>
+    ${showRefresh ? '<button id="project-sync-retry" type="button" class="secondary">Refresh / retry sync</button>' : ''}
   </div>`;
 }
 
@@ -7708,7 +7708,7 @@ function renderProjectsPage(currentUser) {
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
-      ${renderProjectSyncStatus()}
+      ${renderProjectSyncStatus(false)}
       <div class="panel" style="margin-bottom:16px;">
         <h2>${activeEntry ? 'Current project' : 'Start a project timer'}</h2>
         <p class="muted">One timer at a time. Running timers continue when you leave this page or close the browser.</p>
@@ -7754,7 +7754,6 @@ function renderProjectsPage(currentUser) {
       </div>
     </div>`;
   restoreActiveFormDrafts();
-  document.getElementById('project-sync-retry')?.addEventListener('click', () => { void refreshProjectTimeSync(); });
 
   const saveEntry = (form, entryId, action) => {
     const user = getCurrentUser();
