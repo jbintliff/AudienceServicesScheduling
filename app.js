@@ -20,6 +20,7 @@ const sessionKey = 'agent-scheduler-session-v1';
 const resourcesKey = 'agent-scheduler-resources-v1';
 const meetingFollowUpsKey = 'agent-scheduler-meeting-follow-ups-v1';
 const projectTimeEntriesKey = 'agent-scheduler-project-time-entries-v1';
+const pendingProjectTimeSyncKey = 'agent-scheduler-pending-project-time-sync-v1';
 const availabilityRequestsKey = 'agent-scheduler-availability-requests-v1';
 const availabilityInboxKey = 'agent-scheduler-availability-inbox-v1';
 const availabilityRequestLedgerKey = 'agent-scheduler-availability-ledger-v1';
@@ -1092,6 +1093,10 @@ function safeSetLocalStorage(key, value) {
     return false;
   }
   try {
+    if (key === projectTimeEntriesKey && !isApplyingRemoteSnapshot) {
+      localStorage.setItem(pendingProjectTimeSyncKey, '1');
+      setProjectSyncStatus('Time entries saved on this device; waiting for backend confirmation.');
+    }
     try {
       localStorage.setItem(key, value);
     } catch (error) {
@@ -1113,7 +1118,7 @@ function safeSetLocalStorage(key, value) {
         if (didPush && key === storageKey && localStorage.getItem(key) === value) {
           pendingSharedWriteKeys.delete(key);
           clearPendingStateSnapshotSyncIfCurrent(value);
-        } else if (didPush && !waitForSnapshotSync) {
+        } else if (didPush && !waitForSnapshotSync && localStorage.getItem(key) === value) {
           pendingSharedWriteKeys.delete(key);
         }
       });
@@ -1141,7 +1146,9 @@ async function syncSharedSnapshotToBackend() {
     });
     const didSync = Boolean(response);
     if (didSync) {
-      pendingSharedWriteKeys.clear();
+      Array.from(pendingSharedWriteKeys).forEach((key) => {
+        if (key !== projectTimeEntriesKey) pendingSharedWriteKeys.delete(key);
+      });
       markSyncSuccess();
     }
     return didSync;
@@ -1253,11 +1260,22 @@ async function performSharedKeyPush(key, rawValue) {
         body: requestBody
       });
       const ok = Boolean(response);
+      if (key === projectTimeEntriesKey) {
+        if (!ok) {
+          setProjectSyncStatus('Time entries are saved only on this device. Backend sync failed; admins may not see them. Retry sync or ask an admin to check the backend deployment.', true);
+          return false;
+        }
+        return await confirmProjectTimeSync(rawValue);
+      }
       if (ok) {
         markSyncSuccess();
       }
       return ok;
-    } catch {
+    } catch (error) {
+      if (key === projectTimeEntriesKey) {
+        console.error('Unable to sync project time entries.', error);
+        setProjectSyncStatus('Unable to confirm time entries on the backend. Local entries are retained; retry sync.', true);
+      }
       return false;
     }
   });
@@ -1283,7 +1301,12 @@ function pushSharedKeyToBackend(key, rawValue) {
 
 async function fetchBackendSnapshot() {
   const response = await requestBackend('/snapshot');
-  if (!response) return null;
+  if (!response) {
+    if (pageMode === 'projects' || pageMode === 'time-tracking-entries') {
+      setProjectSyncStatus('Cannot reach the time tracking backend. Entries shown may be out of date; local entries are retained. Retry sync.', true);
+    }
+    return null;
+  }
   const payload = await response.json();
   return payload?.store && typeof payload.store === 'object' ? payload.store : null;
 }
@@ -1308,7 +1331,7 @@ async function performLocalSnapshotPush() {
   const didSync = Boolean(response);
   if (didSync) {
     Array.from(pendingSharedWriteKeys).forEach((key) => {
-      if (localStorage.getItem(key) === store[key]) {
+      if (key !== projectTimeEntriesKey && localStorage.getItem(key) === store[key]) {
         pendingSharedWriteKeys.delete(key);
       }
     });
@@ -1517,6 +1540,9 @@ async function initializeBackendSync() {
 }
 
 async function pollBackendSync() {
+  if (localStorage.getItem(pendingProjectTimeSyncKey) === '1') {
+    pendingSharedWriteKeys.add(projectTimeEntriesKey);
+  }
   if (!backendApiBase || document.hidden || isPushingLocalSnapshot || isSharedEditInProgress()) return;
   const remoteStore = await fetchBackendSnapshot();
   if (!remoteStore || isSharedEditInProgress()) {
@@ -7495,6 +7521,85 @@ function renderResourcesPage(currentUser) {
 }
 
 let projectTimerInterval = null;
+let projectSyncStatus = 'Checking time tracking backend sync...';
+let projectSyncHasError = false;
+
+function setProjectSyncStatus(message, hasError = false) {
+  projectSyncStatus = message;
+  projectSyncHasError = hasError;
+  const status = document.getElementById('project-sync-status');
+  if (status) {
+    status.textContent = message;
+    status.setAttribute('role', hasError ? 'alert' : 'status');
+  }
+}
+
+function renderProjectSyncStatus() {
+  return `<div class="panel" style="margin-bottom:16px;">
+    <p id="project-sync-status" role="${projectSyncHasError ? 'alert' : 'status'}">${escapeHtml(projectSyncStatus)}</p>
+    <button id="project-sync-retry" type="button" class="secondary">Refresh / retry sync</button>
+  </div>`;
+}
+
+function projectEntriesAreConfirmed(localRaw, remoteRaw) {
+  const remoteEntries = new Map(getProjectTimeEntries(remoteRaw).map((entry) => [entry.id, entry]));
+  return getProjectTimeEntries(localRaw).every((entry) => {
+    const remote = remoteEntries.get(entry.id);
+    if (!remote || remote.agentId !== entry.agentId) return false;
+    if (remote.revision > entry.revision) return true;
+    return remote.revision === entry.revision && remote.updatedAt >= entry.updatedAt
+      && remote.project === entry.project && remote.details === entry.details
+      && remote.status === entry.status && remote.elapsedMs === entry.elapsedMs
+      && remote.startedAt === entry.startedAt && remote.runningSince === entry.runningSince
+      && remote.stoppedAt === entry.stoppedAt;
+  });
+}
+
+async function confirmProjectTimeSync(rawValue) {
+  const remoteStore = await fetchBackendSnapshot();
+  if (!remoteStore || !projectEntriesAreConfirmed(rawValue, remoteStore[projectTimeEntriesKey])) {
+    setProjectSyncStatus('The backend did not confirm these time entries. Local entries are retained. Ask an admin to deploy the updated backend, then retry sync.', true);
+    return false;
+  }
+  if (localStorage.getItem(projectTimeEntriesKey) === rawValue) {
+    localStorage.removeItem(pendingProjectTimeSyncKey);
+    setProjectSyncStatus('Time entries confirmed on the backend and available to admins.');
+  }
+  markSyncSuccess();
+  return true;
+}
+
+async function refreshProjectTimeSync() {
+  setProjectSyncStatus('Checking time tracking backend sync...');
+  try {
+    const response = await requestBackend('/health');
+    const health = response ? await response.json() : null;
+    if (!health?.projectTimeTrackingVersion) {
+      setProjectSyncStatus('Time tracking sync is unavailable or the backend is outdated. An admin must deploy the updated backend. Keep this browser data so unsynced agent entries can be uploaded afterward.', true);
+      return;
+    }
+    const localEntries = localStorage.getItem(projectTimeEntriesKey);
+    if (localEntries !== null) {
+      pendingSharedWriteKeys.add(projectTimeEntriesKey);
+      const didSync = await pushSharedKeyToBackend(projectTimeEntriesKey, localEntries);
+      if (!didSync) return;
+      if (localStorage.getItem(projectTimeEntriesKey) === localEntries) {
+        pendingSharedWriteKeys.delete(projectTimeEntriesKey);
+      }
+    }
+    const remoteStore = await fetchBackendSnapshot();
+    if (!remoteStore) return;
+    const mergeResult = mergeRemoteSnapshotWithPendingLocal(remoteStore);
+    applyRemoteSnapshot(mergeResult.store);
+    lastRemoteSnapshotHash = getSnapshotHash(remoteStore);
+    syncFromStorage();
+    if (!projectSyncHasError) setProjectSyncStatus('Connected to time tracking backend. Agent entries update automatically after sync.');
+    render();
+  } catch (error) {
+    console.error('Unable to refresh time tracking sync.', error);
+    setProjectSyncStatus('Unable to refresh time tracking entries. Local entries are retained; check the backend connection and retry.', true);
+  }
+}
 
 function getProjectTimeEntries(raw = localStorage.getItem(projectTimeEntriesKey)) {
   const entries = JSON.parse(raw || '[]');
@@ -7577,6 +7682,7 @@ function renderProjectsPage(currentUser) {
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
+      ${renderProjectSyncStatus()}
       <div class="panel" style="margin-bottom:16px;">
         <h2>${activeEntry ? 'Current project' : 'Start a project timer'}</h2>
         <p class="muted">One timer at a time. Running timers continue when you leave this page or close the browser.</p>
@@ -7622,6 +7728,7 @@ function renderProjectsPage(currentUser) {
       </div>
     </div>`;
   restoreActiveFormDrafts();
+  document.getElementById('project-sync-retry')?.addEventListener('click', () => { void refreshProjectTimeSync(); });
 
   const saveEntry = (form, entryId, action) => {
     const user = getCurrentUser();
@@ -7765,6 +7872,7 @@ function renderTimeTrackingEntriesPage(currentUser) {
           <button id="logout-btn" class="secondary" type="button">Log out</button>
         </div>
       </div>
+      ${renderProjectSyncStatus()}
       <div class="panel">
         <form id="time-tracking-filters" action="index.html" method="get" class="stack" style="margin-bottom:16px;">
           <input type="hidden" name="view" value="time-tracking-entries" />
@@ -7810,6 +7918,7 @@ function renderTimeTrackingEntriesPage(currentUser) {
       </div>
     </div>`;
   bindEvents();
+  document.getElementById('project-sync-retry')?.addEventListener('click', () => { void refreshProjectTimeSync(); });
   if (filteredEntries.some((entry) => entry.status === 'running')) {
     projectTimerInterval = window.setInterval(() => {
       document.querySelectorAll('[data-admin-project-elapsed]').forEach((element) => {
@@ -15154,6 +15263,9 @@ function bindEvents() {
 }
 
 void initializeBackendSync().finally(() => {
+  if (pageMode === 'projects' || pageMode === 'time-tracking-entries') {
+    void refreshProjectTimeSync();
+  }
   void migrateLegacyPolicyContentToIndexedDb().finally(() => {
     render();
   });

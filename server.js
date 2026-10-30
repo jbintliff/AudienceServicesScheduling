@@ -545,6 +545,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     dataProtectionVersion: 1,
+    projectTimeTrackingVersion: 1,
     agentCount: getStoredAgentCount(store),
     seedAgentCount: getSeedAgentCount()
   });
