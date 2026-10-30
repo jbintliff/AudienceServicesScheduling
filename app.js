@@ -562,6 +562,7 @@ const defaultState = {
     swapAlertsCollapsed: false,
     agentScheduleView: 'week',
     agentScheduleDay: 'Mon',
+    agentScheduleWeekReference: '',
     agentScheduleMonth: '',
     availabilityCalendarMonth: '',
     availabilityAllFrom: '',
@@ -848,6 +849,7 @@ function getDefaultUiState() {
     swapAlertsCollapsed: false,
     agentScheduleView: 'week',
     agentScheduleDay: 'Mon',
+    agentScheduleWeekReference: '',
     agentScheduleMonth: '',
     availabilityCalendarMonth: '',
     availabilityAllFrom: '',
@@ -909,6 +911,7 @@ function normalizeUiState(source) {
     swapAlertsCollapsed: Boolean(source?.swapAlertsCollapsed),
     agentScheduleView: source?.agentScheduleView || defaults.agentScheduleView,
     agentScheduleDay: source?.agentScheduleDay || defaults.agentScheduleDay,
+    agentScheduleWeekReference: source?.agentScheduleWeekReference || defaults.agentScheduleWeekReference,
     agentScheduleMonth: source?.agentScheduleMonth || defaults.agentScheduleMonth,
     availabilityCalendarMonth: source?.availabilityCalendarMonth || defaults.availabilityCalendarMonth,
     availabilityAllFrom: source?.availabilityAllFrom || defaults.availabilityAllFrom,
@@ -10690,9 +10693,11 @@ function render() {
   const sortedVisibleShifts = [...visibleShifts].sort(compareCalendarShiftDisplayOrder);
   const blackoutDates = getBlackoutDatesForScope(getCurrentUserDepartmentScope());
   const plannerWeekReference = getActiveCalendarWeekReference();
-  const weekDates = getCalendarWeekDates(plannerWeekReference);
+  const selectedAgentScheduleWeekReference = state.ui.agentScheduleWeekReference || getCurrentLocalIsoDate();
+  const weekDates = getCalendarWeekDates(hideAgentShifts ? selectedAgentScheduleWeekReference : plannerWeekReference);
   const plannerWeekDates = getCalendarWeekDates(plannerWeekReference);
   const plannerWeekLabel = getCalendarWeekLabel(plannerWeekDates);
+  const selectedAgentScheduleWeekLabel = getCalendarWeekLabel(weekDates);
   const viewedWeekFullCost = getWeeklySpend(plannerWeekReference, { publishedOnly: true });
   const adminWeeklyShifts = isAgentView
     ? []
@@ -10860,6 +10865,17 @@ function render() {
                 ${selectedAgentScheduleView === 'day' ? `<select id="agent-schedule-day">${days.map((day) => `<option value="${day}" ${selectedAgentScheduleDay === day ? 'selected' : ''}>${day}</option>`).join('')}</select>` : ''}
                 ${selectedAgentScheduleView === 'month' ? `<input id="agent-schedule-month" type="month" value="${escapeHtml(selectedAgentScheduleMonth)}" />` : ''}
               </div>
+              ${hideAgentShifts && selectedAgentScheduleView === 'week' ? `
+                <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+                  <strong>Week of ${escapeHtml(selectedAgentScheduleWeekLabel)}</strong>
+                  <div class="row" style="gap:8px; flex-wrap:wrap;">
+                    <button id="agent-schedule-previous-week" class="secondary" type="button">Previous week</button>
+                    <button id="agent-schedule-current-week" class="secondary" type="button">Current week</button>
+                    <button id="agent-schedule-next-week" class="secondary" type="button">Next week</button>
+                    <input id="agent-schedule-week-reference" type="date" aria-label="Choose a date in the week to view" value="${escapeHtml(selectedAgentScheduleWeekReference)}" />
+                  </div>
+                </div>
+              ` : ''}
               ${selectedAgentScheduleView === 'day' ? `
                 <div class="day-row" style="margin-top:12px; grid-template-columns:repeat(1, minmax(0, 1fr));">
                   <div class="day-card" data-day="${selectedAgentScheduleDay}">
@@ -10879,6 +10895,7 @@ function render() {
                   ${days.map((day) => `
                     <div class="day-card" data-day="${day}">
                       <h4>${day}</h4>
+                      ${hideAgentShifts ? `<div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>` : ''}
                       ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                       ${getAvailabilityCalendarMarkers(weekDates[day]?.iso || '')}
                       ${sortedVisibleShifts.filter((shift) => shift.day === day).map((shift) => `
@@ -13267,6 +13284,30 @@ function bindEvents() {
 
   document.getElementById('agent-schedule-day')?.addEventListener('change', (event) => {
     state.ui.agentScheduleDay = event.target.value;
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('agent-schedule-week-reference')?.addEventListener('change', (event) => {
+    state.ui.agentScheduleWeekReference = event.target.value || '';
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('agent-schedule-previous-week')?.addEventListener('click', () => {
+    state.ui.agentScheduleWeekReference = getShiftedWeekReference(state.ui.agentScheduleWeekReference || getCurrentLocalIsoDate(), -7);
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('agent-schedule-current-week')?.addEventListener('click', () => {
+    state.ui.agentScheduleWeekReference = getCurrentLocalIsoDate();
+    saveUiState();
+    render();
+  });
+
+  document.getElementById('agent-schedule-next-week')?.addEventListener('click', () => {
+    state.ui.agentScheduleWeekReference = getShiftedWeekReference(state.ui.agentScheduleWeekReference || getCurrentLocalIsoDate(), 7);
     saveUiState();
     render();
   });
