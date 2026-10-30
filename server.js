@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { mergeProjectTimeStore, projectTimeEntriesKey } from './backend/project-time.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +25,7 @@ const allowedKeys = new Set([
   'agent-scheduler-users-v1',
   'agent-scheduler-resources-v1',
   'agent-scheduler-meeting-follow-ups-v1',
+  projectTimeEntriesKey,
   'agent-scheduler-availability-requests-v1',
   'agent-scheduler-availability-inbox-v1',
   'agent-scheduler-availability-ledger-v1',
@@ -580,7 +582,7 @@ app.get('/api/snapshot', (req, res) => {
 app.put('/api/snapshot', (req, res) => {
   const incomingStore = filterAllowedStore(req.body?.store || {});
   try {
-    writeStore({ ...readStore(), ...incomingStore });
+    writeStore(mergeProjectTimeStore(readStore(), incomingStore));
     res.json({ ok: true, keys: Object.keys(incomingStore).length });
   } catch (error) {
     res.status(409).json({ ok: false, error: error.message || 'Snapshot would discard existing agent data.' });
@@ -601,9 +603,8 @@ app.put('/api/store/:key', (req, res) => {
   }
 
   const store = readStore();
-  store[key] = value;
   try {
-    writeStore(store);
+    writeStore(mergeProjectTimeStore(store, { [key]: value }));
     res.json({ ok: true });
   } catch (error) {
     res.status(409).json({ ok: false, error: error.message || 'Store update would discard existing agent data.' });

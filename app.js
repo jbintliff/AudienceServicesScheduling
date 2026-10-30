@@ -19,6 +19,7 @@ const authUsersKey = 'agent-scheduler-users-v1';
 const sessionKey = 'agent-scheduler-session-v1';
 const resourcesKey = 'agent-scheduler-resources-v1';
 const meetingFollowUpsKey = 'agent-scheduler-meeting-follow-ups-v1';
+const projectTimeEntriesKey = 'agent-scheduler-project-time-entries-v1';
 const availabilityRequestsKey = 'agent-scheduler-availability-requests-v1';
 const availabilityInboxKey = 'agent-scheduler-availability-inbox-v1';
 const availabilityRequestLedgerKey = 'agent-scheduler-availability-ledger-v1';
@@ -62,6 +63,7 @@ const sharedStorageKeys = [
   authUsersKey,
   resourcesKey,
   meetingFollowUpsKey,
+  projectTimeEntriesKey,
   availabilityRequestsKey,
   availabilityInboxKey,
   availabilityRequestLedgerKey,
@@ -493,6 +495,8 @@ const pageMode = (() => {
   if (queryMode === 'admin-options') return 'admin-options';
   if (queryMode === 'resources') return 'resources';
   if (queryMode === 'meeting-follow-ups') return 'meeting-follow-ups';
+  if (queryMode === 'projects') return 'projects';
+  if (queryMode === 'time-tracking-entries') return 'time-tracking-entries';
   if (queryMode === 'policies') return 'policies';
   const mode = document.body?.dataset?.page;
   if (mode === 'calendar') return 'calendar';
@@ -508,6 +512,8 @@ const pageMode = (() => {
   if (mode === 'admin-options') return 'admin-options';
   if (mode === 'resources') return 'resources';
   if (mode === 'meeting-follow-ups') return 'meeting-follow-ups';
+  if (mode === 'projects') return 'projects';
+  if (mode === 'time-tracking-entries') return 'time-tracking-entries';
   if (mode === 'policies') return 'policies';
   return 'dashboard';
 })();
@@ -1362,6 +1368,22 @@ function mergeRemoteSnapshotWithPendingLocal(remoteStore) {
   const mergedStore = { ...remoteStore };
   const preservedLocalKeys = [];
 
+  const localProjectEntries = localStorage.getItem(projectTimeEntriesKey);
+  const remoteProjectEntries = remoteStore[projectTimeEntriesKey];
+  if (localProjectEntries !== null && localProjectEntries !== remoteProjectEntries) {
+    try {
+      const mergedEntries = mergeProjectTimeEntries(remoteProjectEntries, localProjectEntries);
+      mergedStore[projectTimeEntriesKey] = mergedEntries;
+      if (mergedEntries !== remoteProjectEntries) {
+        preservedLocalKeys.push(projectTimeEntriesKey);
+        pendingSharedWriteKeys.add(projectTimeEntriesKey);
+      }
+    } catch (error) {
+      console.error('Unable to merge project time entries. Keeping the local copy unchanged.', error);
+      delete mergedStore[projectTimeEntriesKey];
+    }
+  }
+
   // Auth users are critical for profile persistence; keep the most recently updated version per account.
   const localAuthUsers = localStorage.getItem(authUsersKey);
   const remoteAuthUsers = typeof remoteStore[authUsersKey] === 'string' ? remoteStore[authUsersKey] : null;
@@ -1388,6 +1410,7 @@ function mergeRemoteSnapshotWithPendingLocal(remoteStore) {
   }
 
   pendingSharedWriteKeys.forEach((key) => {
+    if (key === projectTimeEntriesKey) return;
     const localValue = localStorage.getItem(key);
     const remoteValue = typeof remoteStore[key] === 'string' ? remoteStore[key] : null;
     const hasPendingLocalState = key === storageKey && localStorage.getItem(pendingStateSnapshotSyncKey) === '1';
@@ -1505,6 +1528,13 @@ async function pollBackendSync() {
   const nextHash = getSnapshotHash(remoteStore);
   if (!nextHash) return;
   if (nextHash === lastRemoteSnapshotHash) {
+    if (pendingSharedWriteKeys.has(projectTimeEntriesKey)) {
+      const value = localStorage.getItem(projectTimeEntriesKey);
+      if (value !== null && await pushSharedKeyToBackend(projectTimeEntriesKey, value)
+        && localStorage.getItem(projectTimeEntriesKey) === value) {
+        pendingSharedWriteKeys.delete(projectTimeEntriesKey);
+      }
+    }
     if (localStorage.getItem(pendingStateSnapshotSyncKey) === '1') {
       await flushLocalSnapshotSync();
     }
@@ -7299,6 +7329,7 @@ function renderAdminNavigationLinks(options = {}) {
         <a href="index.html?view=resources" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Resources</a>
         <a href="index.html?view=policies" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Policies</a>
         <a href="index.html?view=meeting-follow-ups" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">1:1 Meetings / Follow ups</a>
+        <a href="index.html?view=time-tracking-entries" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Time Tracking Entries</a>
         ${includeExport ? '<button id="export-published-schedule-csv-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export published schedule CSV</button>' : ''}
         ${isBoxOfficeScoped ? '' : '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Email Outbox</a>'}
         ${includeExport ? '<button id="export-data-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export JSON</button>' : ''}
@@ -7320,6 +7351,7 @@ function renderAgentNavigationLinks() {
     ...(isAgentUser(getCurrentUser()) ? [] : ['<a href="index.html?view=request-time-off" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Request time off</button></a>']),
     '<a href="index.html?view=availability-pto-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability/PTO Requests</button></a>',
     '<a href="index.html?view=resources" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Resources</button></a>',
+    '<a href="index.html?view=projects" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Projects</button></a>',
     '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>',
     '<a href="index.html?view=meeting-follow-ups" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">1:1 Meetings / Follow ups</button></a>'
   ].join('');
@@ -7460,6 +7492,285 @@ function renderResourcesPage(currentUser) {
     clearSession();
     render();
   });
+}
+
+let projectTimerInterval = null;
+
+function getProjectTimeEntries(raw = localStorage.getItem(projectTimeEntriesKey)) {
+  const entries = JSON.parse(raw || '[]');
+  if (!Array.isArray(entries) || entries.some((entry) => (
+    !entry || typeof entry.id !== 'string' || !entry.id
+    || !Number.isInteger(entry.agentId) || entry.agentId <= 0
+    || typeof entry.project !== 'string' || !entry.project.trim() || entry.project.length > 160
+    || typeof entry.details !== 'string' || entry.details.length > 4000
+    || !['running', 'paused', 'stopped'].includes(entry.status)
+    || !Number.isFinite(entry.elapsedMs) || entry.elapsedMs < 0
+    || !Number.isInteger(entry.revision) || entry.revision < 1
+    || !Number.isFinite(Date.parse(entry.startedAt))
+    || !Number.isFinite(Date.parse(entry.updatedAt))
+    || (entry.status === 'running' && !Number.isFinite(Date.parse(entry.runningSince)))
+    || (entry.status === 'stopped' && !Number.isFinite(Date.parse(entry.stoppedAt)))
+  ))) {
+    throw new Error('Invalid project time entries.');
+  }
+  return entries;
+}
+
+function mergeProjectTimeEntries(remoteRaw, localRaw) {
+  const entries = new Map(getProjectTimeEntries(remoteRaw).map((entry) => [entry.id, entry]));
+  for (const entry of getProjectTimeEntries(localRaw)) {
+    const previous = entries.get(entry.id);
+    if (previous && previous.agentId !== entry.agentId) {
+      throw new Error('A project time entry cannot change agents.');
+    }
+    if (!previous || entry.revision > previous.revision
+      || (entry.revision === previous.revision && entry.updatedAt > previous.updatedAt)) {
+      entries.set(entry.id, entry);
+    }
+  }
+  return JSON.stringify([...entries.values()]);
+}
+
+function getProjectElapsedMs(entry, now = Date.now()) {
+  return entry.elapsedMs + (entry.status === 'running'
+    ? Math.max(0, now - Date.parse(entry.runningSince))
+    : 0);
+}
+
+function formatProjectDuration(milliseconds) {
+  const seconds = Math.floor(milliseconds / 1000);
+  return `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function renderProjectsPage(currentUser) {
+  window.clearInterval(projectTimerInterval);
+  projectTimerInterval = null;
+  if (!isAgentLikeUser(currentUser)) {
+    root.innerHTML = `<div class="app"><div class="panel"><h1>Projects</h1>
+      <p class="muted">Project time tracking is available for agent accounts only.</p>
+      <a href="index.html">Back to dashboard</a></div></div>`;
+    return;
+  }
+
+  let entries;
+  try {
+    entries = getProjectTimeEntries();
+  } catch (error) {
+    console.error('Unable to load project time entries.', error);
+    root.innerHTML = `<div class="app"><div class="panel"><h1>Projects</h1>
+      <p role="alert">Unable to load your time entries. Reload the page or contact an admin. No entries have been changed.</p>
+      <a href="index.html">Back to dashboard</a></div></div>`;
+    return;
+  }
+  const agentId = Number(currentUser.agentId);
+  const agentEntries = entries.filter((entry) => entry.agentId === agentId);
+  const activeEntry = agentEntries.find((entry) => entry.status !== 'stopped');
+  const history = agentEntries.filter((entry) => entry.status === 'stopped')
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+  const totalElapsed = () => agentEntries.reduce((total, entry) => total + getProjectElapsedMs(entry), 0);
+  const formatDate = (value) => new Date(value).toLocaleString();
+  root.innerHTML = `
+    <div class="app">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div><h1>Projects</h1><p class="muted">Track your project work. Paused time is not counted.</p></div>
+        <div class="row">${renderAgentNavigationLinks()}${renderUserNavChip(currentUser)}
+          <button id="logout-btn" class="secondary" type="button">Log out</button>
+        </div>
+      </div>
+      <div class="panel" style="margin-bottom:16px;">
+        <h2>${activeEntry ? 'Current project' : 'Start a project timer'}</h2>
+        <p class="muted">One timer at a time. Running timers continue when you leave this page or close the browser.</p>
+        <form id="project-timer-${activeEntry ? escapeHtml(activeEntry.id) : 'new'}" class="stack">
+          <label class="stack">Project name
+            <input name="project" type="text" required maxlength="160" value="${escapeHtml(activeEntry?.project || '')}" />
+          </label>
+          <label class="stack">Work details
+            <textarea name="details" rows="4" maxlength="4000" placeholder="What are you working on?">${escapeHtml(activeEntry?.details || '')}</textarea>
+          </label>
+          ${activeEntry ? `
+            <p><strong>${activeEntry.status === 'running' ? 'Running' : 'Paused'}</strong>
+              <span id="project-elapsed" role="timer" aria-label="Current project elapsed time" style="font-size:2rem; font-variant-numeric:tabular-nums;">${formatProjectDuration(getProjectElapsedMs(activeEntry))}</span>
+            </p>
+            <div class="row">
+              <button type="submit" value="${activeEntry.status === 'running' ? 'pause' : 'resume'}">${activeEntry.status === 'running' ? 'Pause' : 'Resume'}</button>
+              <button type="submit" value="stop" class="danger">Stop and save</button>
+              <button type="submit" value="save" class="secondary">Save details</button>
+            </div>
+          ` : '<div><button type="submit" value="start">Start timer</button></div>'}
+          <p id="project-save-status" class="muted" role="status"></p>
+        </form>
+      </div>
+      <div class="panel">
+        <h2>Time entries</h2>
+        <p>Total tracked time: <strong id="project-total">${formatProjectDuration(totalElapsed())}</strong></p>
+        <div class="stack">
+          ${history.map((entry) => `
+            <article class="card">
+              <h3>${escapeHtml(entry.project)}</h3>
+              <p><strong>${formatProjectDuration(entry.elapsedMs)}</strong> &middot; Stopped</p>
+              <p class="muted">Started: ${escapeHtml(formatDate(entry.startedAt))}<br />Stopped: ${escapeHtml(formatDate(entry.stoppedAt))}</p>
+              <form id="project-details-${escapeHtml(entry.id)}" data-project-entry="${escapeHtml(entry.id)}" class="stack">
+                <label class="stack">Work details
+                  <textarea name="details" rows="3" maxlength="4000">${escapeHtml(entry.details)}</textarea>
+                </label>
+                <div><button type="submit" class="secondary">Save details</button></div>
+                <p class="muted" role="status"></p>
+              </form>
+            </article>
+          `).join('') || '<p class="muted">No completed time entries yet. Stop a timer to save it here.</p>'}
+        </div>
+      </div>
+    </div>`;
+  restoreActiveFormDrafts();
+
+  const saveEntry = (form, entryId, action) => {
+    const user = getCurrentUser();
+    if (!isAgentLikeUser(user) || Number(user.agentId) !== agentId) {
+      alert('Your session has changed. Reload the page before tracking time.');
+      return;
+    }
+    let latestEntries;
+    try {
+      latestEntries = getProjectTimeEntries();
+    } catch (error) {
+      console.error('Unable to save project time entries.', error);
+      alert('Unable to read existing time entries. No changes were saved. Reload the page or contact an admin.');
+      return;
+    }
+    const latestActive = latestEntries.find((entry) => entry.agentId === agentId && entry.status !== 'stopped');
+    const previous = entryId ? latestEntries.find((entry) => entry.id === entryId && entry.agentId === agentId) : null;
+    if ((action === 'start' && latestActive) || (entryId && !previous)
+      || (action === 'pause' && previous?.status !== 'running')
+      || (action === 'resume' && previous?.status !== 'paused')
+      || (action === 'stop' && previous?.status === 'stopped')) {
+      alert('This timer has changed in another tab or device. The page will refresh to show its current state.');
+      render();
+      return;
+    }
+    const formData = new FormData(form);
+    const project = previous?.status === 'stopped' ? previous.project : String(formData.get('project') || '').trim();
+    if (!project) {
+      alert('Enter a project name before saving.');
+      return;
+    }
+    const now = Date.now();
+    const timestamp = new Date(now).toISOString();
+    const next = previous ? { ...previous } : {
+      id: `project-${createId()}`, agentId, startedAt: timestamp, elapsedMs: 0,
+      status: 'running', runningSince: timestamp, stoppedAt: null, revision: 0
+    };
+    next.project = project;
+    next.details = String(formData.get('details') || '').trim();
+    next.updatedAt = timestamp;
+    next.revision += 1;
+    if (action === 'pause' || action === 'stop') {
+      next.elapsedMs = getProjectElapsedMs(next, now);
+      next.status = action === 'pause' ? 'paused' : 'stopped';
+      next.runningSince = null;
+      if (action === 'stop') next.stoppedAt = timestamp;
+    } else if (action === 'resume') {
+      next.status = 'running';
+      next.runningSince = timestamp;
+    }
+    const nextEntries = previous
+      ? latestEntries.map((entry) => entry.id === next.id ? next : entry)
+      : [...latestEntries, next];
+    if (!safeSetLocalStorage(projectTimeEntriesKey, JSON.stringify(nextEntries))) {
+      alert('Unable to save your time entry. Check browser storage and try again. Your timer has not changed.');
+      return;
+    }
+    render();
+    const status = document.getElementById(form.id)?.querySelector('[role="status"]')
+      || document.getElementById('project-save-status');
+    if (status) status.textContent = 'Saved on this device.';
+  };
+  document.querySelector('form[id^="project-timer-"]')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveEntry(event.currentTarget, activeEntry?.id, event.submitter?.value || (activeEntry ? 'save' : 'start'));
+  });
+  document.querySelectorAll('[data-project-entry]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      saveEntry(form, form.dataset.projectEntry, 'save');
+    });
+  });
+  document.getElementById('logout-btn')?.addEventListener('click', () => {
+    clearSession();
+    render();
+  });
+  if (activeEntry?.status === 'running') {
+    projectTimerInterval = window.setInterval(() => {
+      const elapsed = document.getElementById('project-elapsed');
+      if (elapsed) elapsed.textContent = formatProjectDuration(getProjectElapsedMs(activeEntry));
+      const total = document.getElementById('project-total');
+      if (total) total.textContent = formatProjectDuration(totalElapsed());
+    }, 1000);
+  }
+}
+
+function renderTimeTrackingEntriesPage(currentUser) {
+  if (!isAdminUser(currentUser)) {
+    root.innerHTML = `<div class="app"><div class="panel"><h1>Time Tracking Entries</h1>
+      <p class="muted">This page is available for admin accounts only.</p>
+      <a href="index.html">Back to dashboard</a></div></div>`;
+    return;
+  }
+
+  let entries;
+  try {
+    entries = getProjectTimeEntries()
+      .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+  } catch (error) {
+    console.error('Unable to load agent time tracking entries.', error);
+    root.innerHTML = `<div class="app"><div class="panel"><h1>Time Tracking Entries</h1>
+      <p role="alert">Unable to load time tracking entries. Reload the page or check backend sync. No entries have been changed.</p>
+      <a href="index.html">Back to dashboard</a></div></div>`;
+    return;
+  }
+
+  const totalElapsed = () => entries.reduce((total, entry) => total + getProjectElapsedMs(entry), 0);
+  const statusLabels = { running: 'Running', paused: 'Paused', stopped: 'Stopped' };
+  root.innerHTML = `
+    <div class="app">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div><h1>Time Tracking Entries</h1><p class="muted">Review project time tracked by all agents, including running, paused, and stopped entries.</p></div>
+        <div class="row">${renderAdminNavigationLinks()}${renderUserNavChip(currentUser)}
+          <button id="logout-btn" class="secondary" type="button">Log out</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>All agent entries (${entries.length})</h2>
+        <p>Total tracked time: <strong id="admin-project-total">${formatProjectDuration(totalElapsed())}</strong></p>
+        <div class="stack">
+          ${entries.map((entry, index) => {
+            const agent = getAgent(entry.agentId);
+            return `
+              <article class="card" style="overflow-wrap:anywhere;">
+                <h3>${escapeHtml(entry.project)}</h3>
+                <p><strong>${escapeHtml(agent?.name || `Agent #${entry.agentId} (profile unavailable)`)}</strong></p>
+                <p>${statusLabels[entry.status]} &middot;
+                  <strong data-admin-project-elapsed="${index}">${formatProjectDuration(getProjectElapsedMs(entry))}</strong>
+                </p>
+                <p class="muted">Started: ${escapeHtml(new Date(entry.startedAt).toLocaleString())}<br />
+                  Stopped: ${entry.status === 'stopped' ? escapeHtml(new Date(entry.stoppedAt).toLocaleString()) : 'Not stopped'}
+                </p>
+                <p style="white-space:pre-wrap;">${escapeHtml(entry.details || 'No work details provided.')}</p>
+              </article>`;
+          }).join('') || '<p class="muted">No agent time tracking entries yet.</p>'}
+        </div>
+      </div>
+    </div>`;
+  bindEvents();
+  if (entries.some((entry) => entry.status === 'running')) {
+    projectTimerInterval = window.setInterval(() => {
+      document.querySelectorAll('[data-admin-project-elapsed]').forEach((element) => {
+        const entry = entries[Number(element.dataset.adminProjectElapsed)];
+        element.textContent = formatProjectDuration(getProjectElapsedMs(entry));
+      });
+      const total = document.getElementById('admin-project-total');
+      if (total) total.textContent = formatProjectDuration(totalElapsed());
+    }, 1000);
+  }
 }
 
 function getMeetingFollowUps() {
@@ -10573,6 +10884,8 @@ function renderAvailabilityRequestsPage(currentUser) {
 }
 
 function render() {
+  window.clearInterval(projectTimerInterval);
+  projectTimerInterval = null;
   captureActiveFormDrafts();
   capturePublicAvailabilityFormDraft();
   syncFromStorage();
@@ -10661,6 +10974,16 @@ function render() {
 
   if (pageMode === 'meeting-follow-ups') {
     renderMeetingFollowUpsPage(currentUser);
+    return;
+  }
+
+  if (pageMode === 'projects') {
+    renderProjectsPage(currentUser);
+    return;
+  }
+
+  if (pageMode === 'time-tracking-entries') {
+    renderTimeTrackingEntriesPage(currentUser);
     return;
   }
 
@@ -11678,7 +12001,7 @@ function bindPublicAvailabilityFormConditionalFields() {
 }
 
 window.addEventListener('storage', (event) => {
-  if (![storageKey, authUsersKey, sessionKey, availabilityRequestsKey, availabilityInboxKey, availabilityRequestLedgerKey].includes(event.key)) return;
+  if (![storageKey, authUsersKey, sessionKey, projectTimeEntriesKey, availabilityRequestsKey, availabilityInboxKey, availabilityRequestLedgerKey].includes(event.key)) return;
   if (isCalendarEditInProgress()) return;
   syncFromStorage();
   render();

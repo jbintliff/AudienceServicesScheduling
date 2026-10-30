@@ -24,7 +24,21 @@ Features included:
 - Submit and approve swap requests from one workspace
 - Share admin-managed resource links with agents from their Resources page
 - Create 1:1 meeting follow-ups, attach documents, and assign them to agents
+- Agent Projects tab with project names, work details, and start/pause/resume/stop time tracking
+- Project timers survive navigation and refresh, exclude paused time, and retain completed entries with editable details and total tracked time
 - Shared persistence through backend API sync
+
+## Project time tracking
+Agent accounts can open **Projects**, enter a project name and optional work details, and select **Start timer**.
+Only one timer can be active per agent. **Pause** excludes break time, **Resume** continues tracking, and **Stop and save** adds the entry to the history.
+Use **Save details** to save notes while tracking or update notes on a completed entry.
+Running timers continue until paused or stopped, including while the page or browser is closed.
+Changes are saved on the current device and use the existing backend sync when available; both backend entry points support project time entries.
+When using multiple devices, allow backend sync to complete before switching devices.
+Concurrent agent saves preserve each other's entries, and older snapshots do not replace newer entry revisions.
+Admins can open **Admin > Time Tracking Entries** to review all agents' project names, work details,
+start/stop timestamps, statuses, and elapsed time, plus a total across all entries.
+Running durations update live; paused time is excluded. This admin-only page is read-only and uses the existing backend sync.
 
 ## Run with backend sync (recommended)
 1. Install dependencies:
