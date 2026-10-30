@@ -20,6 +20,7 @@ Features included:
 - Weekly in-person limits count scheduled shifts with location `In Person/ TP`, not agent profile locations or shift roles
 - Request calendars show PTO first, then one-time availability, then repeating availability, including expanded daily request lists
 - Select multiple weekdays for repeating availability in agent and manual admin forms; selected days share the date range and times and are saved as separate weekly series
+- Review pending and completed availability/PTO requests together in collapsible sections on one agent page
 - Submit and approve swap requests from one workspace
 - Share admin-managed resource links with agents from their Resources page
 - Create 1:1 meeting follow-ups, attach documents, and assign them to agents

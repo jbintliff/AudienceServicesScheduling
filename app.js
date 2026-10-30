@@ -482,8 +482,7 @@ const pageMode = (() => {
   const queryMode = new URLSearchParams(window.location.search).get('view');
   if (queryMode === 'calendar') return 'calendar';
   if (queryMode === 'agents') return 'agents';
-  if (queryMode === 'pending-requests') return 'pending-requests';
-  if (queryMode === 'agent-requests') return 'agent-requests';
+  if (queryMode === 'pending-requests' || queryMode === 'agent-requests' || queryMode === 'availability-pto-requests') return 'availability-pto-requests';
   if (queryMode === 'request-time-off') return 'request-time-off';
   if (queryMode === 'profile') return 'profile';
   if (queryMode === 'email-outbox') return 'email-outbox';
@@ -498,8 +497,7 @@ const pageMode = (() => {
   const mode = document.body?.dataset?.page;
   if (mode === 'calendar') return 'calendar';
   if (mode === 'agents') return 'agents';
-  if (mode === 'pending-requests') return 'pending-requests';
-  if (mode === 'agent-requests') return 'agent-requests';
+  if (mode === 'pending-requests' || mode === 'agent-requests' || mode === 'availability-pto-requests') return 'availability-pto-requests';
   if (mode === 'request-time-off') return 'request-time-off';
   if (mode === 'profile') return 'profile';
   if (mode === 'email-outbox') return 'email-outbox';
@@ -7316,11 +7314,10 @@ function renderAgentNavigationLinks() {
     '<a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>',
     ...(isAgentUser(getCurrentUser()) ? [] : ['<a href="index.html?view=calendar" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Schedule</button></a>']),
     ...(isAgentUser(getCurrentUser()) ? [] : ['<a href="index.html?view=request-time-off" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Request time off</button></a>']),
-    '<a href="index.html?view=pending-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Pending requests</button></a>',
-    '<a href="index.html?view=agent-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Completed requests</button></a>',
+    '<a href="index.html?view=availability-pto-requests" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Availability/PTO Requests</button></a>',
     '<a href="index.html?view=resources" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Resources</button></a>',
-    '<a href="index.html?view=meeting-follow-ups" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">1:1 Meetings / Follow ups</button></a>',
-    '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>'
+    '<a href="index.html?view=policies" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Policies</button></a>',
+    '<a href="index.html?view=meeting-follow-ups" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">1:1 Meetings / Follow ups</button></a>'
   ].join('');
 }
 
@@ -7538,6 +7535,7 @@ function renderMeetingFollowUpsPage(currentUser) {
 
       <div class="panel">
         <h2>${isAdminView ? 'Meeting follow-ups' : 'Your assigned follow-ups'}</h2>
+        ${isAdminView ? '<input id="meeting-follow-up-agent-filter" type="search" placeholder="Search by agent name" aria-label="Filter meeting follow-ups by agent name" style="width:100%; margin-top:8px;" />' : ''}
         <div class="request-list" style="margin-top:12px;">
           ${followUps.map((followUp) => {
             const assignedAgents = (Array.isArray(followUp.agentIds) ? followUp.agentIds : [])
@@ -7545,7 +7543,7 @@ function renderMeetingFollowUpsPage(currentUser) {
               .filter(Boolean);
             const documents = Array.isArray(followUp.documents) ? followUp.documents : [];
             return `
-              <article class="card">
+              <article class="card" ${isAdminView ? `data-meeting-follow-up-agent-search="${escapeHtml(assignedAgents.join(' '))}"` : ''}>
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
                   <div>
                     <strong>${escapeHtml(followUp.title || 'Meeting follow-up')}</strong>
@@ -7568,7 +7566,8 @@ function renderMeetingFollowUpsPage(currentUser) {
                 ` : '<div class="muted" style="margin-top:10px;">No documents attached.</div>'}
               </article>
             `;
-          }).join('') || `<div class="muted">${isAdminView ? 'No meeting follow-ups have been added yet.' : 'No follow-ups have been assigned to you yet.'}</div>`}
+          }).join('') || `<div class="muted" data-meeting-follow-up-empty>${isAdminView ? 'No meeting follow-ups have been added yet.' : 'No follow-ups have been assigned to you yet.'}</div>`}
+          ${isAdminView && followUps.length ? '<div class="muted" data-meeting-follow-up-no-matches hidden>No meeting follow-ups match that agent name.</div>' : ''}
         </div>
       </div>
     </div>
@@ -7645,6 +7644,20 @@ function renderMeetingFollowUpsPage(currentUser) {
       return;
     }
     render();
+  });
+
+  document.getElementById('meeting-follow-up-agent-filter')?.addEventListener('input', (event) => {
+    if (!isAdminUser(getCurrentUser())) return;
+    const searchTerm = String(event.currentTarget.value || '').trim().toLocaleLowerCase();
+    const cards = [...document.querySelectorAll('[data-meeting-follow-up-agent-search]')];
+    let visibleCount = 0;
+    cards.forEach((card) => {
+      const matches = String(card.getAttribute('data-meeting-follow-up-agent-search') || '').toLocaleLowerCase().includes(searchTerm);
+      card.hidden = !matches;
+      if (matches) visibleCount += 1;
+    });
+    const emptyMessage = document.querySelector('[data-meeting-follow-up-no-matches]');
+    if (emptyMessage) emptyMessage.hidden = visibleCount > 0;
   });
 
   document.querySelectorAll('[data-download-meeting-document]').forEach((button) => {
@@ -9772,90 +9785,12 @@ function renderPoliciesPage(currentUser, { publicView = false } = {}) {
   bindEvents();
 }
 
-function renderAgentRequestsPage(currentUser) {
+function renderAgentAvailabilityPtoRequestsPage(currentUser) {
   if (!isAgentLikeUser(currentUser)) {
     root.innerHTML = `
       <div class="app">
         <div class="panel">
-          <h1>Completed requests</h1>
-          <p class="muted">This page is available for agent accounts only.</p>
-          <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Back to dashboard</button></a>
-        </div>
-      </div>
-    `;
-    return;
-  }
-
-  const currentAgentId = Number(currentUser?.agentId);
-  const viewAgent = getAgent(currentAgentId) || getViewAgent();
-  const allAvailabilityRequests = getAllAvailabilityRequests();
-  const completedAvailabilityRequests = allAvailabilityRequests
-    .filter((request) => {
-      if (!isAvailabilityRequestVisibleToUser(request, currentUser)) return false;
-      const normalizedStatus = normalizeAvailabilityRequestStatus(request.status);
-      return normalizedStatus === 'approved' || normalizedStatus === 'rejected' || normalizedStatus === 'deleted';
-    })
-    .sort((left, right) => (right.requestedAt || '').localeCompare(left.requestedAt || ''));
-  const approvedSwapRequests = state.swapRequests.filter((request) =>
-    Number(request.fromAgentId) === currentAgentId && request.status === 'completed'
-  );
-
-  root.innerHTML = `
-    <div class="app">
-      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
-        <div>
-          <h1>Completed requests</h1>
-          <p class="muted">Your approved, rejected, and deleted unavailability requests plus completed swap requests.</p>
-        </div>
-        <div class="row">
-          ${renderAgentNavigationLinks()}
-          ${renderUserNavChip(currentUser)}
-          <button id="logout-btn" class="secondary" type="button">Log out</button>
-        </div>
-      </div>
-
-      <div class="panel" style="margin-bottom:16px;">
-        <h2>Unavailability requests</h2>
-        <div class="request-list" style="margin-top:10px;">
-          ${completedAvailabilityRequests.map((request) => `
-            <div class="card">
-              <div class="muted">Type: ${escapeHtml(request.unavailabilityType || 'Availability')}</div>
-              <div class="muted">Unavailability date: ${escapeHtml(request.unavailableDate || 'Not set')}</div>
-              <div class="muted">Time: ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')}</div>
-              <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
-              <div class="muted">Status: ${escapeHtml(normalizeAvailabilityRequestStatus(request.status))}</div>
-              <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
-              ${normalizeAvailabilityRequestStatus(request.status) === 'deleted' && request.deletedAt ? `<div class="muted">Deleted: ${escapeHtml(new Date(request.deletedAt).toLocaleString())}</div>` : ''}
-            </div>
-          `).join('') || '<div class="muted">No completed unavailability requests yet.</div>'}
-        </div>
-      </div>
-
-      <div class="panel">
-        <h2>Completed swap requests</h2>
-        <div class="request-list" style="margin-top:10px;">
-          ${approvedSwapRequests.map((request) => `
-            <div class="card">
-              <div class="muted">${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} â†’ ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</div>
-              <div class="muted">From shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'from'))}</div>
-              <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
-              <div class="muted">Approved: ${escapeHtml(request.completedAt ? new Date(request.completedAt).toLocaleString() : (request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown'))}</div>
-            </div>
-          `).join('') || '<div class="muted">No completed swap requests yet.</div>'}
-        </div>
-      </div>
-    </div>
-  `;
-
-  bindEvents();
-}
-
-function renderPendingRequestsPage(currentUser) {
-  if (!isAgentLikeUser(currentUser)) {
-    root.innerHTML = `
-      <div class="app">
-        <div class="panel">
-          <h1>Pending requests</h1>
+          <h1>Availability/PTO Requests</h1>
           <p class="muted">This page is available for agent accounts only.</p>
           <a href="index.html" style="color:#fff; text-decoration:none;"><button class="secondary" type="button">Dashboard</button></a>
         </div>
@@ -9865,18 +9800,27 @@ function renderPendingRequestsPage(currentUser) {
   }
 
   const currentAgentId = Number(currentUser?.agentId);
-  const viewAgent = getAgent(currentAgentId) || getViewAgent();
   const allAvailabilityRequests = getAllAvailabilityRequests();
   const pendingAvailabilityRequests = allAvailabilityRequests.filter((request) => isAvailabilityRequestVisibleToUser(request, currentUser) && normalizeAvailabilityRequestStatus(request.status) === 'pending');
+  const completedAvailabilityRequests = allAvailabilityRequests
+    .filter((request) => {
+      if (!isAvailabilityRequestVisibleToUser(request, currentUser)) return false;
+      const normalizedStatus = normalizeAvailabilityRequestStatus(request.status);
+      return normalizedStatus === 'approved' || normalizedStatus === 'rejected' || normalizedStatus === 'deleted';
+    })
+    .sort((left, right) => (right.requestedAt || '').localeCompare(left.requestedAt || ''));
   const pendingSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'pending');
+  const completedSwapRequests = state.swapRequests.filter((request) =>
+    Number(request.fromAgentId) === currentAgentId && request.status === 'completed'
+  );
   const hideSwapRequests = isAgentUser(currentUser);
 
   root.innerHTML = `
     <div class="app">
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
-          <h1>Pending requests</h1>
-          <p class="muted">${hideSwapRequests ? 'Your current unavailability requests waiting on approval.' : 'Your current unavailability and swap requests waiting on approval.'}</p>
+          <h1>Availability/PTO Requests</h1>
+          <p class="muted">Review your pending and completed availability, PTO${hideSwapRequests ? '' : ', and swap'} requests.</p>
         </div>
         <div class="row">
           ${renderAgentNavigationLinks()}
@@ -9885,53 +9829,81 @@ function renderPendingRequestsPage(currentUser) {
         </div>
       </div>
 
-      <div class="panel" style="margin-bottom:16px;">
-        <h2>Pending availability requests</h2>
-        <div class="request-list" style="margin-top:10px;">
-          ${pendingAvailabilityRequests.map((request) => `
-            <div class="card" style="border-left:4px solid #fef08a;">
-              <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
-                <div>
-                  <strong>${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')}</strong>
-                  <div class="muted">Type: ${escapeHtml(request.unavailabilityType || 'Availability')}</div>
-                  <div class="muted">Date: ${escapeHtml(request.unavailableDate || 'Not set')}</div>
-                  <div class="muted">Time: ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')}</div>
-                  <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
-                  <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
+      <div class="stack">
+        <details class="panel" open>
+          <summary>Pending requests (${pendingAvailabilityRequests.length + (hideSwapRequests ? 0 : pendingSwapRequests.length)})</summary>
+          <div class="request-list" style="margin-top:12px;">
+            ${pendingAvailabilityRequests.map((request) => `
+              <div class="card" style="border-left:4px solid #fef08a;">
+                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+                  <div>
+                    <strong>${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')}</strong>
+                    <div class="muted">Type: ${escapeHtml(request.unavailabilityType || 'Availability')}</div>
+                    <div class="muted">Date: ${escapeHtml(request.unavailableDate || 'Not set')}</div>
+                    <div class="muted">Time: ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')}</div>
+                    <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
+                    <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
+                  </div>
+                  <span class="status-badge pending">pending</span>
                 </div>
-                <span class="status-badge pending">pending</span>
               </div>
-            </div>
-          `).join('') || '<div class="muted">No pending availability requests.</div>'}
-        </div>
-      </div>
+            `).join('') || '<div class="muted">No pending availability requests.</div>'}
+            ${hideSwapRequests ? '' : `
+              <h3>Pending swap requests</h3>
+              ${pendingSwapRequests.map((request) => `
+                <div class="card" style="border-left:4px solid #fef08a;">
+                  <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
+                    <div>
+                      <strong>${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} → ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</strong>
+                      <div class="muted">From shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'from'))}</div>
+                      <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
+                      <div class="muted">Approval state: ${escapeHtml(getSwapApprovalText(request))}</div>
+                      <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
+                    </div>
+                    <span class="status-badge pending">pending</span>
+                  </div>
+                  ${request.fromAgentId === currentAgentId || request.toAgentId === currentAgentId ? `
+                    <div class="row" style="margin-top:8px;">
+                      ${request.fromAgentId === currentAgentId && !request.fromApproved ? `<button class="success" data-approve-swap-request="${request.id}">Approve as requester</button>` : ''}
+                      ${request.toAgentId === currentAgentId && !request.toApproved ? `<button class="success" data-approve-swap-request="${request.id}">Approve as swap partner</button>` : ''}
+                      <button class="danger" data-reject-swap-request="${request.id}">Reject</button>
+                    </div>
+                  ` : ''}
+                </div>
+              `).join('') || '<div class="muted">No pending swap requests.</div>'}
+            `}
+          </div>
+        </details>
 
-      ${hideSwapRequests ? '' : `<div class="panel">
-        <h2>Pending swap requests</h2>
-        <div class="request-list" style="margin-top:10px;">
-          ${pendingSwapRequests.map((request) => `
-            <div class="card" style="border-left:4px solid #fef08a;">
-              <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
-                <div>
-                  <strong>${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} â†’ ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</strong>
+        <details class="panel">
+          <summary>Completed requests (${completedAvailabilityRequests.length + completedSwapRequests.length})</summary>
+          <div class="request-list" style="margin-top:12px;">
+            <h3>Availability/PTO requests</h3>
+            ${completedAvailabilityRequests.map((request) => `
+              <div class="card">
+                <div class="muted">Type: ${escapeHtml(request.unavailabilityType || 'Availability')}</div>
+                <div class="muted">Date: ${escapeHtml(request.unavailableDate || 'Not set')}</div>
+                <div class="muted">Time: ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')}</div>
+                <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
+                <div class="muted">Status: ${escapeHtml(normalizeAvailabilityRequestStatus(request.status))}</div>
+                <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
+                ${normalizeAvailabilityRequestStatus(request.status) === 'deleted' && request.deletedAt ? `<div class="muted">Deleted: ${escapeHtml(new Date(request.deletedAt).toLocaleString())}</div>` : ''}
+              </div>
+            `).join('') || '<div class="muted">No completed availability/PTO requests yet.</div>'}
+            ${hideSwapRequests ? '' : `
+              <h3>Completed swap requests</h3>
+              ${completedSwapRequests.map((request) => `
+                <div class="card">
+                  <div class="muted">${escapeHtml(getAgent(request.fromAgentId)?.name || 'Unknown')} → ${escapeHtml(getAgent(request.toAgentId)?.name || 'Unknown')}</div>
                   <div class="muted">From shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'from'))}</div>
                   <div class="muted">To shift: ${escapeHtml(getSwapRequestShiftLabel(request, 'to'))}</div>
-                  <div class="muted">Approval state: ${escapeHtml(getSwapApprovalText(request))}</div>
-                  <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
+                  <div class="muted">Approved: ${escapeHtml(request.completedAt ? new Date(request.completedAt).toLocaleString() : (request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown'))}</div>
                 </div>
-                <span class="status-badge pending">pending</span>
-              </div>
-              ${request.fromAgentId === currentAgentId || request.toAgentId === currentAgentId ? `
-                <div class="row" style="margin-top:8px;">
-                  ${request.fromAgentId === currentAgentId && !request.fromApproved ? `<button class="success" data-approve-swap-request="${request.id}">Approve as requester</button>` : ''}
-                  ${request.toAgentId === currentAgentId && !request.toApproved ? `<button class="success" data-approve-swap-request="${request.id}">Approve as swap partner</button>` : ''}
-                  <button class="danger" data-reject-swap-request="${request.id}">Reject</button>
-                </div>
-              ` : ''}
-            </div>
-          `).join('') || '<div class="muted">No pending swap requests.</div>'}
-        </div>
-      </div>`}
+              `).join('') || '<div class="muted">No completed swap requests yet.</div>'}
+            `}
+          </div>
+        </details>
+      </div>
     </div>
   `;
 
@@ -10653,13 +10625,8 @@ function render() {
     return;
   }
 
-  if (pageMode === 'pending-requests') {
-    renderPendingRequestsPage(currentUser);
-    return;
-  }
-
-  if (pageMode === 'agent-requests') {
-    renderAgentRequestsPage(currentUser);
+  if (pageMode === 'availability-pto-requests') {
+    renderAgentAvailabilityPtoRequestsPage(currentUser);
     return;
   }
 
