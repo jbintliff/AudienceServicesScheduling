@@ -46,6 +46,7 @@ from `GET /api/project-time-entries`. Entries survive backend restarts when `DAT
 Filter by **Agent**, **From date**, and **To date**, then select **Apply filters**; **Clear filters** restores all entries.
 Dates use the entry's start date in Eastern time, inclusive of both endpoints. Counts and totals reflect only matching entries.
 Filters remain applied through refresh and incoming synced entries.
+Select **Export to Excel** to download the matching entries as an Excel-compatible CSV spreadsheet, including work details, status, Eastern timestamps, and tracked duration.
 
 ### Time tracking sync troubleshooting
 Both pages show backend sync status. Agent Projects syncs automatically without a refresh button;

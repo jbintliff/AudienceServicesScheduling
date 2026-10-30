@@ -7238,7 +7238,8 @@ async function exportData() {
 
 function escapeCsvValue(value) {
   const normalized = String(value ?? '');
-  return /[",\r\n]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized;
+  const safeValue = /^[\t\r\n ]*[=+\-@]/.test(normalized) ? `'${normalized}` : normalized;
+  return /[",\r\n]/.test(safeValue) ? `"${safeValue.replace(/"/g, '""')}"` : safeValue;
 }
 
 function formatShiftDateForUpload(dateValue) {
@@ -7854,6 +7855,41 @@ function filterProjectTimeEntries(entries, filters) {
   });
 }
 
+function getProjectTimeEntriesCsv(entries) {
+  const headers = [
+    'Agent', 'Project', 'Work details', 'Status', 'Started (Eastern)',
+    'Stopped (Eastern)', 'Tracked time (HH:MM:SS)', 'Tracked time (seconds)'
+  ];
+  const statusLabels = { running: 'Running', paused: 'Paused', stopped: 'Stopped' };
+  const rows = entries.map((entry) => {
+    const elapsedMs = getProjectElapsedMs(entry);
+    const agent = getAgent(entry.agentId);
+    return [
+      agent?.name || `Agent #${entry.agentId} (profile unavailable)`,
+      entry.project,
+      entry.details,
+      statusLabels[entry.status],
+      formatEasternDateTime(entry.startedAt),
+      entry.status === 'stopped' ? formatEasternDateTime(entry.stoppedAt) : 'Not stopped',
+      formatProjectDuration(elapsedMs),
+      Math.floor(elapsedMs / 1000)
+    ];
+  });
+  return `\uFEFF${[headers, ...rows]
+    .map((row) => row.map(escapeCsvValue).join(','))
+    .join('\r\n')}\r\n`;
+}
+
+function downloadProjectTimeEntriesCsv(entries) {
+  const blob = new Blob([getProjectTimeEntriesCsv(entries)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `time-tracking-entries-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function renderTimeTrackingEntriesPage(currentUser) {
   if (!isAdminUser(currentUser)) {
     root.innerHTML = `<div class="app"><div class="panel"><h1>Time Tracking Entries</h1>
@@ -7922,7 +7958,10 @@ function renderTimeTrackingEntriesPage(currentUser) {
         </form>
         ${invalidDateRange ? '<p role="alert">From date must be on or before To date.</p>' : ''}
         <h2>${hasFilters ? `Filtered entries (${filteredEntries.length} of ${entries.length})` : `All agent entries (${entries.length})`}</h2>
-        <p>Total tracked time: <strong id="admin-project-total">${formatProjectDuration(totalElapsed())}</strong></p>
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <p>Total tracked time: <strong id="admin-project-total">${formatProjectDuration(totalElapsed())}</strong></p>
+          <button id="admin-project-export" class="secondary" type="button" title="Download the matching entries as a spreadsheet file">Export to Excel</button>
+        </div>
         <div class="stack">
           ${filteredEntries.map((entry, index) => {
             const agent = getAgent(entry.agentId);
@@ -7944,6 +7983,9 @@ function renderTimeTrackingEntriesPage(currentUser) {
     </div>`;
   bindEvents();
   document.getElementById('project-sync-retry')?.addEventListener('click', () => { void refreshProjectTimeSync(); });
+  document.getElementById('admin-project-export')?.addEventListener('click', () => {
+    downloadProjectTimeEntriesCsv(filteredEntries);
+  });
   if (filteredEntries.some((entry) => entry.status === 'running')) {
     projectTimerInterval = window.setInterval(() => {
       document.querySelectorAll('[data-admin-project-elapsed]').forEach((element) => {
