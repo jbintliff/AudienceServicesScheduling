@@ -3647,21 +3647,22 @@ function getAvailabilityRequestViewerLabel(request) {
   if (isAdminUser(currentUser) || isAdminAssistantUser(currentUser) || isAdminAssistantProfilesUser(currentUser)) {
     return String(getAgent(request?.agentId)?.name || request?.requesterName || 'Unknown').trim() || 'Unknown';
   }
-  const currentAgentId = Number(currentUser?.agentId);
-  if (currentAgentId && Number(request?.agentId) === currentAgentId) {
-    return String(getAgent(request?.agentId)?.name || request?.requesterName || 'You').trim() || 'You';
-  }
-  return 'Other agent';
+  return 'Anonymous agent';
 }
 
 function canViewAvailabilityRequestOnAgentCalendar(request, user = getCurrentUser()) {
   if (!request || isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)) {
     return true;
   }
-  const currentAgentId = Number(user?.agentId);
-  if (!currentAgentId) return false;
-  if (Number(request.agentId) === currentAgentId) return true;
-  return String(request.unavailabilityType || '').trim() === 'PTO';
+  return isAgentLikeUser(user) && Number.isFinite(Number(user.agentId));
+}
+
+function canViewAvailabilityRequestPrivateDetails(request, user = getCurrentUser()) {
+  if (!request || !user) return false;
+  if (isAdminUser(user) || isAdminAssistantUser(user) || isAdminAssistantProfilesUser(user)) return true;
+  return isAgentLikeUser(user)
+    && Number.isFinite(Number(user.agentId))
+    && Number(request.agentId) === Number(user.agentId);
 }
 
 function getAvailabilityCalendarMarkers(dateValue) {
@@ -6088,9 +6089,9 @@ function openAvailabilityRequestDetailsModal(request) {
   const currentUser = getCurrentUser();
   const canSeeRequestIdentity = isAdminUser(currentUser)
     || isAdminAssistantUser(currentUser)
-    || isAdminAssistantProfilesUser(currentUser)
-    || Number(currentUser?.agentId) === Number(request?.agentId);
-  const visibleAgentName = canSeeRequestIdentity ? agentName : 'Other agent';
+    || isAdminAssistantProfilesUser(currentUser);
+  const canSeePrivateDetails = canViewAvailabilityRequestPrivateDetails(request, currentUser);
+  const visibleAgentName = canSeeRequestIdentity ? agentName : 'Anonymous agent';
   const canManageRequestDetails = canManageAvailability(currentUser);
   const isRecurringAvailability = String(request?.unavailabilityType || '').trim() === 'Availability'
     && String(request?.recurrenceType || '').trim().toLowerCase() === 'weekly';
@@ -6142,7 +6143,7 @@ function openAvailabilityRequestDetailsModal(request) {
         <div class="muted" style="margin-top:4px;">${escapeHtml(request?.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
       </div>
 
-      ${request?.note ? `<div class="card" style="padding:10px; margin-top:10px;"><strong>Note</strong><div class="muted" style="margin-top:4px; white-space:pre-wrap;">${escapeHtml(request.note)}</div></div>` : ''}
+      ${canSeePrivateDetails && request?.note ? `<div class="card" style="padding:10px; margin-top:10px;"><strong>Note</strong><div class="muted" style="margin-top:4px; white-space:pre-wrap;">${escapeHtml(request.note)}</div></div>` : ''}
 
       ${canManageRequestDetails ? `<div class="row" style="justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:12px;">
         ${isRecurringAvailability ? `
@@ -6236,7 +6237,8 @@ function openAvailabilityRequestListModal(requests, dateLabel = '') {
           const typeMeta = getAvailabilityRequestTypeMeta(request);
           const statusValue = normalizeAvailabilityRequestStatus(request?.status);
           const statusStyles = getAvailabilityStatusStyles(statusValue);
-          const agentName = getAvailabilityRequestViewerLabel(request);
+          const requesterLabel = getAvailabilityRequestViewerLabel(request);
+          const canSeePrivateDetails = canViewAvailabilityRequestPrivateDetails(request);
           return `
             <button type="button" data-open-availability-request-from-list="${request.id}" style="text-align:left; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.14); color:#e5e7eb; border-radius:10px; padding:10px; cursor:pointer;">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px;">
@@ -6245,9 +6247,9 @@ function openAvailabilityRequestListModal(requests, dateLabel = '') {
                     <span class="chip" style="${typeMeta.style}">${escapeHtml(typeMeta.label)}</span>
                     <span class="chip" style="${statusStyles} border:1px solid rgba(255,255,255,0.2);">${escapeHtml(statusValue)}</span>
                   </div>
-                  <strong>${escapeHtml(agentName)}</strong>
+                  <strong>${escapeHtml(requesterLabel)}</strong>
                   <div class="muted">${escapeHtml(formatTimeRange(request?.unavailableStart || '--:--', request?.unavailableEnd || '--:--'))}</div>
-                  ${request?.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
+                  ${canSeePrivateDetails && request?.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
                 </div>
                 <span class="muted" style="font-size:12px;">View details</span>
               </div>
@@ -11439,7 +11441,7 @@ function render() {
             </div>` : `
             <div class="panel">
               <h2>${hideAgentShifts ? 'Availability calendar' : 'My schedule'}</h2>
-              <div class="muted">${hideAgentShifts ? 'Showing availability and PTO requests for your team.' : `Showing shifts for ${escapeHtml(viewAgent?.name || 'your selected agent')}.`}</div>
+              <div class="muted">${hideAgentShifts ? 'Showing availability and PTO requests for your department. Agent identities are hidden.' : `Showing shifts for ${escapeHtml(viewAgent?.name || 'your selected agent')}.`}</div>
               <div class="row" style="margin-top:10px; margin-bottom:10px;">
                 <select id="agent-schedule-view">
                   <option value="day" ${selectedAgentScheduleView === 'day' ? 'selected' : ''}>Day</option>
