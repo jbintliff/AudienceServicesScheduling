@@ -3290,14 +3290,16 @@ function normalizeDashboardMessageBoard(value) {
     text: String(entry?.text || '').trim(),
     selectedTeams: normalizeManagedTeams(entry?.selectedTeams || []),
     updatedAt: String(entry?.updatedAt || '').trim(),
-    updatedBy: String(entry?.updatedBy || '').trim()
+    updatedBy: String(entry?.updatedBy || '').trim(),
+    expiresAt: String(entry?.expiresAt || '').trim()
   })).filter((entry) => entry.text);
   if (history.length === 0 && normalizedText) {
     history.push({
       text: normalizedText,
       selectedTeams: normalizeManagedTeams(value?.selectedTeams || []),
       updatedAt: String(value?.updatedAt || '').trim(),
-      updatedBy: String(value?.updatedBy || '').trim()
+      updatedBy: String(value?.updatedBy || '').trim(),
+      expiresAt: String(value?.expiresAt || '').trim()
     });
   }
   const latest = history[history.length - 1] || {};
@@ -3306,6 +3308,7 @@ function normalizeDashboardMessageBoard(value) {
     selectedTeams: latest.selectedTeams || normalizeManagedTeams(value?.selectedTeams || []),
     updatedAt: latest.updatedAt || String(value?.updatedAt || '').trim(),
     updatedBy: latest.updatedBy || String(value?.updatedBy || '').trim(),
+    expiresAt: latest.expiresAt || String(value?.expiresAt || '').trim(),
     history
   };
 }
@@ -3336,7 +3339,7 @@ function renderDashboardMessageTimeline(messageBoardState, user) {
           <div class="card" style="padding:10px 12px;">
             <div style="white-space:pre-wrap;">${escapeHtml(entry.text)}</div>
             <div class="row" style="justify-content:space-between; align-items:center; gap:8px; margin-top:8px;">
-              <div class="muted">Posted ${escapeHtml(entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : 'Unknown')}${entry.updatedBy ? ` by ${escapeHtml(entry.updatedBy)}` : ''}</div>
+              <div class="muted">Posted ${escapeHtml(entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : 'Unknown')}${entry.updatedBy ? ` by ${escapeHtml(entry.updatedBy)}` : ''}${entry.expiresAt ? ` · Expires ${escapeHtml(new Date(entry.expiresAt).toLocaleString())}` : ''}${entry.expiresAt && new Date(entry.expiresAt).getTime() <= Date.now() ? ' · Expired' : ''}</div>
               ${canDeleteMessages ? `<button type="button" class="danger" data-delete-dashboard-message="${escapeHtml(entry.id)}" style="padding:4px 8px; font-size:12px;">Delete</button>` : ''}
             </div>
           </div>
@@ -3370,6 +3373,8 @@ function getDashboardMessageRecipientEmails(selectedTeams) {
 
 function canUserViewDashboardMessage(user, messageBoardState) {
   if (!messageBoardState?.text) return false;
+  const expiresAt = new Date(String(messageBoardState.expiresAt || '')).getTime();
+  if (!isAdminUser(user) && Number.isFinite(expiresAt) && expiresAt <= Date.now()) return false;
   const selectedTeams = normalizeManagedTeams(messageBoardState.selectedTeams || []);
   if (selectedTeams.length === 0) return true;
   if (getUserDepartment(user) === 'Box Office') {
@@ -11416,6 +11421,11 @@ function render() {
                   </div>
                   <form id="dashboard-message-board-form" class="stack" style="margin-top:10px;">
                     <textarea name="messageText" rows="3" placeholder="Type the message to show to selected teams." required>${escapeHtml(dashboardMessageBoard.text || '')}</textarea>
+                    <label style="display:flex; flex-direction:column; gap:6px; max-width:320px;">
+                      <span>Expire message (optional)</span>
+                      <input type="datetime-local" name="expiresAt" min="${escapeHtml(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16))}" />
+                      <span class="muted">Leave blank for a message that does not expire.</span>
+                    </label>
                     <label style="display:flex; flex-direction:column; gap:6px;">
                       <span>Send to teams</span>
                       <div style="display:flex; flex-wrap:wrap; gap:8px;">
@@ -13770,6 +13780,8 @@ function bindEvents() {
     if (!(formElement instanceof HTMLFormElement)) return;
     const formData = new FormData(formElement);
     const messageText = String(formData.get('messageText') || '').trim();
+    const expiresAtInput = String(formData.get('expiresAt') || '').trim();
+    const expiresAtDate = expiresAtInput ? new Date(expiresAtInput) : null;
     const allowedDashboardMessageTeams = getAllowedDashboardMessageTeamsForUser(currentUser);
     const selectedTeams = normalizeManagedTeams(formData.getAll('selectedTeams'))
       .filter((team) => allowedDashboardMessageTeams.includes(team));
@@ -13782,19 +13794,25 @@ function bindEvents() {
       alert(`Select at least one team to send this message to. Box Office users can only send to the Box Office team.`);
       return;
     }
+    if (expiresAtInput && (!expiresAtDate || Number.isNaN(expiresAtDate.getTime()) || expiresAtDate.getTime() <= Date.now())) {
+      alert('Choose a valid expiration date and time in the future.');
+      return;
+    }
 
     const updatedAt = getCurrentIsoTimestamp();
     const updatedBy = String(currentUser?.name || currentUser?.username || 'Admin').trim();
     const existingBoard = getDashboardMessageBoardState();
+    const expiresAt = expiresAtDate ? expiresAtDate.toISOString() : '';
     const history = [
       ...(Array.isArray(existingBoard.history) ? existingBoard.history : []),
-      { id: String(createId()), text: messageText, selectedTeams, updatedAt, updatedBy }
+      { id: String(createId()), text: messageText, selectedTeams, updatedAt, updatedBy, expiresAt }
     ];
     state.dashboardMessageBoard = normalizeDashboardMessageBoard({
       text: messageText,
       selectedTeams,
       updatedAt,
       updatedBy,
+      expiresAt,
       history
     });
 
