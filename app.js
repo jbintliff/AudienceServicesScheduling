@@ -11342,10 +11342,7 @@ function render() {
             <span class="chip"><strong>Attendance points:</strong>&nbsp;${escapeHtml(normalizeAttendancePoints(getAgent(currentUser.agentId)?.attendancePoints))}</span>
           </div>
         </div>
-        <div class="panel" style="margin-bottom:16px;">
-          <strong>${escapeHtml(viewAgent?.name || 'Agent')}</strong>
-          <div class="muted">You can review your assignments and request changes here.</div>
-        </div>`}
+        `}
 
       ${isAgentView ? renderDashboardMessageTimeline(dashboardMessageBoard, currentUser) : ''}
 
