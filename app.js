@@ -11421,22 +11421,24 @@ function render() {
                   </div>
                   <form id="dashboard-message-board-form" class="stack" style="margin-top:10px;">
                     <textarea name="messageText" rows="3" placeholder="Type the message to show to selected teams." required>${escapeHtml(dashboardMessageBoard.text || '')}</textarea>
-                    <label style="display:flex; flex-direction:column; gap:6px; max-width:320px;">
-                      <span>Expire message (optional)</span>
-                      <input type="datetime-local" name="expiresAt" min="${escapeHtml(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16))}" />
-                      <span class="muted">Leave blank for a message that does not expire.</span>
-                    </label>
-                    <label style="display:flex; flex-direction:column; gap:6px;">
-                      <span>Send to teams</span>
-                      <div style="display:flex; flex-wrap:wrap; gap:8px;">
-                        ${allowedDashboardMessageTeams.map((team) => `
-                          <label class="chip" style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
-                            <input type="checkbox" name="selectedTeams" value="${escapeHtml(team)}" ${dashboardMessageTeams.includes(team) ? 'checked' : ''} />
-                            <span>${escapeHtml(team)}</span>
-                          </label>
-                        `).join('')}
-                      </div>
-                    </label>
+                    <div class="row" style="align-items:flex-start; flex-wrap:wrap; gap:16px;">
+                      <label style="display:flex; flex-direction:column; gap:6px; width:320px; max-width:100%;">
+                        <span>Expire message (optional)</span>
+                        <input type="datetime-local" name="expiresAt" min="${escapeHtml(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16))}" />
+                        <span class="muted">Leave blank for a message that does not expire.</span>
+                      </label>
+                      <label style="display:flex; flex-direction:column; gap:6px;">
+                        <span>Send to teams</span>
+                        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                          ${allowedDashboardMessageTeams.map((team) => `
+                            <label class="chip" style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                              <input type="checkbox" name="selectedTeams" value="${escapeHtml(team)}" ${dashboardMessageTeams.includes(team) ? 'checked' : ''} />
+                              <span>${escapeHtml(team)}</span>
+                            </label>
+                          `).join('')}
+                        </div>
+                      </label>
+                    </div>
                     <div class="row" style="justify-content:flex-end; gap:8px;">
                       <button type="submit">Post message</button>
                     </div>
