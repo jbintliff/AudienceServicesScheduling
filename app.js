@@ -2320,6 +2320,36 @@ function getUserByAgentId(agentId) {
   return authUsers.find((user) => isAgentLikeUser(user) && Number(user.agentId) === normalizedId) || null;
 }
 
+function isAgentEmailInUse(email, agentId = null) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return false;
+
+  const normalizedAgentId = agentId === null ? null : Number(agentId);
+  const hasAgentId = Number.isFinite(normalizedAgentId);
+  const accountConflict = authUsers.some((user) => {
+    if (normalizeEmail(user.email) !== normalizedEmail) return false;
+    if (!isAgentLikeUser(user)) return true;
+    if (hasAgentId && Number(user.agentId) === normalizedAgentId) return false;
+    return Boolean(getAgent(Number(user.agentId)));
+  });
+  if (accountConflict) return true;
+
+  return state.agents.some((agent) =>
+    Number(agent.id) !== normalizedAgentId && normalizeEmail(agent.email) === normalizedEmail
+  );
+}
+
+function removeStaleAgentAccountsForEmail(email) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return;
+
+  authUsers = authUsers.filter((user) => {
+    const matchesEmail = normalizeEmail(user.email) === normalizedEmail;
+    const isStaleAgentAccount = isAgentLikeUser(user) && !getAgent(Number(user.agentId));
+    return !(matchesEmail && isStaleAgentAccount);
+  });
+}
+
 function sendAgentInviteEmail(agentUser, agentName, temporaryPassword = '') {
   if (!agentUser?.id || !agentUser?.email) {
     return null;
@@ -5493,12 +5523,10 @@ async function saveAgentDetails(agentId, values) {
   if (!Number.isFinite(payRate) || payRate < 0) {
     return { ok: false, message: 'Pay rate must be a valid non-negative amount (example: $15.45).' };
   }
-  if (email) {
-    const emailInUse = authUsers.some((user) => normalizeEmail(user.email) === email && Number(user.agentId) !== id);
-    if (emailInUse) {
-      return { ok: false, message: 'That email is already in use by another account.' };
-    }
+  if (isAgentEmailInUse(email, id)) {
+    return { ok: false, message: 'That email is already in use by another account.' };
   }
+  removeStaleAgentAccountsForEmail(email);
 
   state.agents = state.agents.map((agent) => Number(agent.id) === id
     ? {
@@ -12862,22 +12890,11 @@ function bindEvents() {
       alert('Pay rate must be a valid non-negative amount (example: $15.45).');
       return false;
     }
-    const emailInUse = email && authUsers.some((user) => {
-      if (normalizeEmail(user.email) !== email) return false;
-      if (isAdminUser(user)) return true;
-      return Boolean(getAgent(Number(user.agentId)));
-    });
-    if (emailInUse) {
+    if (isAgentEmailInUse(email)) {
       alert('That email is already in use by another account.');
       return false;
     }
-    if (email) {
-      authUsers = authUsers.filter((user) => {
-        const matchesEmail = normalizeEmail(user.email) === email;
-        const isStaleAgentAccount = !isAdminUser(user) && !getAgent(Number(user.agentId));
-        return !(matchesEmail && isStaleAgentAccount);
-      });
-    }
+    removeStaleAgentAccountsForEmail(email);
     const agentId = createId();
     const createdAt = getCurrentIsoTimestamp();
     state.agents.push({
