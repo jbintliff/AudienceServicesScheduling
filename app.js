@@ -11338,6 +11338,9 @@ function render() {
           </ul>
           <div class="muted" style="margin-top:8px;">Remember to update your contact information, email, SMS/TXT notification or any other preferences by clicking "Account".</div>
           <div class="muted" style="margin-top:6px;"><strong>If you have a picture for your account, you can upload that too.</strong></div>
+          <div class="row" style="margin-top:8px;">
+            <span class="chip"><strong>Attendance points:</strong>&nbsp;${escapeHtml(normalizeAttendancePoints(getAgent(currentUser.agentId)?.attendancePoints))}</span>
+          </div>
         </div>
         <div class="panel" style="margin-bottom:16px;">
           <strong>${escapeHtml(viewAgent?.name || 'Agent')}</strong>
