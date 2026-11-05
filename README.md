@@ -18,6 +18,7 @@ Features included:
 - Bulk edit selected agents' employment type alongside their team, manager, and access level
 - The weekly schedule roster groups agents by Full Time, Part Time, then Not set, then by team alphabetically, with names alphabetical within each team
 - Weekly in-person limits count scheduled shifts with location `In Person/ TP`, not agent profile locations or shift roles
+- Approved PTO days count toward an agent's weekly shift count and calendar roster totals, but do not add scheduled work hours
 - Request calendars show PTO first, then one-time availability, then repeating availability, including expanded daily request lists
 - Select multiple weekdays for repeating availability in agent and manual admin forms; selected days share the date range and times and are saved as separate weekly series
 - Review pending and completed availability/PTO requests together in collapsible sections on one agent page

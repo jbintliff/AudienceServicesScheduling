@@ -6858,6 +6858,25 @@ function getAssignedHours(agentId, referenceDateValue = '') {
     .reduce((sum, shift) => sum + shift.durationHours, 0);
 }
 
+function getApprovedPtoCountsByAgent(weekDates, requests = getAllAvailabilityRequests()) {
+  const ptoDatesByAgentId = new Map();
+  requests.forEach((request) => {
+    const agentId = Number(request?.agentId);
+    const requestDate = String(request?.unavailableDate || '').slice(0, 10);
+    if (!Number.isFinite(agentId) || agentId <= 0
+      || normalizeAvailabilityRequestStatus(request?.status) !== 'approved'
+      || String(request?.unavailabilityType || '').trim().toUpperCase() !== 'PTO'
+      || !/^\d{4}-\d{2}-\d{2}$/.test(requestDate)
+      || requestDate < weekDates.Mon.iso || requestDate > weekDates.Sun.iso) {
+      return;
+    }
+    const dates = ptoDatesByAgentId.get(agentId) || new Set();
+    dates.add(requestDate);
+    ptoDatesByAgentId.set(agentId, dates);
+  });
+  return new Map(Array.from(ptoDatesByAgentId, ([agentId, dates]) => [agentId, dates.size]));
+}
+
 function getAssignedShiftCount(agentId, referenceDateValue = '', options = {}) {
   const normalizedAgentId = Number(agentId);
   const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
@@ -6867,15 +6886,7 @@ function getAssignedShiftCount(agentId, referenceDateValue = '', options = {}) {
     .filter((shift) => shiftIsInWeek(shift, weekDates))
     .filter((shift) => !excludingShiftId || Number(shift.id) !== excludingShiftId)
     .length;
-  const approvedPtoCount = getAllAvailabilityRequests()
-    .filter((request) => Number(request.agentId) === normalizedAgentId)
-    .filter((request) => normalizeAvailabilityRequestStatus(request.status) === 'approved')
-    .filter((request) => String(request.unavailabilityType || '').trim() === 'PTO')
-    .filter((request) => {
-      const requestDate = String(request.unavailableDate || '').slice(0, 10);
-      return requestDate >= weekDates.Mon.iso && requestDate <= weekDates.Sun.iso;
-    })
-    .length;
+  const approvedPtoCount = getApprovedPtoCountsByAgent(weekDates).get(normalizedAgentId) || 0;
   return assignedShiftCount + approvedPtoCount;
 }
 
@@ -8450,7 +8461,7 @@ function renderCalendarPage(currentUser) {
   const visibleShiftIdSet = new Set(sortedVisibleCalendarShifts.map((shift) => Number(shift.id)));
   selectedCalendarShiftIds = new Set(Array.from(selectedCalendarShiftIds).filter((id) => visibleShiftIdSet.has(Number(id))));
   const selectedShiftCount = selectedCalendarShiftIds.size;
-  // The roster uses every shift in the week (not the active filters) so a filter can't make someone look unscheduled.
+  // Use all shifts and approved PTO so calendar filters cannot make someone look unscheduled.
   const weekShiftCountByAgentId = state.shifts
     .filter((shift) => shiftIsInWeek(shift, weekDates))
     .reduce((counts, shift) => {
@@ -8458,6 +8469,10 @@ function renderCalendarPage(currentUser) {
       if (agentId) counts.set(agentId, (counts.get(agentId) || 0) + 1);
       return counts;
     }, new Map());
+  const approvedPtoCountsByAgentId = getApprovedPtoCountsByAgent(weekDates);
+  approvedPtoCountsByAgentId.forEach((ptoCount, agentId) => {
+    weekShiftCountByAgentId.set(agentId, (weekShiftCountByAgentId.get(agentId) || 0) + ptoCount);
+  });
   const unscheduledAgentCount = agentsByName.filter((agent) => !weekShiftCountByAgentId.get(Number(agent.id))).length;
   const weekRosterHtml = `
     <aside class="week-roster">
