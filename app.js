@@ -3678,6 +3678,41 @@ function getShiftsOverlappingHoliday(holiday, shifts = state.shifts) {
   });
 }
 
+function getHolidaysForDate(dateValue) {
+  const date = String(dateValue || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
+  const [year, month, day] = date.split('-').map(Number);
+  const nextDate = new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+  const dayStart = `${date}T00:00`;
+  const nextDayStart = `${nextDate}T00:00`;
+  return normalizeHolidayEntries(state.holidays)
+    .filter((holiday) => holiday.start < nextDayStart && holiday.end > dayStart)
+    .map((holiday) => {
+      const start = holiday.start > dayStart ? holiday.start : dayStart;
+      const end = holiday.end < nextDayStart ? holiday.end : nextDayStart;
+      return {
+        ...holiday,
+        dayTime: start === dayStart && end === nextDayStart
+          ? 'All day'
+          : `${formatTime12Hour(start.slice(11))} – ${end === nextDayStart ? 'Midnight' : formatTime12Hour(end.slice(11))}`
+      };
+    });
+}
+
+function renderHolidayCalendarMarkers(dateValue) {
+  const holidays = getHolidaysForDate(dateValue);
+  if (holidays.length === 0) return '';
+  return `
+    <div style="display:grid; gap:4px; margin-top:6px;">
+      ${holidays.map((holiday) => `
+        <div class="holiday-calendar-marker" title="${escapeHtml(holiday.name)}: ${escapeHtml(holiday.dayTime)}" style="display:block; padding:5px 7px; border-radius:8px; background:#67E8F9; color:#083344; border:1px solid #22D3EE; font-size:0.72rem;">
+          <strong>${escapeHtml(holiday.name)}</strong><br />${escapeHtml(holiday.dayTime)}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 function isBlackoutDate(dateValue, departmentScope = getCurrentUserDepartmentScope()) {
   const normalizedDate = String(dateValue || '').trim().slice(0, 10);
   if (!normalizedDate) return false;
@@ -8665,6 +8700,9 @@ function renderCalendarPage(currentUser) {
         ${canManageCalendar ? `<div class="muted" style="margin-bottom:10px;">${copiedScheduleTemplate ? `Copied full schedule: ${copiedScheduleTemplate.length} shift${copiedScheduleTemplate.length === 1 ? '' : 's'}` : (copiedShiftTemplate ? `Copied: ${escapeHtml(getShiftSummary(copiedShiftTemplate))}` : 'Right-click a shift or use Copy full schedule, then click a destination day.')}</div>` : ''}
         <div class="row calendar-legend-row">
           <div class="row calendar-legend-group">
+            <span class="holiday-calendar-marker" style="padding:5px 7px; border-radius:999px; background:#67E8F9; color:#083344; border:1px solid #22D3EE;">Holiday</span>
+          </div>
+          <div class="row calendar-legend-group">
             <span class="muted" style="font-weight:600;">Location:</span>
             ${getAgentLocationCatalog().map((location) => `
               <span class="chip" style="background:${getAgentLocationColor(location)}; color:${getReadableTextColor(getAgentLocationColor(location))}; border:1px solid rgba(255,255,255,0.75);">${escapeHtml(location)}</span>
@@ -8702,6 +8740,7 @@ function renderCalendarPage(currentUser) {
                     <div class="muted" style="font-size:0.72rem;">In Person/ TP: ${daySummary.inPersonCount} / WFH: ${daySummary.workFromHomeCount}</div>
                   </div>
                   ${hasDayRequests ? `<div data-view-day-availability-requests="${escapeHtml(dayDate)}" style="cursor:pointer;" title="View requests for this date"><span class="muted">View availability requests</span></div>` : ''}
+                  ${renderHolidayCalendarMarkers(dayDate)}
                   ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                   ${canManageCalendar ? `<div style="margin-top:6px;"><button class="secondary" type="button" data-paste-shift-day="${day}" ${copiedShiftTemplate || copiedScheduleTemplate ? '' : 'disabled'}>Paste here</button></div>` : ''}
                   ${getAvailabilityCalendarMarkers(weekDates[day]?.iso || '')}
@@ -11465,6 +11504,9 @@ function render() {
       const right = `${b.date || ''} ${b.start || ''}`;
       return left.localeCompare(right);
     });
+  const monthHolidayDates = getMonthDateValues(selectedAgentScheduleMonth)
+    .map((date) => ({ date, holidays: getHolidaysForDate(date) }))
+    .filter((entry) => entry.holidays.length > 0);
   const dashboardMessageBoard = getDashboardMessageBoardState();
   const allowedDashboardMessageTeams = getAllowedDashboardMessageTeamsForUser(currentUser);
   const dashboardMessageTeams = normalizeManagedTeams(dashboardMessageBoard.selectedTeams || [])
@@ -11543,6 +11585,7 @@ function render() {
                     </div>
                   </div>
                   <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                      <span class="holiday-calendar-marker" style="padding:5px 7px; border-radius:999px; background:#67E8F9; color:#083344; border:1px solid #22D3EE; font-size:0.72rem;">Holiday</span>
                       <strong class="muted">Roles:</strong>
                       ${getRoleLegendItems().map((role) => `
                         <label class="chip" style="background:${getRoleColor(role)}; color:${getReadableTextColor(getRoleColor(role))}; border:1px solid rgba(255,255,255,0.75); cursor:pointer; margin:0;" title="Click to change color">
@@ -11563,6 +11606,7 @@ function render() {
                       <div class="day-card" data-day="${day}" data-date="${escapeHtml(plannerWeekDates[day]?.iso || '')}">
                         <h4>${day}</h4>
                         <div class="muted">${escapeHtml(plannerWeekDates[day]?.label || '')}</div>
+                        ${renderHolidayCalendarMarkers(plannerWeekDates[day]?.iso || '')}
                         ${getBlackoutDateMarker(plannerWeekDates[day]?.iso || '')}
                         ${getAvailabilityCalendarMarkers(plannerWeekDates[day]?.iso || '')}
                         ${renderAdminScheduleDayShifts(sortedAdminWeeklyShifts.filter((shift) => shift.day === day))}
@@ -11638,13 +11682,14 @@ function render() {
                 <div class="day-row" style="margin-top:12px; grid-template-columns:repeat(1, minmax(0, 1fr));">
                   <div class="day-card" data-day="${selectedAgentScheduleDay}">
                     <h4>${selectedAgentScheduleDay}</h4>
+                    ${renderHolidayCalendarMarkers(weekDates[selectedAgentScheduleDay]?.iso || '')}
                     ${getBlackoutDateMarker(weekDates[selectedAgentScheduleDay]?.iso || '')}
                     ${getAvailabilityCalendarMarkers(weekDates[selectedAgentScheduleDay]?.iso || '')}
                     ${sortedVisibleShifts.filter((shift) => shift.day === selectedAgentScheduleDay).map((shift) => `
                       <div class="shift" draggable="true" data-shift-id="${shift.id}">
                         <strong>${escapeHtml(getAgent(shift.agentId)?.name || 'Unassigned')}</strong><br />${getShiftRoleLocationHtml(shift)}<br />${formatTimeRange(shift.start, shift.end)}
                       </div>
-                    `).join('') || (hideAgentShifts ? (getAvailabilityCalendarMarkers(weekDates[selectedAgentScheduleDay]?.iso || '') ? '' : '<div class="muted">No availability or PTO requests for this day.</div>') : '<div class="muted">No shifts for this day.</div>')}
+                    `).join('') || (hideAgentShifts ? (getAvailabilityCalendarMarkers(weekDates[selectedAgentScheduleDay]?.iso || '') || renderHolidayCalendarMarkers(weekDates[selectedAgentScheduleDay]?.iso || '') ? '' : '<div class="muted">No availability, PTO, or holidays for this day.</div>') : '<div class="muted">No shifts for this day.</div>')}
                   </div>
                 </div>
               ` : ''}
@@ -11654,6 +11699,7 @@ function render() {
                     <div class="day-card" data-day="${day}">
                       <h4>${day}</h4>
                       ${hideAgentShifts ? `<div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>` : ''}
+                      ${renderHolidayCalendarMarkers(weekDates[day]?.iso || '')}
                       ${getBlackoutDateMarker(weekDates[day]?.iso || '')}
                       ${getAvailabilityCalendarMarkers(weekDates[day]?.iso || '')}
                       ${sortedVisibleShifts.filter((shift) => shift.day === day).map((shift) => `
@@ -11669,24 +11715,33 @@ function render() {
                 <div class="request-list" style="margin-top:12px;">
                   ${getMonthDateValues(selectedAgentScheduleMonth).map((isoDate) => {
                     const markers = getAvailabilityCalendarMarkers(isoDate);
-                    return markers ? `
+                    const holidays = renderHolidayCalendarMarkers(isoDate);
+                    return markers || holidays ? `
                       <div class="card">
                         <strong>${escapeHtml(isoDate)}</strong>
+                        ${holidays}
                         ${markers}
                       </div>
                     ` : '';
-                  }).join('') || '<div class="muted">No availability or PTO requests in this month.</div>'}
+                  }).join('') || '<div class="muted">No availability requests, PTO, or holidays in this month.</div>'}
                 </div>
               ` : ''}
               ${selectedAgentScheduleView === 'month' && !hideAgentShifts ? `
                 <div class="request-list" style="margin-top:12px;">
+                  ${monthHolidayDates.map(({ date }) => `
+                    <div class="card">
+                      <strong>${escapeHtml(date)}</strong>
+                      ${renderHolidayCalendarMarkers(date)}
+                    </div>
+                  `).join('')}
                   ${monthShifts.map((shift) => `
                     <div class="card">
                       <strong>${escapeHtml(shift.date || shift.day || 'Date not set')}</strong>
                       <div class="muted">${escapeHtml(shift.day || '')} â€¢ ${formatTimeRange(shift.start, shift.end)}</div>
                       <div class="muted">${escapeHtml(getShiftRoleLocationText(shift))}</div>
                     </div>
-                  `).join('') || '<div class="muted">No shifts in this month.</div>'}
+                  `).join('')}
+                  ${monthShifts.length === 0 && monthHolidayDates.length === 0 ? '<div class="muted">No shifts or holidays in this month.</div>' : ''}
                 </div>
               ` : ''}
             </div>`}

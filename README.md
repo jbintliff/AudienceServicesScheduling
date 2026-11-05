@@ -23,7 +23,7 @@ Features included:
 - Review pending and completed availability/PTO requests together in collapsible sections on one agent page
 - Submit and approve swap requests from one workspace
 - Share admin-managed resource links with agents from their Resources page
-- Add admin-managed holiday date/time ranges that block overlapping shifts and shift pickups for everyone
+- Add admin-managed holiday date/time ranges that block overlapping shifts and shift pickups for everyone, and appear in dashboard and schedule calendar views with a distinct color
 - Create 1:1 meeting follow-ups, attach documents, and assign them to agents
 - Agent Projects tab with project names, work details, and start/pause/resume/stop time tracking
 - Project timers survive navigation and refresh, exclude paused time, and retain completed entries with editable details and total tracked time
