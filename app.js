@@ -6877,6 +6877,15 @@ function getApprovedPtoCountsByAgent(weekDates, requests = getAllAvailabilityReq
   return new Map(Array.from(ptoDatesByAgentId, ([agentId, dates]) => [agentId, dates.size]));
 }
 
+function getHolidayDayCountForWeek(weekDates) {
+  const holidayEntries = normalizeHolidayEntries(state.holidays);
+  const dates = new Set(days.map((day) => weekDates?.[day]?.iso).filter(Boolean));
+  return Array.from(dates).filter((date) => {
+    const nextDate = getShiftedWeekReference(date, 1);
+    return holidayEntries.some((holiday) => holiday.start < `${nextDate}T00:00` && holiday.end > `${date}T00:00`);
+  }).length;
+}
+
 function getAssignedShiftCount(agentId, referenceDateValue = '', options = {}) {
   const normalizedAgentId = Number(agentId);
   const weekDates = getCalendarWeekDates(referenceDateValue || getActiveCalendarWeekReference());
@@ -6887,7 +6896,10 @@ function getAssignedShiftCount(agentId, referenceDateValue = '', options = {}) {
     .filter((shift) => !excludingShiftId || Number(shift.id) !== excludingShiftId)
     .length;
   const approvedPtoCount = getApprovedPtoCountsByAgent(weekDates).get(normalizedAgentId) || 0;
-  return assignedShiftCount + approvedPtoCount;
+  const holidayCount = normalizeEmploymentType(getAgent(normalizedAgentId)?.employmentType) === 'Full Time'
+    ? getHolidayDayCountForWeek(weekDates)
+    : 0;
+  return assignedShiftCount + approvedPtoCount + holidayCount;
 }
 
 function isInOfficeRole(role) {
@@ -8461,7 +8473,7 @@ function renderCalendarPage(currentUser) {
   const visibleShiftIdSet = new Set(sortedVisibleCalendarShifts.map((shift) => Number(shift.id)));
   selectedCalendarShiftIds = new Set(Array.from(selectedCalendarShiftIds).filter((id) => visibleShiftIdSet.has(Number(id))));
   const selectedShiftCount = selectedCalendarShiftIds.size;
-  // Use all shifts and approved PTO so calendar filters cannot make someone look unscheduled.
+  // Use all shifts, approved PTO, and full-time holiday days regardless of active filters.
   const weekShiftCountByAgentId = state.shifts
     .filter((shift) => shiftIsInWeek(shift, weekDates))
     .reduce((counts, shift) => {
@@ -8473,6 +8485,15 @@ function renderCalendarPage(currentUser) {
   approvedPtoCountsByAgentId.forEach((ptoCount, agentId) => {
     weekShiftCountByAgentId.set(agentId, (weekShiftCountByAgentId.get(agentId) || 0) + ptoCount);
   });
+  const holidayDayCount = getHolidayDayCountForWeek(weekDates);
+  if (holidayDayCount > 0) {
+    agentsByName
+      .filter((agent) => normalizeEmploymentType(agent?.employmentType) === 'Full Time')
+      .forEach((agent) => {
+        const agentId = Number(agent.id);
+        weekShiftCountByAgentId.set(agentId, (weekShiftCountByAgentId.get(agentId) || 0) + holidayDayCount);
+      });
+  }
   const unscheduledAgentCount = agentsByName.filter((agent) => !weekShiftCountByAgentId.get(Number(agent.id))).length;
   const weekRosterHtml = `
     <aside class="week-roster">
