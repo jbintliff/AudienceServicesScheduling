@@ -541,6 +541,7 @@ const defaultState = {
   ],
   swapRequests: [],
   availabilityRequests: [],
+  holidays: [],
   dashboardMessageBoard: {
     text: '',
     selectedTeams: [],
@@ -3616,6 +3617,67 @@ function removeBlackoutDateEntry(date, department) {
   ));
 }
 
+function isValidHolidayDateTime(value) {
+  const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return false;
+  const [, yearValue, monthValue, dayValue, hourValue, minuteValue] = match;
+  const year = Number(yearValue);
+  const month = Number(monthValue);
+  const day = Number(dayValue);
+  const hour = Number(hourValue);
+  const minute = Number(minuteValue);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day
+    && hour <= 23
+    && minute <= 59;
+}
+
+function normalizeHolidayEntries(value) {
+  if (!Array.isArray(value)) return [];
+  return value.reduce((holidays, item) => {
+    if (!item || typeof item !== 'object') return holidays;
+    const start = String(item.start || '').trim().slice(0, 16);
+    const end = String(item.end || '').trim().slice(0, 16);
+    if (!isValidHolidayDateTime(start) || !isValidHolidayDateTime(end) || end <= start) return holidays;
+    holidays.push({
+      id: String(item.id || `${start}|${end}`),
+      name: String(item.name || '').trim().slice(0, 120) || 'Holiday',
+      start,
+      end
+    });
+    return holidays;
+  }, []).sort((left, right) => left.start.localeCompare(right.start) || left.end.localeCompare(right.end));
+}
+
+function getHolidayConflictForShift(shift, holidays = state.holidays) {
+  const date = String(shift?.date || '').trim().slice(0, 10);
+  const startTime = normalizeTimeInputValue(shift?.start);
+  const endTime = normalizeTimeInputValue(shift?.end);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !startTime || !endTime || toMinutes(endTime) <= toMinutes(startTime)) {
+    return null;
+  }
+  const shiftStart = `${date}T${startTime}`;
+  const shiftEnd = `${date}T${endTime}`;
+  if (shiftEnd <= shiftStart) return null;
+  return normalizeHolidayEntries(holidays).find((holiday) => shiftStart < holiday.end && holiday.start < shiftEnd) || null;
+}
+
+function getShiftsOverlappingHoliday(holiday, shifts = state.shifts) {
+  return shifts.filter((shift) => {
+    const date = String(shift?.date || '').trim().slice(0, 10);
+    const startTime = normalizeTimeInputValue(shift?.start);
+    const endTime = normalizeTimeInputValue(shift?.end);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !startTime || !endTime || toMinutes(endTime) <= toMinutes(startTime)) {
+      return false;
+    }
+    const shiftStart = `${date}T${startTime}`;
+    const shiftEnd = `${date}T${endTime}`;
+    return shiftStart < holiday.end && holiday.start < shiftEnd;
+  });
+}
+
 function isBlackoutDate(dateValue, departmentScope = getCurrentUserDepartmentScope()) {
   const normalizedDate = String(dateValue || '').trim().slice(0, 10);
   if (!normalizedDate) return false;
@@ -4103,6 +4165,7 @@ function loadState() {
       ),
       dashboardMessageBoard: normalizeDashboardMessageBoard(parsed.dashboardMessageBoard || createDefaultState().dashboardMessageBoard),
       blackoutDates: normalizeBlackoutDateEntries(parsed.blackoutDates),
+      holidays: normalizeHolidayEntries(parsed.holidays),
       roleColors: parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : createDefaultState().roleColors,
       agentLocationColors: parsed.agentLocationColors && typeof parsed.agentLocationColors === 'object' ? parsed.agentLocationColors : createDefaultState().agentLocationColors,
       roleDepartments: parsed.roleDepartments && typeof parsed.roleDepartments === 'object' && !Array.isArray(parsed.roleDepartments) ? parsed.roleDepartments : createDefaultState().roleDepartments,
@@ -5177,6 +5240,12 @@ function promptInOfficeOverride(agentName, projectedInOfficeCount, maxInOfficeSh
 }
 
 async function confirmShiftAssignmentWithTimeOffWarning(agentId, date, start, end, options = {}) {
+  const holidayConflict = getHolidayConflictForShift({ date, start, end });
+  if (holidayConflict) {
+    alert(`This shift overlaps ${holidayConflict.name} (${holidayConflict.start.replace('T', ' ')} to ${holidayConflict.end.replace('T', ' ')}). Shifts cannot be scheduled during holidays.`);
+    return false;
+  }
+
   const activeUser = getCurrentUser();
   if (!canManageSchedule(activeUser)) {
     return true;
@@ -5475,6 +5544,10 @@ function claimUnassignedShiftForAgent(shiftId, agentId) {
   const shift = state.shifts.find((item) => Number(item.id) === normalizedShiftId);
   if (!shift) {
     return { ok: false, message: 'This shift is no longer available.' };
+  }
+  const holidayConflict = getHolidayConflictForShift(shift);
+  if (holidayConflict) {
+    return { ok: false, message: `This shift falls during ${holidayConflict.name} and cannot be picked up.` };
   }
   if (shift.agentId) {
     return { ok: false, message: 'This shift has already been picked up by another agent.' };
@@ -7334,11 +7407,24 @@ async function importData(file) {
     const fileText = await readFileAsText(file);
     const parsed = JSON.parse(fileText);
     const importedPolicies = normalizePolicies(parsed?.policies);
-
-    Object.assign(state, parsed);
-    state.shifts = Array.isArray(parsed.shifts)
+    const importedShifts = Array.isArray(parsed.shifts)
       ? parsed.shifts.filter((shift) => !isInOfficeRole(shift?.role))
       : [];
+    const importedHolidays = parsed.holidays === undefined
+      ? normalizeHolidayEntries(state.holidays)
+      : normalizeHolidayEntries(parsed.holidays);
+    const holidayConflictCount = importedHolidays.reduce(
+      (count, holiday) => count + getShiftsOverlappingHoliday(holiday, importedShifts).length,
+      0
+    );
+    if (holidayConflictCount > 0) {
+      alert(`This scheduler export contains ${holidayConflictCount} shift${holidayConflictCount === 1 ? '' : 's'} scheduled during a holiday. Resolve those conflicts before importing.`);
+      return;
+    }
+
+    Object.assign(state, parsed);
+    state.shifts = importedShifts;
+    state.holidays = importedHolidays;
     state.policies = importedPolicies;
     state.teamDepartments = parsed.teamDepartments && typeof parsed.teamDepartments === 'object' && !Array.isArray(parsed.teamDepartments) ? parsed.teamDepartments : {};
     state.roleColors = parsed.roleColors && typeof parsed.roleColors === 'object' ? parsed.roleColors : {};
@@ -9966,7 +10052,7 @@ function renderAdminOptionsPage(currentUser) {
       <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
         <div>
           <h1>Admin options</h1>
-          <p class="muted">Manage shift templates, teams, locations, roles, and venues from one page.</p>
+          <p class="muted">Manage holidays, shift templates, teams, locations, roles, and venues from one page.</p>
         </div>
         <div class="row">
           ${renderAdminNavigationLinks({ includeExport: true })}
@@ -10124,6 +10210,28 @@ function renderAdminOptionsPage(currentUser) {
 
         </div>
 
+        <div class="panel" style="grid-column:1 / -1;">
+          <h2>Holidays</h2>
+          <p class="muted">Block scheduling for everyone during these date and time ranges. A holiday cannot be saved if an existing shift overlaps it.</p>
+          <form id="add-holiday-form" class="row" style="flex-wrap:wrap; margin-bottom:12px;">
+            <input name="name" placeholder="Holiday name" required maxlength="120" />
+            <label class="stack" style="gap:4px;"><span class="muted">Starts</span><input name="start" type="datetime-local" required /></label>
+            <label class="stack" style="gap:4px;"><span class="muted">Ends</span><input name="end" type="datetime-local" required /></label>
+            <button type="submit">Add holiday</button>
+          </form>
+          <div class="request-list">
+            ${normalizeHolidayEntries(state.holidays).map((holiday) => `
+              <div class="card row" style="justify-content:space-between; gap:8px;">
+                <div>
+                  <strong>${escapeHtml(holiday.name)}</strong>
+                  <div class="muted">${escapeHtml(holiday.start.replace('T', ' '))} – ${escapeHtml(holiday.end.replace('T', ' '))}</div>
+                </div>
+                <button type="button" class="danger" data-remove-holiday="${escapeHtml(holiday.id)}">Remove</button>
+              </div>
+            `).join('') || '<div class="muted">No holidays configured.</div>'}
+          </div>
+        </div>
+
         <div style="grid-column:1 / -1;">
           ${renderManagerManagementPanel(currentUser)}
         </div>
@@ -10180,6 +10288,58 @@ function renderAdminOptionsPage(currentUser) {
   `;
 
   initializeAdminOptionsCollapsiblePanels();
+
+  document.getElementById('add-holiday-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!isAdminUser(getCurrentUser())) return;
+    const formData = new FormData(event.currentTarget);
+    const name = String(formData.get('name') || '').trim();
+    const holiday = normalizeHolidayEntries([{
+      id: createId(),
+      name,
+      start: String(formData.get('start') || '').trim(),
+      end: String(formData.get('end') || '').trim()
+    }])[0];
+    if (!name || !holiday) {
+      alert('Enter a holiday name and a valid start and end date/time. The end must be later than the start.');
+      return;
+    }
+    const conflictingShifts = getShiftsOverlappingHoliday(holiday);
+    if (conflictingShifts.length > 0) {
+      const firstShift = conflictingShifts[0];
+      alert(`This holiday overlaps ${conflictingShifts.length} scheduled shift${conflictingShifts.length === 1 ? '' : 's'}, including ${getAgent(firstShift.agentId)?.name || 'an unassigned shift'} on ${firstShift.date} (${formatTimeRange(firstShift.start, firstShift.end)}). Remove or move the conflicting shifts before adding this holiday.`);
+      return;
+    }
+    state.holidays = normalizeHolidayEntries([...state.holidays, holiday]);
+    if (!saveState()) {
+      const didSaveRemote = await saveStateToBackendFallback();
+      if (!didSaveRemote) {
+        state.holidays = normalizeHolidayEntries(state.holidays.filter((entry) => entry.id !== holiday.id));
+        alert('Unable to save this holiday locally or to the shared schedule. Please try again after checking browser storage and backend sync.');
+        return;
+      }
+    }
+    render();
+  });
+
+  document.querySelectorAll('[data-remove-holiday]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (!isAdminUser(getCurrentUser())) return;
+      const holidayId = String(button.getAttribute('data-remove-holiday') || '');
+      const holiday = state.holidays.find((entry) => entry.id === holidayId);
+      if (!holiday || !confirm(`Remove holiday ${holiday.name}?`)) return;
+      state.holidays = state.holidays.filter((entry) => entry.id !== holidayId);
+      if (!saveState()) {
+        const didSaveRemote = await saveStateToBackendFallback();
+        if (!didSaveRemote) {
+          state.holidays = normalizeHolidayEntries([...state.holidays, holiday]);
+          alert('Unable to remove this holiday from local storage or the shared schedule. Please try again after checking browser storage and backend sync.');
+          return;
+        }
+      }
+      render();
+    });
+  });
 
   document.getElementById('admin-email-delivery-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -14619,6 +14779,11 @@ function bindEvents() {
 
       const shift = state.shifts.find((item) => Number(item.id) === shiftId);
       if (!shift || !canAgentPickUpOfferedShift(shift, currentAgentId)) return;
+      const holidayConflict = getHolidayConflictForShift(shift);
+      if (holidayConflict) {
+        alert(`This shift falls during ${holidayConflict.name} and cannot be picked up.`);
+        return;
+      }
 
       const targetAgent = getAgent(currentAgentId);
       const maxInOfficeShifts = normalizeMaxInOfficeShifts(targetAgent?.maxInOfficeShifts);
@@ -15122,6 +15287,16 @@ function bindEvents() {
 
         const fromAgent = getAgent(updatedRequest.fromAgentId);
         const toAgent = getAgent(updatedRequest.toAgentId);
+        const holidayConflict = getHolidayConflictForShift(fromShift) || getHolidayConflictForShift(toShift);
+        if (holidayConflict) {
+          state.swapRequests = state.swapRequests.map((request) => request.id === id
+            ? { ...request, status: 'rejected', rejectedBy: currentAgentId, rejectedAt: new Date().toISOString() }
+            : request);
+          alert(`This swap cannot be completed because one of the shifts falls during ${holidayConflict.name}.`);
+          saveState();
+          render();
+          return;
+        }
         if (isSwapRestrictedAgent(fromAgent) || isSwapRestrictedAgent(toAgent)) {
           state.swapRequests = state.swapRequests.map((request) => request.id === id
             ? { ...request, status: 'rejected', rejectedBy: currentAgentId, rejectedAt: new Date().toISOString() }
