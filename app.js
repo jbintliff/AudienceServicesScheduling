@@ -1703,7 +1703,7 @@ function isAvailabilityRequestActive(request) {
 
 function getAvailabilityRequestStatusLabel(status) {
   const normalizedStatus = normalizeAvailabilityRequestStatus(status);
-  return normalizedStatus === 'agent-deleted' ? 'Agent deleted' : normalizedStatus;
+  return normalizedStatus === 'agent-deleted' ? 'Agent canceled' : normalizedStatus;
 }
 
 function normalizeAvailabilityRequest(request, fallbackId) {
@@ -4557,6 +4557,7 @@ function cancelOwnAvailabilityRequest(requestId) {
           status: 'agent-deleted',
           agentDeletedAt,
           agentDeletedByAgentId: currentAgentId,
+          agentCanceledAfterApproval: status === 'approved',
           updatedAt: agentDeletedAt
         }
       : request
@@ -11310,7 +11311,7 @@ function renderAvailabilityRequestsPage(currentUser) {
               <option value="pending" ${allRequestFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
               <option value="approved" ${allRequestFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
               <option value="rejected" ${allRequestFilters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
-              <option value="agent-deleted" ${allRequestFilters.status === 'agent-deleted' ? 'selected' : ''}>Agent deleted</option>
+              <option value="agent-deleted" ${allRequestFilters.status === 'agent-deleted' ? 'selected' : ''}>Agent canceled</option>
             </select>
           </label>
           <label style="display:flex; flex-direction:column; gap:4px;">
@@ -11359,7 +11360,7 @@ function renderAvailabilityRequestsPage(currentUser) {
                   <div class="muted">${escapeHtml(rangeText)} â€¢ ${escapeHtml(entry.kind === 'recurring-group' ? 'Repeats weekly' : getAvailabilityRecurrenceLabel(request))}</div>
                   <div class="muted">Time window: ${escapeHtml(formatTimeRange(request.unavailableStart || '--:--', request.unavailableEnd || '--:--'))}</div>
                   <div class="muted">Submitted ${escapeHtml(entry.requestedAt ? new Date(entry.requestedAt).toLocaleString() : 'Unknown')}</div>
-                  ${requestStatus === 'agent-deleted' && request.agentDeletedAt ? `<div class="muted">Agent deleted ${escapeHtml(new Date(request.agentDeletedAt).toLocaleString())}</div>` : ''}
+                  ${requestStatus === 'agent-deleted' && request.agentDeletedAt ? `<div class="muted">${request.agentCanceledAfterApproval ? 'Agent canceled this approved request' : 'Agent canceled this request'} on ${escapeHtml(new Date(request.agentDeletedAt).toLocaleString())}</div>` : ''}
                   ${request.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
                   </div>
                 </div>
@@ -11955,7 +11956,7 @@ function renderPublicAvailabilityRequestPage() {
     { key: 'pending', label: 'Pending requests' },
     { key: 'approved', label: 'Approved requests' },
     { key: 'rejected', label: 'Denied requests' },
-    { key: 'agent-deleted', label: 'Agent deleted' }
+    { key: 'agent-deleted', label: 'Agent canceled' }
   ];
   const renderLinkedAgentRequest = (request) => {
     const typeMeta = getAvailabilityRequestTypeMeta(request);
