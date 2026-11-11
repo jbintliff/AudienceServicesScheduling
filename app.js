@@ -1691,8 +1691,19 @@ function normalizeAvailabilityRequestStatus(value) {
   const normalized = String(value || 'pending').trim().toLowerCase();
   if (normalized === 'approved') return 'approved';
   if (normalized === 'rejected' || normalized === 'denied' || normalized === 'declined') return 'rejected';
+  if (normalized === 'agent-deleted' || normalized === 'agent deleted' || normalized === 'agent-canceled' || normalized === 'agent cancelled') return 'agent-deleted';
   if (normalized === 'deleted' || normalized === 'removed') return 'deleted';
   return 'pending';
+}
+
+function isAvailabilityRequestActive(request) {
+  const status = normalizeAvailabilityRequestStatus(request?.status);
+  return status !== 'deleted' && status !== 'agent-deleted';
+}
+
+function getAvailabilityRequestStatusLabel(status) {
+  const normalizedStatus = normalizeAvailabilityRequestStatus(status);
+  return normalizedStatus === 'agent-deleted' ? 'Agent deleted' : normalizedStatus;
 }
 
 function normalizeAvailabilityRequest(request, fallbackId) {
@@ -3771,7 +3782,7 @@ function getAvailabilityCalendarMarkers(dateValue) {
   const normalizedDate = String(dateValue || '').trim().slice(0, 10);
   if (!normalizedDate) return '';
   const requests = getAllAvailabilityRequests()
-    .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+    .filter(isAvailabilityRequestActive)
     .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
     .filter((request) => canViewAvailabilityRequestOnAgentCalendar(request))
     .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === normalizedDate)
@@ -4516,6 +4527,45 @@ function deleteAvailabilityRequestsByIds(requestIds, options = {}) {
   return true;
 }
 
+function cancelOwnAvailabilityRequest(requestId) {
+  const currentUser = getCurrentUser();
+  const currentAgentId = Number(currentUser?.agentId);
+  const normalizedId = Number(requestId);
+  if (!isAgentLikeUser(currentUser) || !Number.isFinite(currentAgentId) || currentAgentId <= 0 || !Number.isFinite(normalizedId)) {
+    return false;
+  }
+
+  const allAvailabilityRequests = getAllAvailabilityRequests();
+  const targetRequest = allAvailabilityRequests.find((request) => Number(request.id) === normalizedId);
+  if (!targetRequest || Number(targetRequest.agentId) !== currentAgentId) {
+    return false;
+  }
+  const status = normalizeAvailabilityRequestStatus(targetRequest.status);
+  if (status !== 'pending' && status !== 'approved') {
+    return false;
+  }
+
+  const requestLabel = String(targetRequest.unavailabilityType || '').trim() || 'availability';
+  const shouldCancel = confirm(`Cancel your ${requestLabel} request for ${targetRequest.unavailableDate || 'the selected date'}?`);
+  if (!shouldCancel) return false;
+
+  const agentDeletedAt = getCurrentIsoTimestamp();
+  saveAvailabilityRequests(allAvailabilityRequests.map((request) => (
+    Number(request.id) === normalizedId
+      ? {
+          ...request,
+          status: 'agent-deleted',
+          agentDeletedAt,
+          agentDeletedByAgentId: currentAgentId,
+          updatedAt: agentDeletedAt
+        }
+      : request
+  )));
+  saveState();
+  render();
+  return true;
+}
+
 function groupAvailabilityRequestsForAdminList(requests) {
   const entries = [];
   const recurringGroups = new Map();
@@ -4540,7 +4590,7 @@ function groupAvailabilityRequestsForAdminList(requests) {
       return;
     }
 
-    const groupKey = getAvailabilityRecurringSeriesKey(request);
+    const groupKey = `${getAvailabilityRecurringSeriesKey(request)}::${normalizedStatus}`;
     const requestDate = String(request?.unavailableDate || '').slice(0, 10);
 
     if (!recurringGroups.has(groupKey)) {
@@ -4582,12 +4632,9 @@ function groupAvailabilityRequestsForAdminList(requests) {
   });
 
   recurringGroups.forEach((group) => {
-    const status = group.statusSet.has('pending')
-      ? 'pending'
-      : (group.statusSet.has('approved') ? 'approved' : 'rejected');
     entries.push({
       ...group,
-      status
+      status: Array.from(group.statusSet)[0] || 'pending'
     });
   });
 
@@ -6562,7 +6609,7 @@ function openAgentPendingRequestEditModal(request, onSave) {
 
 function openPublicAvailabilityDayModal(dateValue, requests, viewingAgentId) {
   const requestList = Array.isArray(requests)
-    ? requests.filter((r) => normalizeAvailabilityRequestStatus(r?.status) !== 'deleted').sort(compareAvailabilityRequestTypes)
+    ? requests.filter(isAvailabilityRequestActive).sort(compareAvailabilityRequestTypes)
     : [];
   if (requestList.length === 0) {
     alert('No requests for this date.');
@@ -8759,7 +8806,7 @@ function renderCalendarPage(currentUser) {
           ${days.map((day) => {
             const dayDate = String(weekDates[day]?.iso || '').slice(0, 10);
             const dayRequests = getAllAvailabilityRequests()
-              .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+              .filter(isAvailabilityRequestActive)
               .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
               .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === dayDate);
             const hasDayRequests = dayRequests.length > 0;
@@ -10624,7 +10671,7 @@ function renderAgentAvailabilityPtoRequestsPage(currentUser) {
     .filter((request) => {
       if (!isAvailabilityRequestVisibleToUser(request, currentUser)) return false;
       const normalizedStatus = normalizeAvailabilityRequestStatus(request.status);
-      return normalizedStatus === 'approved' || normalizedStatus === 'rejected' || normalizedStatus === 'deleted';
+      return normalizedStatus === 'approved' || normalizedStatus === 'rejected' || normalizedStatus === 'deleted' || normalizedStatus === 'agent-deleted';
     })
     .sort((left, right) => (right.requestedAt || '').localeCompare(left.requestedAt || ''));
   const pendingSwapRequests = state.swapRequests.filter((request) => isSwapRequestVisibleToAgent(request, currentAgentId) && request.status === 'pending');
@@ -10663,6 +10710,9 @@ function renderAgentAvailabilityPtoRequestsPage(currentUser) {
                     <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
                   </div>
                   <span class="status-badge pending">pending</span>
+                </div>
+                <div class="row" style="margin-top:8px; justify-content:flex-end;">
+                  <button class="danger" type="button" data-cancel-own-availability-request="${request.id}">Cancel request</button>
                 </div>
               </div>
             `).join('') || '<div class="muted">No pending availability requests.</div>'}
@@ -10703,9 +10753,11 @@ function renderAgentAvailabilityPtoRequestsPage(currentUser) {
                 <div class="muted">Date: ${escapeHtml(request.unavailableDate || 'Not set')}</div>
                 <div class="muted">Time: ${escapeHtml(request.unavailableStart || '--:--')} - ${escapeHtml(request.unavailableEnd || '--:--')}</div>
                 <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
-                <div class="muted">Status: ${escapeHtml(normalizeAvailabilityRequestStatus(request.status))}</div>
+                <div class="muted">Status: ${escapeHtml(getAvailabilityRequestStatusLabel(request.status))}</div>
                 <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
                 ${normalizeAvailabilityRequestStatus(request.status) === 'deleted' && request.deletedAt ? `<div class="muted">Deleted: ${escapeHtml(new Date(request.deletedAt).toLocaleString())}</div>` : ''}
+                ${normalizeAvailabilityRequestStatus(request.status) === 'agent-deleted' && request.agentDeletedAt ? `<div class="muted">Canceled: ${escapeHtml(new Date(request.agentDeletedAt).toLocaleString())}</div>` : ''}
+                ${normalizeAvailabilityRequestStatus(request.status) === 'approved' ? `<div class="row" style="margin-top:8px; justify-content:flex-end;"><button class="danger" type="button" data-cancel-own-availability-request="${request.id}">Cancel request</button></div>` : ''}
               </div>
             `).join('') || '<div class="muted">No completed availability/PTO requests yet.</div>'}
             ${hideSwapRequests ? '' : `
@@ -10907,6 +10959,9 @@ function getAvailabilityStatusStyles(status) {
     return 'background:#7AACAF; color:#17383B;';
   }
   if (status === 'rejected') {
+    return 'background:#4A4A4D; color:#FFFFFF;';
+  }
+  if (status === 'agent-deleted') {
     return 'background:#4A4A4D; color:#FFFFFF;';
   }
   return 'background:#FDD592; color:#4B3A1F;';
@@ -11255,6 +11310,7 @@ function renderAvailabilityRequestsPage(currentUser) {
               <option value="pending" ${allRequestFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
               <option value="approved" ${allRequestFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
               <option value="rejected" ${allRequestFilters.status === 'rejected' ? 'selected' : ''}>Rejected</option>
+              <option value="agent-deleted" ${allRequestFilters.status === 'agent-deleted' ? 'selected' : ''}>Agent deleted</option>
             </select>
           </label>
           <label style="display:flex; flex-direction:column; gap:4px;">
@@ -11290,7 +11346,7 @@ function renderAvailabilityRequestsPage(currentUser) {
               ? `${entry.rangeStart || request.unavailableDate || 'Not set'} to ${entry.rangeEnd || request.unavailableDate || 'Not set'} â€¢ ${entry.occurrenceCount} date${entry.occurrenceCount === 1 ? '' : 's'}`
               : `${request.unavailableDate || 'Not set'} â€¢ ${request.unavailableStart || '--:--'} - ${request.unavailableEnd || '--:--'}`;
             return `
-            <div class="card" data-view-availability-request="${request.id}" style="border-left:4px solid ${requestStatus === 'approved' ? '#7AACAF' : requestStatus === 'rejected' ? '#4A4A4D' : '#FDD592'}; padding:10px 12px; cursor:pointer;">
+            <div class="card" data-view-availability-request="${request.id}" style="border-left:4px solid ${requestStatus === 'approved' ? '#7AACAF' : requestStatus === 'rejected' || requestStatus === 'agent-deleted' ? '#4A4A4D' : '#FDD592'}; padding:10px 12px; cursor:pointer;">
               <div class="row" style="justify-content:space-between; align-items:flex-start; gap:10px;">
                 <div class="row" style="align-items:flex-start; gap:10px; flex:1;">
                   <input type="checkbox" data-select-availability-request-ids="${requestIdsValue}" data-select-availability-request-status="${requestStatus}" aria-label="Select ${escapeHtml(getAgent(request.agentId)?.name || 'Unknown')} request" style="margin-top:4px;" />
@@ -11303,10 +11359,11 @@ function renderAvailabilityRequestsPage(currentUser) {
                   <div class="muted">${escapeHtml(rangeText)} â€¢ ${escapeHtml(entry.kind === 'recurring-group' ? 'Repeats weekly' : getAvailabilityRecurrenceLabel(request))}</div>
                   <div class="muted">Time window: ${escapeHtml(formatTimeRange(request.unavailableStart || '--:--', request.unavailableEnd || '--:--'))}</div>
                   <div class="muted">Submitted ${escapeHtml(entry.requestedAt ? new Date(entry.requestedAt).toLocaleString() : 'Unknown')}</div>
+                  ${requestStatus === 'agent-deleted' && request.agentDeletedAt ? `<div class="muted">Agent deleted ${escapeHtml(new Date(request.agentDeletedAt).toLocaleString())}</div>` : ''}
                   ${request.note ? `<div class="muted" style="margin-top:2px;">Note: ${escapeHtml(request.note)}</div>` : ''}
                   </div>
                 </div>
-                <span class="status-badge ${requestStatus}">${requestStatus}</span>
+                <span class="status-badge ${requestStatus}" style="${requestStatus === 'agent-deleted' ? 'background:#4A4A4D; color:#FFFFFF;' : ''}">${escapeHtml(getAvailabilityRequestStatusLabel(requestStatus))}</span>
               </div>
               <div class="row" style="margin-top:6px; gap:6px; flex-wrap:wrap;">
                 ${requestStatus === 'pending' ? `<button class="success" data-approve-availability-request-ids="${requestIdsValue}" style="padding:5px 8px; font-size:12px;">Approve</button>` : ''}
@@ -11897,7 +11954,8 @@ function renderPublicAvailabilityRequestPage() {
   const requestStatusSections = [
     { key: 'pending', label: 'Pending requests' },
     { key: 'approved', label: 'Approved requests' },
-    { key: 'rejected', label: 'Denied requests' }
+    { key: 'rejected', label: 'Denied requests' },
+    { key: 'agent-deleted', label: 'Agent deleted' }
   ];
   const renderLinkedAgentRequest = (request) => {
     const typeMeta = getAvailabilityRequestTypeMeta(request);
@@ -11906,12 +11964,13 @@ function renderPublicAvailabilityRequestPage() {
       <div class="card" style="padding:10px 12px;">
         <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
           <strong>${escapeHtml(typeMeta.label)}</strong>
-          <span class="chip" style="${statusValue === 'pending' ? 'background:#FDD592; color:#4B3A1F;' : statusValue === 'rejected' ? 'background:#4A4A4D; color:#FFFFFF;' : 'background:#7AACAF; color:#17383B;'}">${escapeHtml(statusValue === 'rejected' ? 'Denied' : statusValue === 'approved' ? 'Approved' : 'Pending')}</span>
+          <span class="chip" style="${statusValue === 'pending' ? 'background:#FDD592; color:#4B3A1F;' : statusValue === 'approved' ? 'background:#7AACAF; color:#17383B;' : 'background:#4A4A4D; color:#FFFFFF;'}">${escapeHtml(statusValue === 'rejected' ? 'Denied' : getAvailabilityRequestStatusLabel(statusValue))}</span>
         </div>
         <div class="muted">Date: ${escapeHtml(request?.unavailableDate || 'Not set')}</div>
         <div class="muted">Time: ${escapeHtml(request?.unavailableStart || '--:--')} - ${escapeHtml(request?.unavailableEnd || '--:--')}</div>
         <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
         ${request?.note ? `<div class="muted">Note: ${escapeHtml(request.note)}</div>` : ''}
+        ${statusValue === 'agent-deleted' && request?.agentDeletedAt ? `<div class="muted">Canceled: ${escapeHtml(new Date(request.agentDeletedAt).toLocaleString())}</div>` : ''}
       </div>
     `;
   };
@@ -12135,7 +12194,7 @@ function renderPublicAvailabilityViewPage() {
   const viewingAgentName = viewingAgentId ? (getAgent(viewingAgentId)?.name || '') : '';
 
   const allAvailabilityRequests = getAllAvailabilityRequests()
-    .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted');
+    .filter(isAvailabilityRequestActive);
   const selectedMonth = publicAvailabilityViewUi.month || getCurrentLocalMonthValue();
   const calendarData = getAvailabilityCalendarCells(selectedMonth, allAvailabilityRequests);
   const publicViewDepartmentScope = viewingAgentId ? normalizeDepartment(getAgent(viewingAgentId)?.department) : getCurrentUserDepartmentScope();
@@ -12294,7 +12353,7 @@ function renderPublicAvailabilityViewPage() {
       const dateValue = button.getAttribute('data-view-cell-requests');
       if (!dateValue) return;
       const cellRequests = getAllAvailabilityRequests()
-        .filter((r) => normalizeAvailabilityRequestStatus(r?.status) !== 'deleted')
+        .filter(isAvailabilityRequestActive)
         .filter((r) => String(r?.unavailableDate || '').slice(0, 10) === dateValue);
       if (cellRequests.length > 0) {
         openPublicAvailabilityDayModal(dateValue, cellRequests, viewingAgentId);
@@ -12892,6 +12951,12 @@ function bindEvents() {
   const activeUser = getCurrentUser();
   const canManageCalendar = canManageSchedule(activeUser);
   const canMarkAbsence = canMarkShiftAbsences(activeUser);
+
+  document.querySelectorAll('[data-cancel-own-availability-request]').forEach((button) => {
+    button.addEventListener('click', () => {
+      cancelOwnAvailabilityRequest(button.getAttribute('data-cancel-own-availability-request'));
+    });
+  });
 
   if (pageMode === 'admin-options') {
     document.getElementById('add-admin-form')?.addEventListener('submit', async (event) => {
@@ -15198,7 +15263,7 @@ function bindEvents() {
       if (ids.length === 0) return;
       const targetRequests = getAllAvailabilityRequests()
         .filter((request) => ids.includes(Number(request.id)))
-        .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+        .filter(isAvailabilityRequestActive)
         .filter((request) => canViewAvailabilityRequestOnAgentCalendar(request));
       if (targetRequests.length === 0) return;
       const dateLabel = String(button.getAttribute('data-view-availability-request-list-date') || '').trim();
@@ -15211,7 +15276,7 @@ function bindEvents() {
       const dateValue = String(element.getAttribute('data-view-day-availability-requests') || '').slice(0, 10);
       if (!dateValue) return;
       const targetRequests = getAllAvailabilityRequests()
-        .filter((request) => normalizeAvailabilityRequestStatus(request?.status) !== 'deleted')
+        .filter(isAvailabilityRequestActive)
         .filter((request) => isAgentInDepartmentScope(request?.agentId, getCurrentUserDepartmentScope()))
         .filter((request) => canViewAvailabilityRequestOnAgentCalendar(request))
         .filter((request) => String(request?.unavailableDate || '').slice(0, 10) === dateValue);
@@ -15792,12 +15857,18 @@ function renderAgentTimeOffRequestPanel(blackoutDates = []) {
 
 function renderAgentTimeOffRequestCard(request) {
   const statusValue = normalizeAvailabilityRequestStatus(request?.status);
-  const statusLabel = statusValue === 'rejected' ? 'Denied' : statusValue === 'approved' ? 'Approved' : 'Pending';
+  const statusLabel = statusValue === 'rejected'
+    ? 'Denied'
+    : statusValue === 'approved'
+      ? 'Approved'
+      : getAvailabilityRequestStatusLabel(statusValue);
   const statusStyle = statusValue === 'pending'
     ? 'background:#FDD592; color:#4B3A1F;'
     : statusValue === 'rejected'
       ? 'background:#4A4A4D; color:#FFFFFF;'
-      : 'background:#7AACAF; color:#17383B;';
+      : statusValue === 'approved'
+        ? 'background:#7AACAF; color:#17383B;'
+        : 'background:#4A4A4D; color:#FFFFFF;';
   return `
     <div class="card" style="padding:10px 12px;">
       <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
@@ -15808,6 +15879,8 @@ function renderAgentTimeOffRequestCard(request) {
       <div class="muted">Time: ${escapeHtml(request?.unavailableStart || '--:--')} - ${escapeHtml(request?.unavailableEnd || '--:--')}</div>
       <div class="muted">Pattern: ${escapeHtml(getAvailabilityRecurrenceLabel(request))}</div>
       ${request?.note ? `<div class="muted">Note: ${escapeHtml(request.note)}</div>` : ''}
+      ${statusValue === 'agent-deleted' && request?.agentDeletedAt ? `<div class="muted">Canceled: ${escapeHtml(new Date(request.agentDeletedAt).toLocaleString())}</div>` : ''}
+      ${statusValue === 'pending' || statusValue === 'approved' ? `<div class="row" style="margin-top:8px; justify-content:flex-end;"><button class="danger" type="button" data-cancel-own-availability-request="${request.id}">Cancel request</button></div>` : ''}
     </div>
   `;
 }
