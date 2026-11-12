@@ -8529,6 +8529,18 @@ function renderCalendarPage(currentUser) {
       if (agentId) counts.set(agentId, (counts.get(agentId) || 0) + 1);
       return counts;
     }, new Map());
+  const inPersonDaysByAgentId = state.shifts
+    .filter((shift) => shiftIsInWeek(shift, weekDates) && isInOfficeShift(shift))
+    .reduce((daysByAgentId, shift) => {
+      const agentId = Number(shift?.agentId);
+      const shiftDate = String(shift?.date || '').slice(0, 10);
+      if (agentId && shiftDate) {
+        const scheduledDates = daysByAgentId.get(agentId) || new Set();
+        scheduledDates.add(shiftDate);
+        daysByAgentId.set(agentId, scheduledDates);
+      }
+      return daysByAgentId;
+    }, new Map());
   const approvedPtoCountsByAgentId = getApprovedPtoCountsByAgent(weekDates);
   approvedPtoCountsByAgentId.forEach((ptoCount, agentId) => {
     weekShiftCountByAgentId.set(agentId, (weekShiftCountByAgentId.get(agentId) || 0) + ptoCount);
@@ -8547,6 +8559,7 @@ function renderCalendarPage(currentUser) {
     <aside class="week-roster">
       <div style="font-weight:700;">All agents (${agentsByName.length})</div>
       <div class="muted" style="font-size:0.72rem; margin-bottom:6px; ${unscheduledAgentCount > 0 ? 'color:#fca5a5;' : ''}">${unscheduledAgentCount === 0 ? 'Everyone has a shift this week' : `${unscheduledAgentCount} not scheduled this week`}</div>
+      <div class="week-roster-columns"><span></span><span>Shifts</span><span>IP/TP days</span></div>
       ${(() => {
         const employmentTypeOf = (agent) => normalizeEmploymentType(agent?.employmentType) || 'Not set';
         const teamOf = (agent) => normalizeTeamLabel(agent?.team) || 'No team';
@@ -8566,7 +8579,8 @@ function renderCalendarPage(currentUser) {
           lastEmploymentType = employmentType;
           lastTeam = team;
           const shiftCount = weekShiftCountByAgentId.get(Number(agent.id)) || 0;
-          return `${heading}${teamHeading}<div class="week-roster-item${shiftCount === 0 ? ' unscheduled' : ''}"><span>${escapeHtml(agent.name || 'Unnamed')}</span><span class="week-roster-count">${shiftCount}</span></div>`;
+          const inPersonDayCount = inPersonDaysByAgentId.get(Number(agent.id))?.size || 0;
+          return `${heading}${teamHeading}<div class="week-roster-item${shiftCount === 0 ? ' unscheduled' : ''}"><span>${escapeHtml(agent.name || 'Unnamed')}</span><span class="week-roster-count">${shiftCount}</span><span class="week-roster-count">${inPersonDayCount}</span></div>`;
         }).join('');
       })()}
     </aside>`;
@@ -8574,11 +8588,17 @@ function renderCalendarPage(currentUser) {
   root.innerHTML = `
     <div class="app calendar-view">
       <style>
-        .calendar-view .schedule-with-roster { display:grid; grid-template-columns: 190px minmax(0,1fr); gap:8px; align-items:start; }
+        .calendar-view .schedule-with-roster { display:grid; grid-template-columns: 250px minmax(0,1fr); gap:8px; align-items:start; }
         .calendar-view .week-roster { position:sticky; top:8px; max-height:85vh; overflow:auto; padding:8px; border:1px solid rgba(255,255,255,0.18); border-radius:10px; background:rgba(255,255,255,0.04); font-size:0.8rem; }
-        .calendar-view .week-roster-item { display:flex; justify-content:space-between; gap:6px; padding:2px 6px; border-radius:6px; line-height:1.3; }
+        .calendar-view .week-roster-columns,
+        .calendar-view .week-roster-item { display:grid; grid-template-columns:minmax(0,1fr) 40px 58px; gap:4px; align-items:center; padding:2px 6px; line-height:1.3; }
+        .calendar-view .week-roster-columns { font-size:0.62rem; opacity:0.8; text-align:right; white-space:nowrap; }
+        .calendar-view .week-roster-columns > :first-child { text-align:left; }
+        .calendar-view .week-roster-item { border-radius:6px; }
+        .calendar-view .week-roster-item > :first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .calendar-view .week-roster-count { text-align:right; }
         .calendar-view .week-roster-item.unscheduled { background:rgba(239,68,68,0.28); font-weight:700; }
-        .calendar-view .week-roster-count { opacity:0.8; }
+        .calendar-view .week-roster-count { opacity:0.8; white-space:nowrap; }
         @media (max-width: 1100px) { .calendar-view .schedule-with-roster { grid-template-columns: 1fr; } .calendar-view .week-roster { position:static; max-height:240px; } }
         .calendar-view { padding-top: 10px; padding-bottom: 14px; }
         .calendar-view > .row:first-child { margin-bottom: 8px !important; }
@@ -14756,13 +14776,12 @@ function bindEvents() {
       const linkedShiftCount = state.shifts.filter((shift) => Number(shift.agentId) === id).length;
       const linkedSwapCount = state.swapRequests.filter((request) => Number(request.fromAgentId) === id || Number(request.toAgentId) === id).length;
       const shouldDelete = confirm(
-        `Delete agent ${agent.name}? This will also remove ${linkedShiftCount} shift${linkedShiftCount === 1 ? '' : 's'} and ${linkedSwapCount} swap request${linkedSwapCount === 1 ? '' : 's'}.`
+        `Remove agent ${agent.name}? Their ${linkedShiftCount} shift${linkedShiftCount === 1 ? '' : 's'} will be retained, and ${linkedSwapCount} swap request${linkedSwapCount === 1 ? '' : 's'} will be removed.`
       );
       if (!shouldDelete) return;
 
       state.agents = state.agents.filter((agent) => Number(agent.id) !== id);
       authUsers = authUsers.filter((user) => Number(user.agentId) !== id || isAdminUser(user));
-      state.shifts = state.shifts.filter((shift) => Number(shift.agentId) !== id);
       state.swapRequests = state.swapRequests.filter((request) => Number(request.fromAgentId) !== id && Number(request.toAgentId) !== id);
       saveState();
       saveAuthUsers();
