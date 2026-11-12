@@ -8599,6 +8599,8 @@ function renderCalendarPage(currentUser) {
         .calendar-view .week-roster-count { text-align:right; }
         .calendar-view .week-roster-item.unscheduled { background:rgba(239,68,68,0.28); font-weight:700; }
         .calendar-view .week-roster-count { opacity:0.8; white-space:nowrap; }
+        .calendar-view .day-card h4 { font-size:1.15rem; line-height:1.2; }
+        .calendar-view .calendar-day-date { font-size:1rem; font-weight:600; }
         @media (max-width: 1100px) { .calendar-view .schedule-with-roster { grid-template-columns: 1fr; } .calendar-view .week-roster { position:static; max-height:240px; } }
         .calendar-view { padding-top: 10px; padding-bottom: 14px; }
         .calendar-view > .row:first-child { margin-bottom: 8px !important; }
@@ -8838,7 +8840,7 @@ function renderCalendarPage(currentUser) {
                 <div>
                   <div data-create-shift-date="${escapeHtml(dayDate)}" style="cursor:pointer;" title="Create a shift on this date">
                     <h4 style="margin:0;">${day}</h4>
-                    <div class="muted">${escapeHtml(weekDates[day]?.label || '')}</div>
+                    <div class="muted calendar-day-date">${escapeHtml(weekDates[day]?.label || '')}</div>
                     <div class="muted" style="font-size:0.72rem; font-weight:600;">Summary: ${dayRequests.length} request${dayRequests.length === 1 ? '' : 's'}</div>
                     <div class="muted" style="font-size:0.72rem;">${daySummary.agentCount} agent${daySummary.agentCount === 1 ? '' : 's'}${isAgentView ? '' : ` | $${daySummary.cost.toFixed(2)}`}</div>
                     <div class="muted" style="font-size:0.72rem;">In Person/ TP: ${daySummary.inPersonCount} / WFH: ${daySummary.workFromHomeCount}</div>
