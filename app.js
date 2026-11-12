@@ -7398,6 +7398,16 @@ function getCalendarWeekDates(referenceDateValue) {
   }, {});
 }
 
+function getCalendarDayHeading(day, dateValue) {
+  const [year, month, dayOfMonth] = dateValue.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, dayOfMonth));
+  const monthName = date.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long' });
+  const suffix = dayOfMonth % 100 >= 11 && dayOfMonth % 100 <= 13
+    ? 'th'
+    : ({ 1: 'st', 2: 'nd', 3: 'rd' }[dayOfMonth % 10] || 'th');
+  return `${day} - ${monthName} ${dayOfMonth}${suffix}`;
+}
+
 function getCalendarWeekLabel(weekDates) {
   const orderedDates = days
     .map((day) => weekDates?.[day]?.iso)
@@ -8599,8 +8609,7 @@ function renderCalendarPage(currentUser) {
         .calendar-view .week-roster-count { text-align:right; }
         .calendar-view .week-roster-item.unscheduled { background:rgba(239,68,68,0.28); font-weight:700; }
         .calendar-view .week-roster-count { opacity:0.8; white-space:nowrap; }
-        .calendar-view .day-card h4 { font-size:1.15rem; line-height:1.2; }
-        .calendar-view .calendar-day-date { font-size:1rem; font-weight:600; }
+        .calendar-view .day-card h4 { font-size:1.25rem; line-height:1.2; white-space:nowrap; }
         @media (max-width: 1100px) { .calendar-view .schedule-with-roster { grid-template-columns: 1fr; } .calendar-view .week-roster { position:static; max-height:240px; } }
         .calendar-view { padding-top: 10px; padding-bottom: 14px; }
         .calendar-view > .row:first-child { margin-bottom: 8px !important; }
@@ -8610,7 +8619,9 @@ function renderCalendarPage(currentUser) {
         .calendar-view input,
         .calendar-view select,
         .calendar-view button { padding: 6px 8px; min-height: 32px; }
-        .calendar-view .day-row { gap: 6px; }
+        .calendar-view .day-row { gap: 6px; min-width:0; overflow-x:auto; grid-template-columns:repeat(7, minmax(250px, 1fr)); }
+        @media (max-width: 1100px) { .calendar-view .day-row { grid-template-columns:repeat(2, minmax(250px, 1fr)); } }
+        @media (max-width: 700px) { .calendar-view .day-row { grid-template-columns:minmax(250px, 1fr); } }
         .calendar-view .day-card { padding: 4px !important; min-height: 0; }
         .calendar-view .calendar-controls-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding-bottom:4px; }
         .calendar-view .calendar-controls-row > * { flex:0 0 auto; }
@@ -8839,8 +8850,7 @@ function renderCalendarPage(currentUser) {
               <div class="row" style="margin-bottom:6px;">
                 <div>
                   <div data-create-shift-date="${escapeHtml(dayDate)}" style="cursor:pointer;" title="Create a shift on this date">
-                    <h4 style="margin:0;">${day}</h4>
-                    <div class="muted calendar-day-date">${escapeHtml(weekDates[day]?.label || '')}</div>
+                    <h4 style="margin:0;">${escapeHtml(getCalendarDayHeading(day, dayDate))}</h4>
                     <div class="muted" style="font-size:0.72rem; font-weight:600;">Summary: ${dayRequests.length} request${dayRequests.length === 1 ? '' : 's'}</div>
                     <div class="muted" style="font-size:0.72rem;">${daySummary.agentCount} agent${daySummary.agentCount === 1 ? '' : 's'}${isAgentView ? '' : ` | $${daySummary.cost.toFixed(2)}`}</div>
                     <div class="muted" style="font-size:0.72rem;">In Person/ TP: ${daySummary.inPersonCount} / WFH: ${daySummary.workFromHomeCount}</div>
