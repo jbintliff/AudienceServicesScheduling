@@ -8329,7 +8329,7 @@ function renderMeetingFollowUpsPage(currentUser) {
       <div class="panel">
         <h2>${isAdminView ? 'Meeting follow-ups' : 'Your assigned follow-ups'}</h2>
         ${isAdminView ? '<input id="meeting-follow-up-agent-filter" type="search" placeholder="Search by agent name" aria-label="Filter meeting follow-ups by agent name" style="width:100%; margin-top:8px;" />' : ''}
-        <div class="request-list" style="margin-top:12px;">
+        <div class="request-list meeting-follow-up-list" style="margin-top:12px;">
           ${followUps.map((followUp) => {
             const assignedAgents = (Array.isArray(followUp.agentIds) ? followUp.agentIds : [])
               .map((id) => getAgent(id)?.name)
