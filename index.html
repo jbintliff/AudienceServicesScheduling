@@ -57,6 +57,56 @@
       .grid { display:grid; gap:16px; grid-template-columns: 1.05fr 0.95fr; }
       .stack { display:grid; gap:12px; }
       .time-tracking-entry-grid { display:grid; gap:12px; grid-template-columns:repeat(4, minmax(0, 1fr)); }
+      .agent-multiselect { position:relative; }
+      .agent-multiselect > summary {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+        padding:10px 12px;
+        border:1px solid #fac098;
+        border-radius:10px;
+        background:rgba(58,72,98,0.9);
+        cursor:pointer;
+        list-style:none;
+        user-select:none;
+      }
+      .agent-multiselect > summary::-webkit-details-marker { display:none; }
+      .agent-multiselect > summary::after { content:"▾"; }
+      .agent-multiselect[open] > summary::after { content:"▴"; }
+      .agent-multiselect-options {
+        position:absolute;
+        top:calc(100% + 4px);
+        left:0;
+        right:0;
+        z-index:1000;
+        display:grid;
+        gap:4px;
+        max-height:240px;
+        overflow-y:auto;
+        padding:8px;
+        border:1px solid #fac098;
+        border-radius:10px;
+        background:#3a4862;
+        box-shadow:0 8px 20px rgba(0,0,0,0.3);
+      }
+      .agent-multiselect-option {
+        display:flex;
+        align-items:center;
+        gap:8px;
+        padding:6px;
+        border-radius:6px;
+        cursor:pointer;
+      }
+      .agent-multiselect-option:hover { background:rgba(146,171,211,0.2); }
+      .agent-multiselect-option input[type="checkbox"] {
+        width:16px;
+        height:16px;
+        flex:0 0 auto;
+        margin:0;
+        padding:0;
+        accent-color:#fac098;
+      }
       .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
       input, select, button, textarea { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid #fac098; background:rgba(58,72,98,0.9); color:#f8f4ef; }
       textarea { min-height:72px; resize:vertical; }

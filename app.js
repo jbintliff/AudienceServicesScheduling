@@ -8302,12 +8302,20 @@ function renderMeetingFollowUpsPage(currentUser) {
                 <input name="meetingDate" type="date" aria-label="Meeting date" />
               </div>
               <textarea name="notes" rows="3" placeholder="Notes or follow-up details (optional)" maxlength="4000"></textarea>
-              <label class="stack" style="gap:6px;">
-                <span>Assign to agents (select multiple with Ctrl or Command)</span>
-                <select name="agentIds" multiple required size="${Math.min(Math.max(availableAgents.length, 2), 8)}">
-                  ${availableAgents.map((agent) => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name || 'Agent')}${agent.team ? ` — ${escapeHtml(agent.team)}` : ''}</option>`).join('')}
-                </select>
-              </label>
+              <div class="stack" style="gap:6px;">
+                <span>Assign to agents</span>
+                <details class="agent-multiselect" data-meeting-agent-selection>
+                  <summary><span data-meeting-agent-selection-label>Select agents</span></summary>
+                  <div class="agent-multiselect-options">
+                    ${availableAgents.map((agent) => `
+                      <label class="agent-multiselect-option">
+                        <input type="checkbox" name="agentIds" value="${escapeHtml(agent.id)}" />
+                        <span>${escapeHtml(agent.name || 'Agent')}${agent.team ? ` — ${escapeHtml(agent.team)}` : ''}</span>
+                      </label>
+                    `).join('')}
+                  </div>
+                </details>
+              </div>
               <label class="stack" style="gap:6px;">
                 <span>Documents (optional, up to 25 MB each)</span>
                 <input name="documents" type="file" multiple />
@@ -8429,6 +8437,17 @@ function renderMeetingFollowUpsPage(currentUser) {
       return;
     }
     render();
+  });
+
+  const agentSelection = document.querySelector('[data-meeting-agent-selection]');
+  const agentSelectionLabel = document.querySelector('[data-meeting-agent-selection-label]');
+  agentSelection?.addEventListener('change', () => {
+    const selectedCount = agentSelection.querySelectorAll('input[name="agentIds"]:checked').length;
+    if (agentSelectionLabel) {
+      agentSelectionLabel.textContent = selectedCount
+        ? `${selectedCount} agent${selectedCount === 1 ? '' : 's'} selected`
+        : 'Select agents';
+    }
   });
 
   document.getElementById('meeting-follow-up-agent-filter')?.addEventListener('input', (event) => {
