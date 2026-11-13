@@ -56,6 +56,7 @@
       h1,h2,h3 { margin-top:0; }
       .grid { display:grid; gap:16px; grid-template-columns: 1.05fr 0.95fr; }
       .stack { display:grid; gap:12px; }
+      .time-tracking-entry-grid { display:grid; gap:12px; grid-template-columns:repeat(4, minmax(0, 1fr)); }
       .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
       input, select, button, textarea { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid #fac098; background:rgba(58,72,98,0.9); color:#f8f4ef; }
       textarea { min-height:72px; resize:vertical; }
@@ -186,8 +187,8 @@
           animation-iteration-count: 1 !important;
         }
       }
-      @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr 1fr; } .day-row { grid-template-columns: 1fr 1fr; } }
-      @media (max-width: 700px) { .stats { grid-template-columns: 1fr; } .day-row { grid-template-columns: 1fr; } }
+      @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr 1fr; } .day-row { grid-template-columns: 1fr 1fr; } .time-tracking-entry-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
+      @media (max-width: 700px) { .stats { grid-template-columns: 1fr; } .day-row { grid-template-columns: 1fr; } .time-tracking-entry-grid { grid-template-columns:1fr; } }
     </style>
     <link rel="icon" href="https://www.ensembleartsphilly.org/favicon-eap.ico" sizes="any" />
     <link rel="icon" href="https://www.ensembleartsphilly.org/favicon-96x96-eap.png" type="image/png" sizes="96x96" />

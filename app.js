@@ -8207,7 +8207,7 @@ function renderTimeTrackingEntriesPage(currentUser) {
           <p>Total tracked time: <strong id="admin-project-total">${formatProjectDuration(totalElapsed())}</strong></p>
           <button id="admin-project-export" class="secondary" type="button" title="Download the matching entries as a spreadsheet file">Export to Excel</button>
         </div>
-        <div class="stack">
+        <div class="time-tracking-entry-grid">
           ${filteredEntries.map((entry, index) => {
             const agent = getAgent(entry.agentId);
             return `
