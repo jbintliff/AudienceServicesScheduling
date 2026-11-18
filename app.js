@@ -7650,12 +7650,13 @@ function renderAdminNavigationLinks(options = {}) {
       </div>
     </details>
   `;
+  const unreadNotificationBadge = renderNotificationBadge(getAdminUnreadNotificationCount(getCurrentUser()));
   const adminDropdown = `
     <details style="position:relative;">
-      <summary class="secondary" style="list-style:none; cursor:pointer; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.08); color:#fff; user-select:none;">Admin</summary>
+      <summary class="secondary" style="list-style:none; cursor:pointer; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.08); color:#fff; user-select:none;">Admin${unreadNotificationBadge}</summary>
       <div style="position:absolute; top:calc(100% + 6px); left:0; min-width:220px; background:#0b1220; border:1px solid rgba(255,255,255,0.18); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; z-index:1000;">
         <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Admin Options</a>
-        <a href="index.html?view=notifications" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Notifications</a>
+        <a href="index.html?view=notifications" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Notifications${unreadNotificationBadge}</a>
         ${includeExport ? '<button id="export-published-schedule-csv-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export published schedule CSV</button>' : ''}
         ${isBoxOfficeScoped ? '' : '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Email Outbox</a>'}
         ${includeExport ? '<button id="export-data-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export JSON</button>' : ''}
@@ -8332,6 +8333,31 @@ function getAdminNotificationReadState() {
     throw new Error('Invalid notification read state.');
   }
   return stored;
+}
+
+function getAdminUnreadNotificationCount(currentUser) {
+  if (!isAdminUser(currentUser)) return 0;
+  const userKey = String(currentUser.id || currentUser.username || '').trim();
+  if (!userKey) return 0;
+  try {
+    const readIds = new Set(getAdminNotificationReadState()[userKey] || []);
+    let entries = [];
+    try {
+      entries = getProjectTimeEntries() || [];
+    } catch (error) {
+      console.error('Unable to load time tracking notifications for badge.', error);
+    }
+    return getAdminNotifications(getAllAvailabilityRequests(), entries, getUserDepartment(currentUser))
+      .filter((notification) => !readIds.has(notification.id)).length;
+  } catch (error) {
+    console.error('Unable to count unread notifications.', error);
+    return 0;
+  }
+}
+
+function renderNotificationBadge(count) {
+  if (!count) return '';
+  return `<span class="notification-badge" aria-label="${count} unread notifications" style="display:inline-block; min-width:18px; padding:1px 6px; margin-left:6px; border-radius:999px; background:#d93025; color:#fff; font-size:0.75rem; font-weight:700; text-align:center; line-height:1.3;">${count > 99 ? '99+' : count}</span>`;
 }
 
 function renderAdminNotificationsPage(currentUser) {
