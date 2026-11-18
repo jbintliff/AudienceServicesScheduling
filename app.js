@@ -31,6 +31,7 @@ const rememberedLoginKey = 'agent-scheduler-remembered-login-v1';
 const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
 const dashboardMessageSeenKey = 'agent-scheduler-dashboard-message-seen-v1';
 const cancellationNoticesSeenKey = 'agent-scheduler-cancellation-notices-seen-v1';
+const adminNotificationsReadKey = 'agent-scheduler-admin-notifications-read-v1';
 const emailDeliverySettingsKey = 'agent-scheduler-email-delivery-settings-v1';
 const profilePhotosKey = 'agent-scheduler-profile-photos-v1';
 const maxPolicyUploadBytes = 25 * 1024 * 1024;
@@ -499,6 +500,7 @@ const pageMode = (() => {
   if (queryMode === 'meeting-follow-ups') return 'meeting-follow-ups';
   if (queryMode === 'projects') return 'projects';
   if (queryMode === 'time-tracking-entries') return 'time-tracking-entries';
+  if (queryMode === 'notifications') return 'notifications';
   if (queryMode === 'policies') return 'policies';
   const mode = document.body?.dataset?.page;
   if (mode === 'calendar') return 'calendar';
@@ -516,6 +518,7 @@ const pageMode = (() => {
   if (mode === 'meeting-follow-ups') return 'meeting-follow-ups';
   if (mode === 'projects') return 'projects';
   if (mode === 'time-tracking-entries') return 'time-tracking-entries';
+  if (mode === 'notifications') return 'notifications';
   if (mode === 'policies') return 'policies';
   return 'dashboard';
 })();
@@ -1307,17 +1310,17 @@ function pushSharedKeyToBackend(key, rawValue) {
 async function fetchBackendSnapshot() {
   const response = await requestBackend('/snapshot');
   if (!response) {
-    if (pageMode === 'projects' || pageMode === 'time-tracking-entries') {
+    if (pageMode === 'projects' || pageMode === 'time-tracking-entries' || pageMode === 'notifications') {
       setProjectSyncStatus('Cannot reach the time tracking backend. Entries shown may be out of date; local entries are retained. Retry sync.', true);
     }
     return null;
   }
   const payload = await response.json();
   const store = payload?.store && typeof payload.store === 'object' ? payload.store : null;
-  if (store && (pageMode === 'projects' || pageMode === 'time-tracking-entries')) {
+  if (store && (pageMode === 'projects' || pageMode === 'time-tracking-entries' || pageMode === 'notifications')) {
     const entries = await fetchProjectTimeEntriesFromBackend();
-    if (entries === null) return null;
-    store[projectTimeEntriesKey] = JSON.stringify(entries);
+    if (entries === null && pageMode !== 'notifications') return null;
+    if (entries !== null) store[projectTimeEntriesKey] = JSON.stringify(entries);
   }
   return store;
 }
@@ -7652,6 +7655,7 @@ function renderAdminNavigationLinks(options = {}) {
       <summary class="secondary" style="list-style:none; cursor:pointer; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.08); color:#fff; user-select:none;">Admin</summary>
       <div style="position:absolute; top:calc(100% + 6px); left:0; min-width:220px; background:#0b1220; border:1px solid rgba(255,255,255,0.18); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; z-index:1000;">
         <a href="index.html?view=admin-options" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Admin Options</a>
+        <a href="index.html?view=notifications" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Notifications</a>
         ${includeExport ? '<button id="export-published-schedule-csv-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export published schedule CSV</button>' : ''}
         ${isBoxOfficeScoped ? '' : '<a href="index.html?view=email-outbox" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Email Outbox</a>'}
         ${includeExport ? '<button id="export-data-btn" class="secondary" style="width:100%; color:#fff; text-align:left; padding:8px 10px; border:0; border-radius:8px; background:rgba(255,255,255,0.04); font:inherit; cursor:pointer;">Export JSON</button>' : ''}
@@ -8283,6 +8287,141 @@ function renderTimeTrackingEntriesPage(currentUser) {
       if (total) total.textContent = formatProjectDuration(totalElapsed());
     }, 1000);
   }
+}
+
+function getAdminNotifications(requests, entries, departmentScope) {
+  const notifications = [];
+  const addNotification = (kind, id, timestamp, title, detail, link) => {
+    if (!Number.isFinite(Date.parse(String(timestamp || '')))) return;
+    notifications.push({
+      id: JSON.stringify([kind, String(id), timestamp]),
+      timestamp,
+      title,
+      detail,
+      link
+    });
+  };
+
+  requests.forEach((request) => {
+    const agentId = request.agentId || request.agentDeletedByAgentId;
+    if (!isAgentInDepartmentScope(agentId, departmentScope)) return;
+    const name = getAgent(agentId)?.name || request.requesterName || 'Agent';
+    const type = request.unavailabilityType || 'Availability';
+    const detail = `${name} - ${request.unavailableDate || 'date not set'} (${request.unavailableStart || '--:--'} - ${request.unavailableEnd || '--:--'})`;
+    const link = 'index.html?view=availability-requests';
+    addNotification('request', request.id, request.requestedAt, `New ${type} request`, detail, link);
+    addNotification('canceled', request.id, request.agentDeletedAt, `${type} request canceled`, detail, link);
+    addNotification('deleted', request.id, request.deletedAt, `${type} request deleted`, detail, link);
+  });
+
+  entries.filter((entry) => entry.status === 'stopped').forEach((entry) => {
+    if (!isAgentInDepartmentScope(entry.agentId, departmentScope)) return;
+    const name = getAgent(entry.agentId)?.name || `Agent #${entry.agentId} (profile unavailable)`;
+    addNotification('time-entry', entry.id, entry.stoppedAt, 'Time tracking entry saved',
+      `${name} - ${entry.project}`, 'index.html?view=time-tracking-entries');
+  });
+  return notifications.sort((left, right) => (
+    Date.parse(right.timestamp) - Date.parse(left.timestamp) || left.id.localeCompare(right.id)
+  ));
+}
+
+function getAdminNotificationReadState() {
+  const stored = JSON.parse(localStorage.getItem(adminNotificationsReadKey) || '{}');
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)
+    || Object.values(stored).some((value) => !Array.isArray(value) || value.some((id) => typeof id !== 'string'))) {
+    throw new Error('Invalid notification read state.');
+  }
+  return stored;
+}
+
+function renderAdminNotificationsPage(currentUser) {
+  if (!isAdminUser(currentUser)) {
+    root.innerHTML = `<div class="app"><div class="panel"><h1>Notifications</h1>
+      <p class="muted">This page is available for admin accounts only.</p>
+      <a href="index.html">Back to dashboard</a></div></div>`;
+    return;
+  }
+
+  const userKey = String(currentUser.id || currentUser.username || '').trim();
+  let readState;
+  try {
+    if (!userKey) throw new Error('The admin account has no identifier.');
+    readState = getAdminNotificationReadState();
+  } catch (error) {
+    console.error('Unable to read notification state.', error);
+    root.innerHTML = `<div class="app"><div class="panel"><h1>Notifications</h1>
+      <p role="alert">Unable to read notification status. Check browser storage and reload the page.</p>
+      <a href="index.html">Back to dashboard</a></div></div>`;
+    return;
+  }
+  let entries = [];
+  let entriesError = false;
+  try {
+    entries = getProjectTimeEntries();
+  } catch (error) {
+    console.error('Unable to load time tracking notifications.', error);
+    entriesError = true;
+  }
+  const notifications = getAdminNotifications(getAllAvailabilityRequests(), entries, getUserDepartment(currentUser));
+  const readIds = new Set(readState[userKey] || []);
+  const unread = notifications.filter((notification) => !readIds.has(notification.id));
+  root.innerHTML = `
+    <div class="app">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div><h1>Notifications</h1><p class="muted">Request and saved time-entry activity. Read status is saved per account on this browser.</p></div>
+        <div class="row">${renderAdminNavigationLinks()}${renderUserNavChip(currentUser)}
+          <button id="logout-btn" class="secondary" type="button">Log out</button>
+        </div>
+      </div>
+      ${renderProjectSyncStatus()}
+      ${entriesError ? '<p role="alert">Unable to load time tracking notifications. Check browser storage and backend sync, then retry.</p>' : ''}
+      <div class="panel">
+        <div class="row" style="justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+          <h2>Activity (${unread.length} unread)</h2>
+          <button id="mark-all-notifications-read" class="secondary" type="button" ${unread.length ? '' : 'disabled'}>Mark all as read</button>
+        </div>
+        <div class="request-list" style="margin-top:12px;">
+          ${notifications.map((notification) => {
+            const isRead = readIds.has(notification.id);
+            return `<article class="card" style="overflow-wrap:anywhere;">
+              <div class="row" style="justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+                <div>
+                  <strong>${escapeHtml(notification.title)}</strong>
+                  ${isRead ? '' : '<span class="chip">Unread</span>'}
+                  <div class="muted">${escapeHtml(notification.detail)}</div>
+                  <div class="muted">${escapeHtml(formatEasternDateTime(notification.timestamp))} Eastern</div>
+                </div>
+                <div class="row" style="gap:8px;">
+                  <a href="${notification.link}">View ${notification.link.includes('time-tracking') ? 'time entries' : 'requests'}</a>
+                  ${isRead ? '' : `<button type="button" class="secondary" data-mark-notification-read="${escapeHtml(notification.id)}">Mark as read</button>`}
+                </div>
+              </div>
+            </article>`;
+          }).join('') || '<p class="muted">No notification activity yet.</p>'}
+        </div>
+      </div>
+    </div>`;
+  bindEvents();
+  document.getElementById('project-sync-retry')?.addEventListener('click', () => { void refreshProjectTimeSync(); });
+  const markRead = (ids) => {
+    try {
+      const latest = getAdminNotificationReadState();
+      latest[userKey] = Array.from(new Set([...(latest[userKey] || []), ...ids]));
+      if (!safeSetLocalStorage(adminNotificationsReadKey, JSON.stringify(latest))) {
+        throw new Error('Unable to save notification read state.');
+      }
+      render();
+    } catch (error) {
+      console.error('Unable to save notification state.', error);
+      alert('Unable to save notification status. Check browser storage and try again.');
+    }
+  };
+  document.querySelectorAll('[data-mark-notification-read]').forEach((button) => {
+    button.addEventListener('click', () => markRead([button.getAttribute('data-mark-notification-read')]));
+  });
+  document.getElementById('mark-all-notifications-read')?.addEventListener('click', () => {
+    markRead(unread.map((notification) => notification.id));
+  });
 }
 
 function getMeetingFollowUps() {
@@ -11642,6 +11781,11 @@ function render() {
     return;
   }
 
+  if (pageMode === 'notifications') {
+    renderAdminNotificationsPage(currentUser);
+    return;
+  }
+
   if (pageMode === 'calendar' && !isAgentUser(currentUser)) {
     renderCalendarPage(currentUser);
     return;
@@ -12681,7 +12825,7 @@ function bindPublicAvailabilityFormConditionalFields() {
 }
 
 window.addEventListener('storage', (event) => {
-  if (![storageKey, authUsersKey, sessionKey, projectTimeEntriesKey, availabilityRequestsKey, availabilityInboxKey, availabilityRequestLedgerKey].includes(event.key)) return;
+  if (![storageKey, authUsersKey, sessionKey, projectTimeEntriesKey, availabilityRequestsKey, availabilityInboxKey, availabilityRequestLedgerKey, adminNotificationsReadKey].includes(event.key)) return;
   if (isCalendarEditInProgress()) return;
   syncFromStorage();
   render();
@@ -15802,7 +15946,7 @@ function bindEvents() {
 }
 
 void initializeBackendSync().finally(() => {
-  if (pageMode === 'projects' || pageMode === 'time-tracking-entries') {
+  if (pageMode === 'projects' || pageMode === 'time-tracking-entries' || pageMode === 'notifications') {
     void refreshProjectTimeSync();
   }
   void migrateLegacyPolicyContentToIndexedDb().finally(() => {

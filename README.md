@@ -24,6 +24,8 @@ Features included:
 - Review pending and completed availability/PTO requests together in collapsible sections on one agent page
 - Agents can cancel individual approved availability or PTO requests from Completed requests. Cancellations remain in the request history and no longer count as active requests.
 - Admins and availability managers see a popup with new agent cancellations after login or reload once backend sync brings them in. Each notice is acknowledged per account and browser; another browser may show it again.
+- Admin > Notifications lists existing and new PTO/availability submissions, agent cancellations, admin deletions, and saved time entries. Time-entry activity appears when a timer is stopped and saved, not when it starts.
+- Notifications are scoped to the admin's department. Mark individual items or all visible items as read; read status is kept per account on that browser and does not change request or time-entry data.
 - Submit and approve swap requests from one workspace
 - Share admin-managed resource links with agents from their Resources page
 - Add admin-managed holiday date/time ranges that block overlapping shifts and shift pickups for everyone, and appear in dashboard and schedule calendar views with a distinct color
