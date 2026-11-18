@@ -22,6 +22,8 @@ Features included:
 - Request calendars show PTO first, then one-time availability, then repeating availability, including expanded daily request lists
 - Select multiple weekdays for repeating availability in agent and manual admin forms; selected days share the date range and times and are saved as separate weekly series
 - Review pending and completed availability/PTO requests together in collapsible sections on one agent page
+- Agents can cancel individual approved availability or PTO requests from Completed requests. Cancellations remain in the request history and no longer count as active requests.
+- Admins and availability managers see a popup with new agent cancellations after login or reload once backend sync brings them in. Each notice is acknowledged per account and browser; another browser may show it again.
 - Submit and approve swap requests from one workspace
 - Share admin-managed resource links with agents from their Resources page
 - Add admin-managed holiday date/time ranges that block overlapping shifts and shift pickups for everyone, and appear in dashboard and schedule calendar views with a distinct color

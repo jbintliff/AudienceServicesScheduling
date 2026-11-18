@@ -30,6 +30,7 @@ const passwordResetRequestsKey = 'agent-scheduler-password-reset-requests-v1';
 const rememberedLoginKey = 'agent-scheduler-remembered-login-v1';
 const emailOutboxKey = 'agent-scheduler-email-outbox-v1';
 const dashboardMessageSeenKey = 'agent-scheduler-dashboard-message-seen-v1';
+const cancellationNoticesSeenKey = 'agent-scheduler-cancellation-notices-seen-v1';
 const emailDeliverySettingsKey = 'agent-scheduler-email-delivery-settings-v1';
 const profilePhotosKey = 'agent-scheduler-profile-photos-v1';
 const maxPolicyUploadBytes = 25 * 1024 * 1024;
@@ -3425,6 +3426,44 @@ function showPendingDashboardMessagePopup(user) {
   alert(`New dashboard message:\n\n${messageBoardState.text}${postedBy}`);
 }
 
+function showPendingCancellationPopup(user) {
+  if (!canManageAvailability(user)) return;
+  const userKey = String(user?.id || user?.username || '').trim();
+  if (!userKey) return;
+
+  let seenByUser = {};
+  try {
+    const stored = JSON.parse(localStorage.getItem(cancellationNoticesSeenKey) || '{}');
+    if (stored && typeof stored === 'object' && !Array.isArray(stored)) seenByUser = stored;
+  } catch (error) {
+    console.warn('Unable to read seen cancellation notices.', error);
+  }
+  const seen = new Set(Array.isArray(seenByUser[userKey]) ? seenByUser[userKey] : []);
+  const departmentScope = getUserDepartment(user);
+  const notices = getAllAvailabilityRequests().filter((request) => (
+    request.notifyAdminOfCancellation
+    && request.agentDeletedAt
+    && isAgentInDepartmentScope(request.agentId || request.agentDeletedByAgentId, departmentScope)
+    && !seen.has(`${request.id}|${request.agentDeletedAt}`)
+  ));
+  if (notices.length === 0) return;
+
+  const details = notices.map((request) => {
+    const name = getAgent(request.agentId || request.agentDeletedByAgentId)?.name || request.requesterName || 'Agent';
+    const type = request.unavailabilityType || 'Availability';
+    const date = request.unavailableDate || 'date not set';
+    const time = `${request.unavailableStart || '--:--'} - ${request.unavailableEnd || '--:--'}`;
+    const approval = request.agentCanceledAfterApproval ? ' (previously approved)' : '';
+    return `${name}: ${type}, ${date}, ${time}${approval}`;
+  }).join('\n');
+  alert(`Agent request cancellation${notices.length === 1 ? '' : 's'}:\n\n${details}`);
+  notices.forEach((request) => seen.add(`${request.id}|${request.agentDeletedAt}`));
+  seenByUser[userKey] = Array.from(seen);
+  if (!safeSetLocalStorage(cancellationNoticesSeenKey, JSON.stringify(seenByUser))) {
+    console.warn('Unable to save seen cancellation notices; they may appear again.');
+  }
+}
+
 function getManagedTeamsForUser(user) {
   return normalizeManagedTeams(user?.managedTeams || []);
 }
@@ -4537,7 +4576,7 @@ function cancelOwnAvailabilityRequest(requestId) {
 
   const allAvailabilityRequests = getAllAvailabilityRequests();
   const targetRequest = allAvailabilityRequests.find((request) => Number(request.id) === normalizedId);
-  if (!targetRequest || Number(targetRequest.agentId) !== currentAgentId) {
+  if (!targetRequest || !isAvailabilityRequestVisibleToUser(targetRequest, currentUser)) {
     return false;
   }
   const status = normalizeAvailabilityRequestStatus(targetRequest.status);
@@ -4558,11 +4597,14 @@ function cancelOwnAvailabilityRequest(requestId) {
           agentDeletedAt,
           agentDeletedByAgentId: currentAgentId,
           agentCanceledAfterApproval: status === 'approved',
+          notifyAdminOfCancellation: true,
           updatedAt: agentDeletedAt
         }
       : request
   )));
-  saveState();
+  if (!saveState()) {
+    alert('Unable to save your cancellation on this device. Check storage and backend sync, then try again.');
+  }
   render();
   return true;
 }
@@ -10809,7 +10851,7 @@ function renderAgentAvailabilityPtoRequestsPage(currentUser) {
                 <div class="muted">Submitted: ${escapeHtml(request.requestedAt ? new Date(request.requestedAt).toLocaleString() : 'Unknown')}</div>
                 ${normalizeAvailabilityRequestStatus(request.status) === 'deleted' && request.deletedAt ? `<div class="muted">Deleted: ${escapeHtml(new Date(request.deletedAt).toLocaleString())}</div>` : ''}
                 ${normalizeAvailabilityRequestStatus(request.status) === 'agent-deleted' && request.agentDeletedAt ? `<div class="muted">Canceled: ${escapeHtml(new Date(request.agentDeletedAt).toLocaleString())}</div>` : ''}
-                ${normalizeAvailabilityRequestStatus(request.status) === 'approved' ? `<div class="row" style="margin-top:8px; justify-content:flex-end;"><button class="danger" type="button" data-cancel-own-availability-request="${request.id}">Cancel request</button></div>` : ''}
+                ${normalizeAvailabilityRequestStatus(request.status) === 'approved' ? `<div class="row" style="margin-top:8px; justify-content:flex-end;"><button class="danger" type="button" data-cancel-own-availability-request="${request.id}">Cancel / Delete approved request</button></div>` : ''}
               </div>
             `).join('') || '<div class="muted">No completed availability/PTO requests yet.</div>'}
             ${hideSwapRequests ? '' : `
@@ -11538,6 +11580,7 @@ function render() {
   }
   applyAccessForUser(currentUser);
   showPendingDashboardMessagePopup(currentUser);
+  showPendingCancellationPopup(currentUser);
 
   if (pageMode === 'profile') {
     renderProfilePage(currentUser);
