@@ -7635,14 +7635,14 @@ function renderAdminNavigationLinks(options = {}) {
       <div style="position:absolute; top:calc(100% + 6px); left:0; min-width:240px; background:#0b1220; border:1px solid rgba(255,255,255,0.18); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; z-index:1000;">
         <a href="index.html?view=calendar" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Schedule</a>
         <a href="index.html?view=availability-requests" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Availability Requests</a>
-        <a href="index.html?view=agents" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Agents</a>
       </div>
     </details>
   `;
   const agentWorkDropdown = `
     <details style="position:relative;">
-      <summary class="secondary" style="list-style:none; cursor:pointer; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.08); color:#fff; user-select:none;">Agent work</summary>
+      <summary class="secondary" style="list-style:none; cursor:pointer; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.08); color:#fff; user-select:none;">Agent Information</summary>
       <div style="position:absolute; top:calc(100% + 6px); left:0; min-width:240px; background:#0b1220; border:1px solid rgba(255,255,255,0.18); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; z-index:1000;">
+        <a href="index.html?view=agents" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Agents</a>
         <a href="index.html?view=resources" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Resources</a>
         <a href="index.html?view=policies" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">Policies</a>
         <a href="index.html?view=meeting-follow-ups" style="color:#fff; text-decoration:none; display:block; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04);">1:1 Meetings / Follow ups</a>
